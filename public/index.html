@@ -10,6 +10,8 @@
     pointer-events:none; border:2px solid #333;
   }
   #crosshair { position:absolute; top:50%; left:50%; width:16px; height:16px; transform:translate(-50%,-50%); pointer-events:none; }
+  body.scoped #crosshair { display:none; }
+  #scope-overlay svg { width:100%; height:100%; }
   #crosshair::before,#crosshair::after { content:''; position:absolute; background:#f00; }
   #crosshair::before { top:50%; width:100%; height:2px; margin-top:-1px; }
   #crosshair::after  { left:50%; width:2px; height:100%; margin-left:-1px; }
@@ -67,9 +69,10 @@ import * as THREE from 'three';
 
 // ── GUN DEFINITIONS ────────────────────────────────────────────────────────
 const GUNS = {
-  pistol:  { name:'PISTOL',  ammo:12, maxAmmo:12, damage:25, pellets:1, spread:0,    reloadTime:1200, bulletSpeed:1.80, recoilZ:0.18, recoilY:0.06, bulletColor:0xff4400, bulletSize:0.07 },
-  shotgun: { name:'SHOTGUN', ammo:6,  maxAmmo:6,  damage:15, pellets:6, spread:0.08, reloadTime:2000, bulletSpeed:1.40, recoilZ:0.30, recoilY:0.12, bulletColor:0xff8800, bulletSize:0.09 },
-  rifle:   { name:'RIFLE',   ammo:30, maxAmmo:30, damage:20, pellets:1, spread:0,    reloadTime:1800, bulletSpeed:2.40, recoilZ:0.10, recoilY:0.03, bulletColor:0x00ccff, bulletSize:0.05 },
+  // scopeFov: target FOV when right-click zoomed (lower = stronger zoom). Default game FOV is 75.
+  pistol:  { name:'PISTOL',  ammo:12, maxAmmo:12, damage:25, pellets:1, spread:0,    reloadTime:1200, bulletSpeed:1.80, recoilZ:0.18, recoilY:0.06, bulletColor:0xff4400, bulletSize:0.07, scopeFov:30, scopeStyle:'reddot' },
+  shotgun: { name:'SHOTGUN', ammo:6,  maxAmmo:6,  damage:15, pellets:6, spread:0.08, reloadTime:2000, bulletSpeed:1.40, recoilZ:0.30, recoilY:0.12, bulletColor:0xff8800, bulletSize:0.09, scopeFov:55, scopeStyle:'none' },
+  rifle:   { name:'RIFLE',   ammo:30, maxAmmo:30, damage:20, pellets:1, spread:0,    reloadTime:1800, bulletSpeed:2.40, recoilZ:0.10, recoilY:0.03, bulletColor:0x00ccff, bulletSize:0.05, scopeFov:35, scopeStyle:'sniper' },
 };
 let selectedGunKey = 'pistol';
 let gun = {...GUNS.pistol};
@@ -82,6 +85,325 @@ document.querySelectorAll('.gun-card').forEach(card => {
     selectedGunKey = card.dataset.gun;
   });
 });
+
+// ── SCOPE STATE ────────────────────────────────────────────────────────────
+let isScoped = false;
+const DEFAULT_FOV = 75;
+let currentFov = DEFAULT_FOV;
+let targetFov = DEFAULT_FOV;
+
+// Build SVG content for the active gun's scope.
+// Style: holographic red-dot sight (housing visible, glass shows world, reticle floats in glass).
+// Coordinate system: viewBox 0 0 100 100, centered on (50,50). The world is visible only through
+// the rectangular glass cutout in the middle of the housing.
+function buildScopeSVG(style){
+  const svg = document.getElementById('scope-svg');
+  if(style === 'reddot'){
+    // Holographic sight perfectly centered in the frame, just like the reference image.
+    // Gun body extends to the left, right, and bottom — sight glass cutout is in the dead center.
+    svg.innerHTML = `
+      <defs>
+        <!-- The glass cutout: the only area where the world remains fully visible (centered) -->
+        <mask id="scopeMask">
+          <rect width="100" height="100" fill="white"/>
+          <!-- glass viewing window — rounded square in DEAD CENTER -->
+          <rect x="36" y="36" width="28" height="28" rx="2.5" ry="2.5" fill="black"/>
+        </mask>
+        <!-- glass tint -->
+        <linearGradient id="glassTint" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#88aacc" stop-opacity="0.06"/>
+          <stop offset="100%" stop-color="#446688" stop-opacity="0.14"/>
+        </linearGradient>
+        <linearGradient id="metalGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#34343a"/>
+          <stop offset="50%" stop-color="#1a1a1e"/>
+          <stop offset="100%" stop-color="#0a0a0c"/>
+        </linearGradient>
+        <linearGradient id="housingTop" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#42424a"/>
+          <stop offset="100%" stop-color="#1c1c22"/>
+        </linearGradient>
+        <linearGradient id="housingBot" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#1a1a1e"/>
+          <stop offset="100%" stop-color="#08080a"/>
+        </linearGradient>
+        <linearGradient id="railGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#2a2a2e"/>
+          <stop offset="100%" stop-color="#0a0a0c"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Slight blur on background not implemented (would tank perf); use vignette only -->
+      <!-- Subtle glass tint inside viewing window -->
+      <rect x="36" y="36" width="28" height="28" rx="2.5" ry="2.5" fill="url(#glassTint)"/>
+
+      <!-- ── SIGHT HOUSING (centered) ── -->
+      <!-- Top hood: arched cover over the glass -->
+      <path d="M 32 36 Q 32 28 38 28 L 62 28 Q 68 28 68 36 L 68 38 L 32 38 Z" fill="url(#housingTop)" stroke="#000" stroke-width="0.3"/>
+      <!-- Subtle highlight on top of hood -->
+      <path d="M 34 30 Q 34 29 36 29 L 64 29 Q 66 29 66 30 L 66 30.8 L 34 30.8 Z" fill="#5a5a64" opacity="0.5"/>
+
+      <!-- Bottom base: trapezoidal mount that connects to the rail -->
+      <path d="M 32 62 L 68 62 L 70 66 Q 70 70 66 70 L 34 70 Q 30 70 30 66 Z" fill="url(#housingBot)" stroke="#000" stroke-width="0.3"/>
+
+      <!-- Left frame around glass -->
+      <path d="M 32 36 L 36 38 L 36 62 L 32 64 Z" fill="#0a0a0e" stroke="#2a2a30" stroke-width="0.15"/>
+      <!-- Right frame around glass -->
+      <path d="M 68 36 L 64 38 L 64 62 L 68 64 Z" fill="#0a0a0e" stroke="#2a2a30" stroke-width="0.15"/>
+
+      <!-- Glass inner highlight border -->
+      <rect x="36" y="36" width="28" height="28" rx="2.5" ry="2.5" fill="none" stroke="#5a6878" stroke-width="0.12" opacity="0.5"/>
+
+      <!-- Glass reflection (corner gleam) -->
+      <path d="M 37 37 L 47 37 L 39 47 Z" fill="white" fill-opacity="0.06"/>
+
+      <!-- Mount screws on top of hood -->
+      <circle cx="38" cy="32" r="0.7" fill="#0a0a0a" stroke="#555" stroke-width="0.15"/>
+      <circle cx="62" cy="32" r="0.7" fill="#0a0a0a" stroke="#555" stroke-width="0.15"/>
+
+      <!-- Brightness/elevation dial on right side -->
+      <rect x="69" y="42" width="3.5" height="14" rx="0.6" fill="#1a1a1e" stroke="#3a3a3e" stroke-width="0.15"/>
+      <circle cx="70.75" cy="45" r="0.5" fill="#444"/>
+      <circle cx="70.75" cy="49" r="0.5" fill="#444"/>
+      <circle cx="70.75" cy="53" r="0.5" fill="#444"/>
+      <!-- battery cap on left side -->
+      <circle cx="29.5" cy="50" r="2" fill="#1a1a1e" stroke="#3a3a3e" stroke-width="0.2"/>
+      <line x1="28" y1="50" x2="31" y2="50" stroke="#444" stroke-width="0.3"/>
+
+      <!-- ── RETICLE (centered, floating in glass) ── -->
+      <!-- outer ring -->
+      <circle cx="50" cy="50" r="3.2" fill="none" stroke="#ff1010" stroke-width="0.22" opacity="0.95"/>
+      <circle cx="50" cy="50" r="3.7" fill="none" stroke="#ff2020" stroke-width="0.08" opacity="0.4"/>
+      <!-- tick marks at compass points -->
+      <line x1="50" y1="46.3" x2="50" y2="47.3" stroke="#ff1010" stroke-width="0.22"/>
+      <line x1="50" y1="52.7" x2="50" y2="53.7" stroke="#ff1010" stroke-width="0.22"/>
+      <line x1="46.3" y1="50" x2="47.3" y2="50" stroke="#ff1010" stroke-width="0.22"/>
+      <line x1="52.7" y1="50" x2="53.7" y2="50" stroke="#ff1010" stroke-width="0.22"/>
+      <!-- center dot with glow -->
+      <circle cx="50" cy="50" r="0.55" fill="#ff2828"/>
+      <circle cx="50" cy="50" r="1.1" fill="#ff2828" fill-opacity="0.35"/>
+      <circle cx="50" cy="50" r="1.9" fill="#ff2828" fill-opacity="0.10"/>
+
+      <!-- ── GUN BODY BELOW SIGHT ── -->
+      <!-- Top picatinny rail (connects sight to gun) -->
+      <rect x="20" y="70" width="60" height="4" fill="url(#railGrad)"/>
+      <!-- Rail slots -->
+      <line x1="24" y1="71" x2="38" y2="71" stroke="#000" stroke-width="0.15"/>
+      <line x1="62" y1="71" x2="78" y2="71" stroke="#000" stroke-width="0.15"/>
+      <line x1="24" y1="73" x2="38" y2="73" stroke="#000" stroke-width="0.15"/>
+      <line x1="62" y1="73" x2="78" y2="73" stroke="#000" stroke-width="0.15"/>
+
+      <!-- Upper receiver (wider, extending past the sight on both sides) -->
+      <path d="M 12 74 L 88 74 L 90 79 L 10 79 Z" fill="url(#metalGrad)"/>
+      <!-- Charging handle bolt -->
+      <rect x="44" y="75" width="12" height="2.5" rx="0.4" fill="#1a1a1e" stroke="#3a3a3e" stroke-width="0.15"/>
+      <rect x="46" y="75.4" width="2" height="1.7" fill="#3a3a3e"/>
+      <rect x="52" y="75.4" width="2" height="1.7" fill="#3a3a3e"/>
+
+      <!-- Ejection port on right side of receiver -->
+      <rect x="60" y="76" width="8" height="2" rx="0.3" fill="#000" opacity="0.7"/>
+
+      <!-- Lower receiver / hands gripping -->
+      <path d="M 20 79 Q 50 86 80 79 L 82 100 L 18 100 Z" fill="#1a1612"/>
+      <path d="M 25 81 Q 50 88 75 81 L 75 96 L 25 96 Z" fill="#28201a"/>
+      <!-- knuckle highlights -->
+      <ellipse cx="35" cy="84" rx="2.5" ry="1.5" fill="#3a2818" opacity="0.6"/>
+      <ellipse cx="65" cy="84" rx="2.5" ry="1.5" fill="#3a2818" opacity="0.6"/>
+    `;
+  } else if(style === 'ironsight'){
+    // Shotgun: iron sights — front bead aligned with rear notch over the barrel, no vignette.
+    // Gun barrel + receiver visible across bottom.
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="ironMetal" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#2a2828"/>
+          <stop offset="100%" stop-color="#0a0808"/>
+        </linearGradient>
+        <linearGradient id="ironBarrel" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#3a3a3a"/>
+          <stop offset="40%" stop-color="#181818"/>
+          <stop offset="100%" stop-color="#080808"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Subtle bottom darkening (no full vignette — shotgun has no scope) -->
+      <rect x="0" y="58" width="100" height="42" fill="black" fill-opacity="0.20"/>
+
+      <!-- Shotgun barrel rib running down the center -->
+      <path d="M 47 30 L 53 30 L 51.5 70 L 48.5 70 Z" fill="url(#ironBarrel)"/>
+      <!-- Barrel side highlight -->
+      <path d="M 48.5 30 L 50 30 L 49.5 70 L 48.5 70 Z" fill="#444" opacity="0.4"/>
+
+      <!-- Front bead sight on top of barrel near top of view -->
+      <circle cx="50" cy="33" r="0.9" fill="#222"/>
+      <circle cx="50" cy="32.7" r="0.7" fill="#ff8800"/>
+      <circle cx="50" cy="32.6" r="0.4" fill="#ffcc44"/>
+
+      <!-- Receiver — wider, behind barrel -->
+      <path d="M 32 65 L 68 65 L 72 75 L 28 75 Z" fill="url(#ironMetal)"/>
+
+      <!-- Rear sight notch -->
+      <rect x="44" y="62" width="12" height="5" rx="0.5" fill="#0a0a0a"/>
+      <rect x="44" y="62" width="12" height="1" fill="#2a2a2a"/>
+      <!-- V notch cut -->
+      <path d="M 47 62 L 50 66 L 53 62 Z" fill="#3a3a3a"/>
+
+      <!-- Pump action handle at bottom -->
+      <rect x="30" y="75" width="40" height="6" rx="1" fill="#2a1a0a"/>
+      <rect x="30" y="75" width="40" height="1.5" fill="#3a2818"/>
+      <!-- pump grooves -->
+      ${[0,1,2,3,4,5,6,7,8].map(i => `<line x1="${33+i*4.5}" y1="76" x2="${33+i*4.5}" y2="80" stroke="#1a0a05" stroke-width="0.3"/>`).join('')}
+
+      <!-- Stock / hands at very bottom -->
+      <path d="M 25 81 Q 50 88 75 81 L 75 100 L 25 100 Z" fill="#2a1a0a"/>
+      <path d="M 30 83 Q 50 89 70 83 L 70 96 L 30 96 Z" fill="#3a2818"/>
+    `;
+  } else if(style === 'sniper'){
+    // Circular sniper scope — full black vignette with a perfect circle cutout, crosshair reticle.
+    svg.innerHTML = `
+      <defs>
+        <!-- Glass cutout: perfect circle in dead center -->
+        <mask id="sniperMask">
+          <rect width="100" height="100" fill="white"/>
+          <circle cx="50" cy="50" r="28" fill="black"/>
+        </mask>
+        <linearGradient id="sniperRing" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#1a1a1a"/>
+          <stop offset="50%" stop-color="#000"/>
+          <stop offset="100%" stop-color="#1a1a1a"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Outer scope ring (the metal housing rim) -->
+      <circle cx="50" cy="50" r="28" fill="none" stroke="url(#sniperRing)" stroke-width="2"/>
+      <circle cx="50" cy="50" r="28.8" fill="none" stroke="#0a0a0a" stroke-width="0.3"/>
+      <circle cx="50" cy="50" r="27.3" fill="none" stroke="#444" stroke-width="0.15" opacity="0.8"/>
+
+      <!-- Subtle lens glare arc (top-left) -->
+      <path d="M 32 32 A 28 28 0 0 1 45 25" fill="none" stroke="white" stroke-width="0.4" opacity="0.18"/>
+
+      <!-- ── RETICLE: classic mil-dot crosshair ── -->
+      <!-- main vertical line (with gap at center) -->
+      <line x1="50" y1="22" x2="50" y2="46" stroke="#000" stroke-width="0.5"/>
+      <line x1="50" y1="54" x2="50" y2="78" stroke="#000" stroke-width="0.5"/>
+      <!-- main horizontal line (with gap at center) -->
+      <line x1="22" y1="50" x2="46" y2="50" stroke="#000" stroke-width="0.5"/>
+      <line x1="54" y1="50" x2="78" y2="50" stroke="#000" stroke-width="0.5"/>
+      <!-- thinner extending lines past gap -->
+      <line x1="50" y1="46" x2="50" y2="50" stroke="#000" stroke-width="0.15"/>
+      <line x1="50" y1="50" x2="50" y2="54" stroke="#000" stroke-width="0.15"/>
+      <line x1="46" y1="50" x2="50" y2="50" stroke="#000" stroke-width="0.15"/>
+      <line x1="50" y1="50" x2="54" y2="50" stroke="#000" stroke-width="0.15"/>
+
+      <!-- mil dots along vertical axis -->
+      <circle cx="50" cy="38" r="0.5" fill="#000"/>
+      <circle cx="50" cy="32" r="0.5" fill="#000"/>
+      <circle cx="50" cy="62" r="0.5" fill="#000"/>
+      <circle cx="50" cy="68" r="0.5" fill="#000"/>
+      <!-- mil dots along horizontal axis -->
+      <circle cx="38" cy="50" r="0.5" fill="#000"/>
+      <circle cx="32" cy="50" r="0.5" fill="#000"/>
+      <circle cx="62" cy="50" r="0.5" fill="#000"/>
+      <circle cx="68" cy="50" r="0.5" fill="#000"/>
+
+      <!-- Tiny red center dot for precision aim -->
+      <circle cx="50" cy="50" r="0.35" fill="#ff2020"/>
+
+      <!-- Range markings on left side -->
+      <text x="46" y="34" font-size="1.6" fill="#000" font-family="monospace" text-anchor="end">3</text>
+      <text x="46" y="40" font-size="1.6" fill="#000" font-family="monospace" text-anchor="end">2</text>
+      <text x="46" y="46" font-size="1.6" fill="#000" font-family="monospace" text-anchor="end">1</text>
+
+      <!-- ── RIFLE BODY AROUND THE SCOPE ── -->
+      <defs>
+        <linearGradient id="rifleMetal" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#34343a"/>
+          <stop offset="50%" stop-color="#1a1a1e"/>
+          <stop offset="100%" stop-color="#0a0a0c"/>
+        </linearGradient>
+        <linearGradient id="rifleRail" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#2a2a2e"/>
+          <stop offset="100%" stop-color="#0a0a0c"/>
+        </linearGradient>
+        <linearGradient id="rifleWood" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#5a3e22"/>
+          <stop offset="100%" stop-color="#2a1808"/>
+        </linearGradient>
+      </defs>
+
+      <!-- Scope mount rings (top and bottom rings holding scope to rifle) -->
+      <!-- Front (right) mount ring -->
+      <rect x="58" y="75" width="6" height="5" rx="0.8" fill="url(#rifleMetal)" stroke="#000" stroke-width="0.2"/>
+      <circle cx="61" cy="76" r="0.4" fill="#000"/>
+      <circle cx="61" cy="79" r="0.4" fill="#000"/>
+      <!-- Rear (left) mount ring -->
+      <rect x="36" y="75" width="6" height="5" rx="0.8" fill="url(#rifleMetal)" stroke="#000" stroke-width="0.2"/>
+      <circle cx="39" cy="76" r="0.4" fill="#000"/>
+      <circle cx="39" cy="79" r="0.4" fill="#000"/>
+
+      <!-- Picatinny rail under the scope, connecting to receiver -->
+      <rect x="20" y="79" width="60" height="3" fill="url(#rifleRail)"/>
+      <!-- Rail slot grooves -->
+      <line x1="22" y1="80.5" x2="34" y2="80.5" stroke="#000" stroke-width="0.15"/>
+      <line x1="46" y1="80.5" x2="54" y2="80.5" stroke="#000" stroke-width="0.15"/>
+      <line x1="66" y1="80.5" x2="78" y2="80.5" stroke="#000" stroke-width="0.15"/>
+
+      <!-- Upper receiver — extends past scope width -->
+      <path d="M 8 82 L 92 82 L 94 87 L 6 87 Z" fill="url(#rifleMetal)"/>
+      <!-- Ejection port -->
+      <rect x="60" y="83" width="10" height="2.5" rx="0.3" fill="#000" opacity="0.75"/>
+      <!-- Charging handle -->
+      <rect x="40" y="83" width="14" height="2.5" rx="0.4" fill="#1a1a1e" stroke="#3a3a3e" stroke-width="0.15"/>
+      <rect x="42" y="83.4" width="2" height="1.7" fill="#3a3a3e"/>
+      <rect x="50" y="83.4" width="2" height="1.7" fill="#3a3a3e"/>
+
+      <!-- Barrel sticking out front (right side, peeking past receiver) -->
+      <rect x="88" y="84" width="12" height="2" fill="url(#rifleMetal)"/>
+
+      <!-- Magazine + grip + stock area -->
+      <!-- Magazine -->
+      <path d="M 44 87 L 56 87 L 55 96 L 45 96 Z" fill="url(#rifleMetal)" stroke="#000" stroke-width="0.2"/>
+      <!-- Magazine ridges -->
+      <line x1="45.5" y1="90" x2="54.5" y2="90" stroke="#000" stroke-width="0.15"/>
+      <line x1="45.5" y1="93" x2="54.5" y2="93" stroke="#000" stroke-width="0.15"/>
+
+      <!-- Lower receiver / handguard (wood) -->
+      <path d="M 10 87 Q 50 92 90 87 L 92 100 L 8 100 Z" fill="url(#rifleWood)"/>
+      <path d="M 14 89 Q 50 93 86 89 L 86 98 L 14 98 Z" fill="#3a2818" opacity="0.7"/>
+
+      <!-- Hands gripping (knuckle suggestion) -->
+      <ellipse cx="30" cy="92" rx="3" ry="1.5" fill="#28201a" opacity="0.6"/>
+      <ellipse cx="70" cy="92" rx="3" ry="1.5" fill="#28201a" opacity="0.6"/>
+    `;
+  }
+}
+
+function setScoped(on){
+  if(isScoped === on) return;
+  isScoped = on;
+  if(on){
+    targetFov = gun.scopeFov;
+    if(gun.scopeStyle === 'none'){
+      // Plain zoom — no overlay, gun stays visible
+      document.getElementById('scope-overlay').style.display='none';
+      document.body.classList.remove('scoped');
+      if(playerGun) playerGun.visible = true;
+    } else {
+      buildScopeSVG(gun.scopeStyle);
+      document.getElementById('scope-overlay').style.display='block';
+      document.body.classList.add('scoped');
+      if(playerGun) playerGun.visible = false;
+    }
+  } else {
+    document.getElementById('scope-overlay').style.display='none';
+    document.body.classList.remove('scoped');
+    targetFov = DEFAULT_FOV;
+    if(playerGun) playerGun.visible = true;
+  }
+}
+
+// Block the browser's default right-click menu
+window.addEventListener('contextmenu', e => e.preventDefault());
 
 // ── STATE ──────────────────────────────────────────────────────────────────
 let health=100, ammo=12, maxAmmo=12, isReloading=false, kills=0;
@@ -522,6 +844,7 @@ function resetGame(){
   gun={...GUNS[selectedGunKey]};
   health=100;ammo=gun.ammo;kills=0;verticalVelocity=0;yaw=0;pitch=0;
   camera.position.set(0,1.7,0); camera.rotation.set(0,0,0);
+  setScoped(false);
   enemyBullets.forEach(b=>scene.remove(b));enemyBullets.length=0;
   playerBullets.forEach(b=>scene.remove(b));playerBullets.length=0;
   enemies.forEach(e=>scene.remove(e));enemies.length=0;
@@ -536,6 +859,8 @@ function resetGame(){
   document.getElementById('desc').innerHTML='Eliminated.<br><b>WASD</b> Move | <b>Click</b> Shoot | <b>Space</b> Jump';
   document.getElementById('start-btn').innerText='RESPAWN';
   document.getElementById('instructions').style.display='flex';
+  // Release pointer lock so player can click gun cards and the respawn button
+  if(document.pointerLockElement) document.exitPointerLock();
 }
 
 // ── SOUND ENGINE ───────────────────────────────────────────────────────────
@@ -724,6 +1049,7 @@ document.getElementById('start-btn').addEventListener('click',()=>{
 });
 document.addEventListener('pointerlockchange',()=>{
   document.getElementById('instructions').style.display=document.pointerLockElement?'none':'flex';
+  if(!document.pointerLockElement) setScoped(false);
 });
 document.addEventListener('mousemove',e=>{
   if(!document.pointerLockElement) return;
@@ -776,18 +1102,32 @@ function doShoot() {
 let mouseHeld=false, autoFireInterval=null;
 
 document.addEventListener('mousedown',e=>{
-  if(!document.pointerLockElement||e.button!==0) return;
+  if(!document.pointerLockElement) return;
+
+  // Right-click = scope on
+  if(e.button===2){
+    e.preventDefault();
+    setScoped(true);
+    return;
+  }
+
+  if(e.button!==0) return;
   mouseHeld=true;
-  doShoot(); // fire immediately on click
+  doShoot();
   if(selectedGunKey==='rifle'){
     autoFireInterval=setInterval(()=>{
       if(!mouseHeld||ammo<=0||isReloading){ clearInterval(autoFireInterval); autoFireInterval=null; return; }
       doShoot();
-    }, 175); // ~5.7 shots per second (hold to auto-fire)
+    }, 175);
   }
 });
 
 document.addEventListener('mouseup',e=>{
+  // Right-click release = scope off
+  if(e.button===2){
+    setScoped(false);
+    return;
+  }
   if(e.button!==0) return;
   mouseHeld=false;
   if(autoFireInterval){ clearInterval(autoFireInterval); autoFireInterval=null; }
@@ -812,6 +1152,13 @@ const _enemyBulletSize = new THREE.Vector3(.18,.18,.18);
 function animate(time){
   requestAnimationFrame(animate);
   if(document.pointerLockElement){
+    // Smooth FOV transitions for scope zoom
+    if(Math.abs(currentFov - targetFov) > 0.1){
+      currentFov += (targetFov - currentFov) * 0.25;
+      camera.fov = currentFov;
+      camera.updateProjectionMatrix();
+    }
+
     // ── PLAYER PHYSICS (solid AABB collision, climbable obstacles) ──
     const speed=0.14;
     const prevX=camera.position.x, prevZ=camera.position.z, prevY=camera.position.y;
@@ -997,5 +1344,9 @@ function animate(time){
 }
 animate(0);
 </script>
+<!-- Scope overlay -->
+<div id="scope-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;z-index:50;">
+  <svg id="scope-svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" style="position:absolute;top:0;left:0;width:100%;height:100%;"></svg>
+</div>
 </body>
 </html>
