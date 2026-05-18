@@ -823,11 +823,35 @@ function makeEnemy(){
   const sm=new THREE.MeshStandardMaterial({color:0xddbb99,roughness:.8});
   const torso=new THREE.Mesh(new THREE.BoxGeometry(.55,.75,.32),bm);torso.position.y=1.25;torso.castShadow=true;
   const head=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,.26),sm);head.position.y=1.72;head.castShadow=true;
-  const egun=makePistol(0x080808);egun.position.set(.32,1.22,-.28);egun.scale.set(1.4,1.4,1.4);
+
+  // Right-arm pivot at the shoulder. The arm rotates around this point.
+  const armPivot=new THREE.Group();
+  armPivot.position.set(.30, 1.55, 0); // right shoulder
+  // Holstered/pocket pose: arm hanging straight down
+  armPivot.rotation.x = 0;
+
+  // Upper arm + forearm + hand fused into a single piece for simplicity
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(.18,.55,.18),bm);
+  arm.position.set(0,-.27,0); // hang down from shoulder
+  arm.castShadow=true;
+  armPivot.add(arm);
+
+  // Gun attached to the end of the arm (held in hand)
+  const egun=makePistol(0x080808);
+  egun.scale.set(1.4,1.4,1.4);
+  // Position gun at the hand at the end of the arm
+  egun.position.set(0,-.55,.05);
+  armPivot.add(egun);
+
   const legL=new THREE.Mesh(new THREE.BoxGeometry(.2,.75,.2),bm);legL.position.set(.13,.37,0);legL.castShadow=true;
   const legR=legL.clone();legR.position.x=-.13;
-  g.add(torso,head,egun,legL,legR);
-  g.userData={legL,legR,hp:100,walkPhase:Math.random()*10,lastAttack:0};
+
+  // Left arm (always hangs down — not used)
+  const armL=new THREE.Mesh(new THREE.BoxGeometry(.18,.55,.18),bm);
+  armL.position.set(-.30,1.27,0); armL.castShadow=true;
+
+  g.add(torso,head,armPivot,armL,legL,legR);
+  g.userData={legL,legR,armPivot,hp:100,walkPhase:Math.random()*10,lastAttack:0,aimT:0};
   return g;
 }
 function spawnEnemy(){
@@ -1328,8 +1352,14 @@ function animate(time){
         e.userData.legR.rotation.x=Math.sin(e.userData.walkPhase+Math.PI)*.55;
       }
       e.lookAt(cp.x,ep.y,cp.z);
+
+      // Decay aim-up value over time so the arm returns to the holster pose after firing
+      e.userData.aimT *= 0.90;
+
+      // Trigger shot when in range and cooldown elapsed
       if(distSq<=400&&time-e.userData.lastAttack>1600){
         e.userData.lastAttack=time;
+        e.userData.aimT = 1.0; // raise the arm to aim
         const bm=new THREE.Mesh(_eBulletGeo,_eBulletMat);
         bm.position.set(ep.x,ep.y+1.3,ep.z);
         const odx=cp.x-bm.position.x, ody=cp.y-bm.position.y, odz=cp.z-bm.position.z;
@@ -1337,6 +1367,15 @@ function animate(time){
         bm.userData={vel:new THREE.Vector3(odx/ol*.72,ody/ol*.72,odz/ol*.72),life:0};
         scene.add(bm);enemyBullets.push(bm);
         playEnemyShot();
+      }
+
+      // Animate arm: 0 = hanging at side (gun pocketed), -PI/2 = straight forward (aiming).
+      // We rotate around X axis on the armPivot so the arm swings forward.
+      // Add a small upward tilt based on relative head height of the player for realism.
+      if(e.userData.armPivot){
+        const targetRot = -Math.PI/2 * e.userData.aimT;
+        // smooth toward target each frame
+        e.userData.armPivot.rotation.x += (targetRot - e.userData.armPivot.rotation.x) * 0.35;
       }
     }
   }
