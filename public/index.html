@@ -854,10 +854,116 @@ function makeEnemy(){
   g.userData={legL,legR,armPivot,hp:100,walkPhase:Math.random()*10,lastAttack:0,aimT:0};
   return g;
 }
+// ── RIOTER: bigger, faster melee enemy with a riot shield ─────────────────
+function makeRioter(){
+  const g=new THREE.Group();
+  const bm=new THREE.MeshStandardMaterial({color:0x202428,roughness:.7});
+  const sm=new THREE.MeshStandardMaterial({color:0xddbb99,roughness:.8});
+  const armorMat=new THREE.MeshStandardMaterial({color:0x111316,roughness:.55,metalness:.45});
+  const shieldMat=new THREE.MeshStandardMaterial({color:0x445566,roughness:.25,metalness:.4,transparent:true,opacity:.7});
+  const shieldFrame=new THREE.MeshStandardMaterial({color:0x222a35,roughness:.6,metalness:.3});
+
+  // Torso (heavy vest)
+  const torso=new THREE.Mesh(new THREE.BoxGeometry(.55,.75,.32),armorMat);
+  torso.position.y=1.25; torso.castShadow=true;
+  // Head with riot helmet
+  const head=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,.26),sm);
+  head.position.y=1.72; head.castShadow=true;
+  const helmet=new THREE.Mesh(new THREE.BoxGeometry(.30,.18,.32),armorMat);
+  helmet.position.y=1.83; helmet.castShadow=true;
+  // Visor strip
+  const visor=new THREE.Mesh(new THREE.BoxGeometry(.31,.05,.01),new THREE.MeshStandardMaterial({color:0x111111,roughness:.2,metalness:.5}));
+  visor.position.set(0,1.78,.16);
+
+  // Right arm holds bat
+  const armR=new THREE.Group(); armR.position.set(.30,1.55,0);
+  const armRMesh=new THREE.Mesh(new THREE.BoxGeometry(.18,.55,.18),bm); armRMesh.position.y=-.27; armRMesh.castShadow=true;
+  armR.add(armRMesh);
+  // Baseball bat
+  const bat=new THREE.Group();
+  const batHandle=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.32,8),new THREE.MeshStandardMaterial({color:0x4a3022,roughness:.8}));
+  batHandle.position.y=-.16; bat.add(batHandle);
+  const batBarrel=new THREE.Mesh(new THREE.CylinderGeometry(.07,.05,.55,10),new THREE.MeshStandardMaterial({color:0x8a6a40,roughness:.7}));
+  batBarrel.position.y=-.6; bat.add(batBarrel);
+  bat.position.set(0,-.55,.05);
+  armR.add(bat);
+
+  // Left arm holds shield
+  const armL=new THREE.Group(); armL.position.set(-.30,1.55,0);
+  const armLMesh=new THREE.Mesh(new THREE.BoxGeometry(.18,.55,.18),bm); armLMesh.position.y=-.27; armLMesh.castShadow=true;
+  armL.add(armLMesh);
+  // Shield: tall transparent panel in front of body
+  const shieldGroup=new THREE.Group();
+  // Curved riot shield — a tall plane with vertices warped to give a gentle horizontal curve,
+  // so the shield wraps around its holder slightly (convex face toward the player).
+  const shieldGeo = new THREE.PlaneGeometry(0.9, 1.3, 12, 1);
+  const sPos = shieldGeo.attributes.position;
+  const curveDepth = 0.35; // pronounced quarter-cylinder wrap like a real riot shield
+  for (let i = 0; i < sPos.count; i++) {
+    const x = sPos.getX(i);
+    // Parabolic curve in Z: max at x=0, zero at x=±0.45
+    const normX = x / 0.45; // -1 .. +1
+    const z = curveDepth * (1 - normX * normX);
+    sPos.setZ(i, z);
+  }
+  sPos.needsUpdate = true;
+  shieldGeo.computeVertexNormals();
+  const shield = new THREE.Mesh(shieldGeo, shieldMat);
+  shield.material.side = THREE.DoubleSide;
+  shieldGroup.add(shield);
+  // Shield frame border
+  const shieldEdgeT=new THREE.Mesh(new THREE.BoxGeometry(.92,.05,.06),shieldFrame); shieldEdgeT.position.y=.65; shieldGroup.add(shieldEdgeT);
+  const shieldEdgeB=new THREE.Mesh(new THREE.BoxGeometry(.92,.05,.06),shieldFrame); shieldEdgeB.position.y=-.65; shieldGroup.add(shieldEdgeB);
+  const shieldEdgeL=new THREE.Mesh(new THREE.BoxGeometry(.05,1.3,.06),shieldFrame); shieldEdgeL.position.x=-.45; shieldGroup.add(shieldEdgeL);
+  const shieldEdgeR=new THREE.Mesh(new THREE.BoxGeometry(.05,1.3,.06),shieldFrame); shieldEdgeR.position.x=.45; shieldGroup.add(shieldEdgeR);
+  // "POLICE" stripe accent (just a band)
+  const band=new THREE.Mesh(new THREE.BoxGeometry(.9,.18,.052),new THREE.MeshStandardMaterial({color:0xddaa22,roughness:.6}));
+  band.position.y=.18; shieldGroup.add(band);
+  // Position shield: hangs from left hand, held in front of body
+  // Shield held in front of body. The armL pivot is at world (-.30, 1.55, 0).
+  // When the arm rotates -PI/2 around X, local +Y points to world -Z (forward).
+  // So place the shield at local (.30, .55, 0) — that resolves to in front of the rioter,
+  // chest-high and centred on the body.
+  // Shield held high and forward, covering chest-to-face level (SWAT pose).
+  // Local Y is raised so shield center is at head height of rioter.
+  shieldGroup.position.set(.30, .85, 0);
+  // Counter-rotate the shield to undo the arm's forward tilt — keep shield UPRIGHT in world space,
+  // with its broad face pointing toward the player. Slight forward tilt for SWAT stance.
+  shieldGroup.rotation.x = -Math.PI * 0.55 + 0.12;
+  armL.add(shieldGroup);
+
+  // Legs
+  const legL=new THREE.Mesh(new THREE.BoxGeometry(.22,.78,.22),bm); legL.position.set(.13,.39,0); legL.castShadow=true;
+  const legR=legL.clone(); legR.position.x=-.13;
+
+  g.add(torso,head,helmet,visor,armR,armL,legL,legR);
+
+  // Scale entire rioter 1.2x
+  g.scale.set(1.2,1.2,1.2);
+
+  g.userData={
+    type:'rioter',
+    legL,legR,
+    armR, armL,
+    shieldGroup, // for hiding when shield breaks
+    hp:50,            // body HP after shield breaks
+    shieldHp:100,     // shield absorbs first 100 damage
+    walkPhase:Math.random()*10,
+    swingT:0,         // 0 = bat at side, 1 = mid-swing
+    lastSwing:0
+  };
+  return g;
+}
+
 function spawnEnemy(){
-  const e=makeEnemy(),a=Math.random()*Math.PI*2,d=30+Math.random()*70;
+  // 50% less frequent for rioters compared to gunners
+  // gunner : rioter weighted 2:1 ratio means rioter is half as frequent
+  const isRioter = Math.random() < 1/3;
+  const e = isRioter ? makeRioter() : makeEnemy();
+  if(!isRioter) e.userData.type='gunner';
+  const a=Math.random()*Math.PI*2,d=30+Math.random()*70;
   e.position.set(Math.cos(a)*d,0,Math.sin(a)*d);
-  scene.add(e);enemies.push(e);
+  scene.add(e); enemies.push(e);
 }
 for(let i=0;i<8;i++) spawnEnemy();
 
@@ -1163,6 +1269,50 @@ window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camer
 const _eBulletGeo = new THREE.SphereGeometry(.09,6,6);
 const _eBulletMat = new THREE.MeshBasicMaterial({color:0xffee00});
 
+// ── HELPERS ────────────────────────────────────────────────────────────────
+// Ray vs AABB list test. Returns true if any obstacle lies between `from` and `to`.
+const _losRay = { ox:0, oy:0, oz:0, dx:0, dy:0, dz:0, maxT:0 };
+function isBlocked(fx, fy, fz, tx, ty, tz){
+  const dx = tx-fx, dy = ty-fy, dz = tz-fz;
+  const maxT = 1; // we parameterize t in [0,1] along the segment
+  const idx = dx===0 ? Infinity : 1/dx;
+  const idy = dy===0 ? Infinity : 1/dy;
+  const idz = dz===0 ? Infinity : 1/dz;
+  for(let i=0;i<obstacles.length;i++){
+    const b = obstacles[i];
+    // Slab method
+    let tmin = (b.min.x - fx) * idx;
+    let tmax = (b.max.x - fx) * idx;
+    if(tmin > tmax){ const t=tmin; tmin=tmax; tmax=t; }
+    let tymin = (b.min.y - fy) * idy;
+    let tymax = (b.max.y - fy) * idy;
+    if(tymin > tymax){ const t=tymin; tymin=tymax; tymax=t; }
+    if(tmin > tymax || tymin > tmax) continue;
+    if(tymin > tmin) tmin = tymin;
+    if(tymax < tmax) tmax = tymax;
+    let tzmin = (b.min.z - fz) * idz;
+    let tzmax = (b.max.z - fz) * idz;
+    if(tzmin > tzmax){ const t=tzmin; tzmin=tzmax; tzmax=t; }
+    if(tmin > tzmax || tzmin > tmax) continue;
+    if(tzmin > tmin) tmin = tzmin;
+    if(tzmax < tmax) tmax = tzmax;
+    if(tmax < 0 || tmin > maxT) continue;
+    return true; // a wall is in the way
+  }
+  return false;
+}
+
+// Check if an enemy at (x,z) would collide with any obstacle (XZ only test, head-height)
+const _eBoxTmp = new THREE.Box3();
+function enemyCollides(x, z, halfW = 0.4){
+  _eBoxTmp.min.set(x-halfW, 0.2, z-halfW);
+  _eBoxTmp.max.set(x+halfW, 1.8, z+halfW);
+  for(let i=0;i<obstacles.length;i++){
+    if(_eBoxTmp.intersectsBox(obstacles[i])) return true;
+  }
+  return false;
+}
+
 // ── GAME LOOP ──────────────────────────────────────────────────────────────
 const hitFlash=document.getElementById('hit-flash');
 // Reusable temps to avoid per-frame allocations
@@ -1305,10 +1455,31 @@ function animate(time){
       const bp=b.position;
       for(let ei=enemies.length-1;ei>=0;ei--){
         const e=enemies[ei], ep=e.position;
+        // Larger hitbox radius for rioters (they're 1.2x bigger)
+        const hitR = e.userData.type === 'rioter' ? 1.1 : 0.9;
         const dx=bp.x-ep.x, dy=bp.y-(ep.y+1), dz=bp.z-ep.z;
-        if(dx*dx+dy*dy+dz*dz<0.81){
-          e.userData.hp-=b.userData.damage;
-          if(e.userData.hp<=0){kills++;updateHUD();scene.remove(e);enemies.splice(ei,1);setTimeout(spawnEnemy,2500);playKill();} else {playHit();}
+        if(dx*dx+dy*dy+dz*dz < hitR*hitR){
+          // Rioter: shield absorbs first 100 damage
+          if(e.userData.type === 'rioter' && e.userData.shieldHp > 0){
+            e.userData.shieldHp -= b.userData.damage;
+            if(e.userData.shieldHp <= 0){
+              e.userData.shieldHp = 0;
+              // Remove shield visually
+              if(e.userData.shieldGroup && e.userData.shieldGroup.parent){
+                e.userData.shieldGroup.parent.remove(e.userData.shieldGroup);
+              }
+            }
+            playHit();
+          } else {
+            e.userData.hp -= b.userData.damage;
+            if(e.userData.hp <= 0){
+              kills++; updateHUD();
+              scene.remove(e); enemies.splice(ei,1);
+              setTimeout(spawnEnemy, 2500); playKill();
+            } else {
+              playHit();
+            }
+          }
           hitEnemy=true; break;
         }
       }
@@ -1341,41 +1512,86 @@ function animate(time){
       const e=enemies[ei], ep=e.position, cp=camera.position;
       const dx=cp.x-ep.x, dz=cp.z-ep.z;
       const distSq=dx*dx+dz*dz;
-      if(distSq>64){
-        const dist=Math.sqrt(distSq);
-        ep.x+=(dx/dist)*.055;
-        ep.z+=(dz/dist)*.055;
-        if(ep.x<-BW+2)ep.x=-BW+2; else if(ep.x>BW-2)ep.x=BW-2;
-        if(ep.z<-BW+2)ep.z=-BW+2; else if(ep.z>BW-2)ep.z=BW-2;
-        e.userData.walkPhase+=.18;
-        e.userData.legL.rotation.x=Math.sin(e.userData.walkPhase)*.55;
-        e.userData.legR.rotation.x=Math.sin(e.userData.walkPhase+Math.PI)*.55;
+      // ── Movement (with wall collision) ──
+      // Rioters move 1.2x faster; gunners stop 8 units away, rioters get into melee range
+      const isRioter = e.userData.type === 'rioter';
+      const moveSpeed = isRioter ? 0.066 : 0.055;
+      const stopDist = isRioter ? 2.2 : 8;
+
+      if(distSq > stopDist*stopDist){
+        const dist = Math.sqrt(distSq);
+        const stepX = (dx/dist) * moveSpeed;
+        const stepZ = (dz/dist) * moveSpeed;
+        // Try X then Z separately so they slide along walls
+        const newX = ep.x + stepX;
+        if(!enemyCollides(newX, ep.z, 0.45)){
+          ep.x = Math.max(-BW+2, Math.min(BW-2, newX));
+        }
+        const newZ = ep.z + stepZ;
+        if(!enemyCollides(ep.x, newZ, 0.45)){
+          ep.z = Math.max(-BW+2, Math.min(BW-2, newZ));
+        }
+        e.userData.walkPhase += .18;
+        e.userData.legL.rotation.x = Math.sin(e.userData.walkPhase) * .55;
+        e.userData.legR.rotation.x = Math.sin(e.userData.walkPhase+Math.PI) * .55;
       }
-      e.lookAt(cp.x,ep.y,cp.z);
+      e.lookAt(cp.x, ep.y, cp.z);
 
-      // Decay aim-up value over time so the arm returns to the holster pose after firing
-      e.userData.aimT *= 0.90;
+      if(isRioter){
+        // Rioter: melee bat swing when right next to player
+        // Decay swing animation
+        e.userData.swingT *= 0.85;
 
-      // Trigger shot when in range and cooldown elapsed
-      if(distSq<=400&&time-e.userData.lastAttack>1600){
-        e.userData.lastAttack=time;
-        e.userData.aimT = 1.0; // raise the arm to aim
-        const bm=new THREE.Mesh(_eBulletGeo,_eBulletMat);
-        bm.position.set(ep.x,ep.y+1.3,ep.z);
-        const odx=cp.x-bm.position.x, ody=cp.y-bm.position.y, odz=cp.z-bm.position.z;
-        const ol=Math.sqrt(odx*odx+ody*ody+odz*odz);
-        bm.userData={vel:new THREE.Vector3(odx/ol*.72,ody/ol*.72,odz/ol*.72),life:0};
-        scene.add(bm);enemyBullets.push(bm);
-        playEnemyShot();
-      }
+        // Check melee range and cooldown
+        if(distSq <= 6.25 && time - e.userData.lastSwing > 1100){
+          e.userData.lastSwing = time;
+          e.userData.swingT = 1.0;
+          // Damage the player
+          health -= 35; updateHUD();
+          hitFlash.style.background = 'rgba(220,0,0,0.5)';
+          setTimeout(()=>hitFlash.style.background='rgba(255,0,0,0)', 120);
+          playPlayerHurt();
+          if(health <= 0){ playDeath(); resetGame(); }
+        }
 
-      // Animate arm: 0 = hanging at side (gun pocketed), -PI/2 = straight forward (aiming).
-      // We rotate around X axis on the armPivot so the arm swings forward.
-      // Add a small upward tilt based on relative head height of the player for realism.
-      if(e.userData.armPivot){
-        const targetRot = -Math.PI/2 * e.userData.aimT;
-        // smooth toward target each frame
-        e.userData.armPivot.rotation.x += (targetRot - e.userData.armPivot.rotation.x) * 0.35;
+        // SHIELD ARM: raised HIGH and forward (above shoulder), covering chest-to-face.
+        //   rotation.x = +PI*0.55 means arm angled forward+up (in front of body, lookAt sends +Z forward).
+        if(e.userData.armL){
+          const targetL = Math.PI * 0.55;
+          e.userData.armL.rotation.x += (targetL - e.userData.armL.rotation.x) * 0.18;
+        }
+        // BAT ARM: hangs at the side at rest (rotation.x = 0).
+        //   Swings UP and forward when attacking: rest=0, swing=+PI*0.7 (raised forward-up).
+        if(e.userData.armR){
+          const restRot = 0;
+          const swingRot = Math.PI * 0.7;
+          const target = restRot + (swingRot - restRot) * e.userData.swingT;
+          e.userData.armR.rotation.x += (target - e.userData.armR.rotation.x) * 0.35;
+        }
+      } else {
+        // Gunner: only fire if line of sight is clear and in range
+        e.userData.aimT *= 0.90;
+
+        // Eye/gun height for raycast
+        const fromX = ep.x, fromY = ep.y + 1.3, fromZ = ep.z;
+        const toX = cp.x, toY = cp.y, toZ = cp.z;
+
+        if(distSq <= 400 && time - e.userData.lastAttack > 1600 && !isBlocked(fromX, fromY, fromZ, toX, toY, toZ)){
+          e.userData.lastAttack = time;
+          e.userData.aimT = 1.0;
+          const bm = new THREE.Mesh(_eBulletGeo, _eBulletMat);
+          bm.position.set(fromX, fromY, fromZ);
+          const odx = toX-fromX, ody = toY-fromY, odz = toZ-fromZ;
+          const ol = Math.sqrt(odx*odx+ody*ody+odz*odz);
+          bm.userData = { vel: new THREE.Vector3(odx/ol*.72, ody/ol*.72, odz/ol*.72), life:0 };
+          scene.add(bm); enemyBullets.push(bm);
+          playEnemyShot();
+        }
+
+        if(e.userData.armPivot){
+          const targetRot = -Math.PI/2 * e.userData.aimT;
+          e.userData.armPivot.rotation.x += (targetRot - e.userData.armPivot.rotation.x) * 0.35;
+        }
       }
     }
   }
