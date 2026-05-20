@@ -304,14 +304,14 @@ const keys={}, enemies=[], obstacles=[], enemyBullets=[], playerBullets=[];
 // ── SCENE ──────────────────────────────────────────────────────────────────
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x87CEEB);
-scene.fog=new THREE.FogExp2(0x99aacc,0.010);
+scene.fog=new THREE.FogExp2(0x99aacc,0.018);
 
 const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,500);
 camera.position.set(0,1.7,0);
 scene.add(camera);
 
 const renderer=new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(1);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
 renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -321,8 +321,11 @@ document.body.appendChild(renderer.domElement);
 scene.add(new THREE.AmbientLight(0xd0d8e8,0.6));
 const sun=new THREE.DirectionalLight(0xfff0d0,1.8);
 sun.position.set(60,90,40); sun.castShadow=true;
-sun.shadow.mapSize.set(1024,1024);
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.autoUpdate = false;
+sun.shadow.needsUpdate = true;
 Object.assign(sun.shadow.camera,{near:1,far:400,left:-160,right:160,top:160,bottom:-160});
+sun.shadow.camera.updateProjectionMatrix();
 sun.shadow.bias=-0.0003; scene.add(sun);
 scene.add(new THREE.HemisphereLight(0x7090c0,0x806050,0.4));
 
@@ -550,7 +553,109 @@ const treePositions=[
   [125,0],[-125,0],[0,125],[0,-125],
 ];
 treePositions.forEach(([x,z])=>makeTree(x,z, Math.random()>0.7));
+// ── STREET FURNITURE ──────────────────────────────────────────────────────
+function makeStreetLamp(x,z){
+  const g=new THREE.Group();
+  const baseMat=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:.7,metalness:.5});
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(.18,.25,.4,8),baseMat); base.position.y=.2; g.add(base);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.07,.09,4.5,8),baseMat); pole.position.y=2.65; g.add(pole);
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(.08,.08,.6),baseMat); arm.position.set(0,4.85,.3); g.add(arm);
+  const housing=new THREE.Mesh(new THREE.BoxGeometry(.35,.18,.35),baseMat); housing.position.set(0,4.78,.55); g.add(housing);
+  const bulb=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6),new THREE.MeshBasicMaterial({color:0xffeebb})); bulb.position.set(0,4.65,.55); g.add(bulb);
+  // (point light removed for performance — bulb still glows)
+  g.position.set(x,0,z); scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,1,z),new THREE.Vector3(.5,2,.5)));
+}
 
+function makeHydrant(x,z){
+  const g=new THREE.Group();
+  const m=new THREE.MeshStandardMaterial({color:0xb02020,roughness:.6,metalness:.3});
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(.18,.22,.6,10),m); body.position.y=.3; g.add(body);
+  const top=new THREE.Mesh(new THREE.SphereGeometry(.2,8,6),m); top.position.y=.6; top.scale.y=.6; g.add(top);
+  const cap=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,.06,6),m); cap.rotation.z=Math.PI/2; cap.position.set(.22,.35,0); g.add(cap);
+  const cap2=cap.clone(); cap2.position.set(-.22,.35,0); g.add(cap2);
+  g.position.set(x,0,z); scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.35,z),new THREE.Vector3(.5,.7,.5)));
+}
+
+function makeMailbox(x,z,ry=0){
+  const g=new THREE.Group();
+  const m=new THREE.MeshStandardMaterial({color:0x1a5a8a,roughness:.6,metalness:.3});
+  const post=new THREE.Mesh(new THREE.BoxGeometry(.1,.9,.1),new THREE.MeshStandardMaterial({color:0x222,roughness:.7,metalness:.5}));
+  post.position.y=.45; g.add(post);
+  const box=new THREE.Mesh(new THREE.BoxGeometry(.5,.4,.3),m); box.position.y=1.1; g.add(box);
+  const lid=new THREE.Mesh(new THREE.CylinderGeometry(.15,.15,.5,8,1,false,0,Math.PI),m); lid.rotation.z=Math.PI/2; lid.position.y=1.3; g.add(lid);
+  g.position.set(x,0,z); g.rotation.y=ry; scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.7,z),new THREE.Vector3(.6,1.5,.5)));
+}
+
+function makeStopSign(x,z,ry=0){
+  const g=new THREE.Group();
+  const post=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,2.6,6),new THREE.MeshStandardMaterial({color:0x666,roughness:.6,metalness:.6}));
+  post.position.y=1.3; g.add(post);
+  const signGeo=new THREE.CylinderGeometry(.35,.35,.04,8); // octagon-ish
+  const sign=new THREE.Mesh(signGeo,new THREE.MeshStandardMaterial({color:0xcc1818,roughness:.5}));
+  sign.rotation.x=Math.PI/2; sign.position.set(0,2.3,.04); g.add(sign);
+  g.position.set(x,0,z); g.rotation.y=ry; scene.add(g);
+}
+
+function makeTrashCan(x,z){
+  const g=new THREE.Group();
+  const m=new THREE.MeshStandardMaterial({color:0x2a2a2a,roughness:.7,metalness:.4});
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(.32,.28,.85,10),m); body.position.y=.42; g.add(body);
+  const rim=new THREE.Mesh(new THREE.TorusGeometry(.32,.03,4,10),m); rim.rotation.x=Math.PI/2; rim.position.y=.85; g.add(rim);
+  g.position.set(x,0,z); scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.42,z),new THREE.Vector3(.7,.85,.7)));
+}
+
+function makePlanter(x,z){
+  const g=new THREE.Group();
+  const m=new THREE.MeshStandardMaterial({color:0x8a7060,roughness:.9});
+  const box=new THREE.Mesh(new THREE.BoxGeometry(1.4,.5,1.4),m); box.position.y=.25; box.castShadow=true; box.receiveShadow=true; g.add(box);
+  const leafMat=new THREE.MeshStandardMaterial({color:0x3d6b2a,roughness:.9});
+  for(let i=0;i<4;i++){
+    const leaf=new THREE.Mesh(new THREE.SphereGeometry(.35,6,5),leafMat);
+    leaf.position.set((Math.random()-.5)*.7, .7+Math.random()*.3, (Math.random()-.5)*.7);
+    g.add(leaf);
+  }
+  g.position.set(x,0,z); scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.45,z),new THREE.Vector3(1.5,.9,1.5)));
+}
+
+function makeNewspaperBox(x,z,ry=0){
+  const g=new THREE.Group();
+  const m=new THREE.MeshStandardMaterial({color:0x1a4a1a,roughness:.6,metalness:.3});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(.5,1,.4),m); body.position.y=.5; g.add(body);
+  const window=new THREE.Mesh(new THREE.BoxGeometry(.35,.4,.01),new THREE.MeshStandardMaterial({color:0xeeeecc,roughness:.3}));
+  window.position.set(0,.7,.21); g.add(window);
+  g.position.set(x,0,z); g.rotation.y=ry; scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.5,z),new THREE.Vector3(.6,1,.5)));
+}
+
+function makeATM(x,z,ry=0){
+  const g=new THREE.Group();
+  const m=new THREE.MeshStandardMaterial({color:0x444,roughness:.5,metalness:.7});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(.8,2,.7),m); body.position.y=1; g.add(body);
+  const screen=new THREE.Mesh(new THREE.BoxGeometry(.5,.35,.02),new THREE.MeshBasicMaterial({color:0x2255aa})); screen.position.set(0,1.45,.36); g.add(screen);
+  const keypad=new THREE.Mesh(new THREE.BoxGeometry(.4,.25,.02),new THREE.MeshStandardMaterial({color:0x222})); keypad.position.set(0,1.05,.36); g.add(keypad);
+  g.position.set(x,0,z); g.rotation.y=ry; scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,1,z),new THREE.Vector3(.9,2,.8)));
+}
+
+function makeBollard(x,z){
+  const m=new THREE.MeshStandardMaterial({color:0x888,roughness:.6,metalness:.4});
+  const b=new THREE.Mesh(new THREE.CylinderGeometry(.18,.2,.9,8),m); b.position.set(x,.45,z); scene.add(b);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.45,z),new THREE.Vector3(.5,.9,.5)));
+}
+
+function makeAC(x,z,ry=0){
+  const g=new THREE.Group();
+  const m=new THREE.MeshStandardMaterial({color:0xaaa,roughness:.5,metalness:.6});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(1.2,.9,1),m); body.position.y=.45; g.add(body);
+  const fan=new THREE.Mesh(new THREE.CylinderGeometry(.32,.32,.05,12),new THREE.MeshStandardMaterial({color:0x222})); fan.rotation.x=Math.PI/2; fan.position.set(0,.45,.51); g.add(fan);
+  g.position.set(x,0,z); g.rotation.y=ry; scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.45,z),new THREE.Vector3(1.3,.9,1.1)));
+}
 // ── BENCHES ────────────────────────────────────────────────────────────────
 function makeBench(x,z,ry=0){
   const g=new THREE.Group();
@@ -572,6 +677,77 @@ function makeBench(x,z,ry=0){
   [35, 24, Math.PI], [35, -24, 0], [-35, 24, Math.PI], [-35, -24, 0],
   [62, 24, Math.PI], [-62, 24, Math.PI], [62, -24, 0], [-62, -24, 0],
 ].forEach(p=>makeBench(...p));
+// ── STREET FURNITURE PLACEMENTS ──────────────────────────────────────────
+// Street lamps — line the main streets and plaza edges
+[
+  [16,16],[-16,16],[16,-16],[-16,-16],
+  [38,8],[-38,8],[38,-8],[-38,-8],[8,38],[-8,38],[8,-38],[-8,-38],
+  [58,18],[-58,18],[58,-18],[-58,-18],[18,58],[-18,58],[18,-58],[-18,-58],
+  [88,40],[-88,40],[88,-40],[-88,-40],[40,88],[-40,88],[40,-88],[-40,-88],
+  [120,0],[-120,0],[0,120],[0,-120],
+].forEach(([x,z])=>makeStreetLamp(x,z));
+
+// Fire hydrants — corners and sidewalks
+[
+  [10,5],[-10,5],[10,-5],[-10,-5],
+  [33,22],[-33,22],[33,-22],[-33,-22],
+  [56,40],[-56,40],[56,-40],[-56,-40],
+  [85,12],[-85,12],[15,85],[-15,85],
+].forEach(([x,z])=>makeHydrant(x,z));
+
+// Mailboxes — sprinkled near intersections
+[
+  [13,8,0],[-13,8,Math.PI],[8,13,Math.PI/2],[-8,-13,-Math.PI/2],
+  [37,16,0],[-37,-16,Math.PI],[16,-37,Math.PI/2],[-16,37,-Math.PI/2],
+].forEach(([x,z,r])=>makeMailbox(x,z,r));
+
+// Stop signs — at street corners
+[
+  [21,21,0],[-21,21,Math.PI/2],[21,-21,-Math.PI/2],[-21,-21,Math.PI],
+  [51,15,0],[-51,15,Math.PI/2],[51,-15,-Math.PI/2],[-51,-15,Math.PI],
+  [15,51,Math.PI/2],[-15,51,Math.PI],[15,-51,0],[-15,-51,-Math.PI/2],
+].forEach(([x,z,r])=>makeStopSign(x,z,r));
+
+// Trash cans — next to lamps and benches
+[
+  [17,15],[-17,15],[17,-15],[-17,-15],
+  [13,17],[-13,17],[13,-17],[-13,-17],
+  [40,9],[-40,9],[9,40],[-9,40],
+  [60,20],[-60,20],[20,60],[-20,60],
+  [90,42],[-90,42],[42,90],[-42,90],
+].forEach(([x,z])=>makeTrashCan(x,z));
+
+// Planters — line the plaza
+[
+  [9,9],[-9,9],[9,-9],[-9,-9],
+  [30,30],[-30,30],[30,-30],[-30,-30],
+].forEach(([x,z])=>makePlanter(x,z));
+
+// Newspaper boxes — clustered near building entrances
+[
+  [13,11,0],[-13,11,Math.PI],[11,13,Math.PI/2],[-11,-13,-Math.PI/2],
+  [38,20,Math.PI],[-38,-20,0],
+].forEach(([x,z,r])=>makeNewspaperBox(x,z,r));
+
+// ATMs — next to bigger buildings
+[
+  [55,-44,0],[-55,-44,0],[55,44,Math.PI],[-55,44,Math.PI],
+  [95,-22,-Math.PI/2],[-95,-22,Math.PI/2],
+].forEach(([x,z,r])=>makeATM(x,z,r));
+
+// Bollards — protect plaza edges (clusters)
+[
+  [14,0],[14,2],[14,-2],
+  [-14,0],[-14,2],[-14,-2],
+  [0,14],[2,14],[-2,14],
+  [0,-14],[2,-14],[-2,-14],
+].forEach(([x,z])=>makeBollard(x,z));
+
+// AC units — pushed up against buildings
+[
+  [50,-46,0],[-50,-46,0],[50,46,Math.PI],[-50,46,Math.PI],
+  [73,-66,0],[-73,-66,0],[73,66,Math.PI],[-73,66,Math.PI],
+].forEach(([x,z,r])=>makeAC(x,z,r));
 
 // ── CRATES ─────────────────────────────────────────────────────────────────
 [[1.5,1.2,1.5,15,12],[1.5,1.2,1.5,17,12],[1.5,2.4,1.5,16,12],
@@ -708,9 +884,9 @@ function makeRioter(){
   const bat=new THREE.Group();
   const batHandle=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.32,8),new THREE.MeshStandardMaterial({color:0x4a3022,roughness:.8}));
   batHandle.position.y=-.16; bat.add(batHandle);
-  const batBarrel=new THREE.Mesh(new THREE.CylinderGeometry(.07,.05,.55,10),new THREE.MeshStandardMaterial({color:0x8a6a40,roughness:.7}));
-  batBarrel.position.y=-.6; bat.add(batBarrel);
-  bat.position.set(0,-.55,.05);
+  const batBarrel=new THREE.Mesh(new THREE.CylinderGeometry(.05,.07,.55,10),new THREE.MeshStandardMaterial({color:0x8a6a40,roughness:.7}));
+  batBarrel.position.y=.28; bat.add(batBarrel);
+  bat.position.set(0,-.25,.05);
   armR.add(bat);
 
   // Left arm holds shield
@@ -801,7 +977,7 @@ const SPAWN_MAX_DIST = 65;   // furthest an enemy can appear
 const SPAWN_BATCH_MIN = 1;
 const SPAWN_BATCH_MAX = 3;
 const MAX_ENEMIES = 24;
-const SPAWN_INTERVAL = 4000; // batch spawn every ~4s if below cap
+const SPAWN_INTERVAL = 6000; // batch spawn every ~6s if below cap
 
 function spawnEnemyAt(x, z){
   const isRioter = Math.random() < 0.25;
@@ -1383,6 +1559,9 @@ function animate(time){
       const e=enemies[ei], ep=e.position, cp=camera.position;
       const dx=cp.x-ep.x, dz=cp.z-ep.z;
       const distSq=dx*dx+dz*dz;
+      // Skip AI logic and hide visuals for far enemies
+      if(distSq > 14400){ e.visible=false; continue; }
+      e.visible=true;
       const isRioter = e.userData.type === 'rioter';
       const moveSpeed = isRioter ? 0.066 : 0.055;
       const stopDist = isRioter ? 2.2 : 8;
