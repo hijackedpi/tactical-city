@@ -47,13 +47,13 @@
       <div class="gun-name">PISTOL</div>
       <div class="gun-stats">DMG: 25<br>AMMO: 12<br>RPM: Fast<br>RANGE: Medium</div>
     </div>
-    <div class="gun-card" data-gun="shotgun">
-      <div class="gun-name">SHOTGUN</div>
-      <div class="gun-stats">DMG: 15×6<br>AMMO: 6<br>RPM: Slow<br>RANGE: Short</div>
-    </div>
     <div class="gun-card" data-gun="rifle">
       <div class="gun-name">RIFLE</div>
       <div class="gun-stats">DMG: 20<br>AMMO: 30<br>RPM: Medium<br>RANGE: Long</div>
+    </div>
+    <div class="gun-card" data-gun="sniper">
+      <div class="gun-name">SNIPER</div>
+      <div class="gun-stats">DMG: 85 (100 HS)<br>AMMO: 5<br>RPM: Slow<br>RANGE: Extreme</div>
     </div>
   </div>
   <button id="start-btn">DEPLOY</button>
@@ -69,9 +69,9 @@ import * as THREE from 'three';
 
 // ── GUN DEFINITIONS ────────────────────────────────────────────────────────
 const GUNS = {
-  pistol:  { name:'PISTOL',  ammo:12, maxAmmo:12, damage:25, pellets:1, spread:0,    reloadTime:1200, bulletSpeed:1.80, recoilZ:0.18, recoilY:0.06, bulletColor:0xff4400, bulletSize:0.07, scopeFov:30, scopeStyle:'reddot' },
-  shotgun: { name:'SHOTGUN', ammo:6,  maxAmmo:6,  damage:15, pellets:6, spread:0.08, reloadTime:2000, bulletSpeed:1.40, recoilZ:0.30, recoilY:0.12, bulletColor:0xff8800, bulletSize:0.09, scopeFov:55, scopeStyle:'none' },
-  rifle:   { name:'RIFLE',   ammo:30, maxAmmo:30, damage:20, pellets:1, spread:0,    reloadTime:1800, bulletSpeed:2.40, recoilZ:0.10, recoilY:0.03, bulletColor:0x00ccff, bulletSize:0.05, scopeFov:35, scopeStyle:'sniper' },
+  pistol:  { name:'PISTOL',  ammo:12, maxAmmo:12, damage:25, pellets:1, spread:0, reloadTime:1200, bulletSpeed:1.80, recoilZ:0.18, recoilY:0.06, bulletColor:0xff4400, bulletSize:0.07, scopeFov:30, scopeStyle:'reddot' },
+  rifle:   { name:'RIFLE',   ammo:30, maxAmmo:30, damage:20, pellets:1, spread:0, reloadTime:1800, bulletSpeed:2.40, recoilZ:0.10, recoilY:0.03, bulletColor:0x00ccff, bulletSize:0.05, scopeFov:35, scopeStyle:'sniper' },
+  sniper:  { name:'SNIPER',  ammo:5,  maxAmmo:5,  damage:85, pellets:1, spread:0, reloadTime:2400, bulletSpeed:4.00, recoilZ:0.45, recoilY:0.18, bulletColor:0xffee44, bulletSize:0.06, scopeFov:12, scopeStyle:'sniper', headshotDamage:100 },
 };
 let selectedGunKey = 'pistol';
 let gun = {...GUNS.pistol};
@@ -466,20 +466,183 @@ function building(w,h,d,x,z,style='brick'){
     trim.position.set(x,h-0.25,z); scene.add(trim);
   }
 }
-building(28,22,20,60,-55,'brick'); building(18,35,18,80,-45,'glass'); building(22,14,24,50,-35,'red'); building(30,18,16,70,-75,'stucco');
-building(14,26,14,98,-30,'office'); building(20,15,18,105,-65,'grey'); building(16,11,22,108,-95,'red');
-building(24,28,16,45,-95,'office'); building(20,17,20,115,-15,'brick');
-building(26,20,22,-55,-55,'red'); building(20,28,20,-80,-48,'glass'); building(18,12,26,-48,-35,'stucco'); building(28,16,18,-72,-78,'brick');
-building(16,32,16,-100,-30,'office'); building(22,13,24,-105,-65,'grey'); building(18,16,20,-108,-95,'red');
-building(20,22,22,-45,-95,'brick'); building(16,19,16,-115,-15,'stucco');
-building(24,18,22,58,55,'stucco'); building(22,32,16,82,50,'glass'); building(16,14,28,52,75,'brick'); building(30,22,14,78,85,'red');
-building(20,28,18,105,55,'office'); building(16,12,22,108,95,'grey'); building(22,17,20,45,105,'red');
-building(18,20,16,115,25,'brick'); building(14,30,14,72,115,'office');
-building(26,24,20,-60,55,'office'); building(18,36,18,-84,48,'glass'); building(20,16,24,-50,72,'red'); building(28,18,18,-76,85,'brick');
-building(16,28,16,-105,55,'stucco'); building(22,13,22,-108,95,'grey'); building(18,16,20,-45,105,'red');
-building(20,22,18,-115,25,'office'); building(16,32,16,-72,115,'glass');
-building(12,8,20,42,0,'red'); building(12,8,20,-42,0,'stucco'); building(20,8,12,0,42,'grey'); building(20,8,12,0,-42,'brick');
-building(10,12,16,28,28,'red'); building(10,12,16,-28,28,'office'); building(10,12,16,28,-28,'stucco'); building(10,12,16,-28,-28,'red');
+// === INNER RING — small mixed-use buildings facing the central plaza ===
+building(10,12,8,-8,24,'stucco'); building(10,10,8,8,24,'office');
+building(10,14,8,-8,-24,'red'); building(10,10,8,8,-24,'brick');
+building(8,11,10,24,-20,'brick'); building(8,13,10,24,-8,'office');
+building(8,10,10,24,8,'red'); building(8,12,10,24,20,'stucco');
+building(8,12,10,-24,-20,'stucco'); building(8,10,10,-24,-8,'brick');
+building(8,13,10,-24,8,'office'); building(8,11,10,-24,20,'red');
+
+// === MID-RING BLOCKS — medium buildings between inner ring and main avenues ===
+building(14,18,14,38,38,'office'); building(12,14,12,55,35,'brick'); building(12,22,12,38,55,'red');
+building(14,16,14,-38,38,'stucco'); building(12,13,12,-55,35,'red'); building(12,24,12,-38,55,'office');
+building(14,20,14,38,-38,'red'); building(12,16,12,55,-35,'stucco'); building(12,18,12,38,-55,'brick');
+building(14,14,14,-38,-38,'brick'); building(12,19,12,-55,-35,'office'); building(12,21,12,-38,-55,'stucco');
+
+// === DOWNTOWN CORE — tall buildings clustered along main avenues ===
+building(16,28,14,-28,75,'office'); building(14,35,12,0,78,'glass'); building(16,25,14,28,75,'brick');
+building(16,24,14,-28,-75,'red'); building(14,38,12,0,-78,'glass'); building(16,30,14,28,-75,'office');
+building(14,26,16,75,-28,'stucco'); building(12,40,14,78,0,'glass'); building(14,28,16,75,28,'red');
+building(14,22,16,-75,-28,'brick'); building(12,36,14,-78,0,'glass'); building(14,30,16,-75,28,'office');
+
+// === OUTER RING SKYSCRAPERS — tallest buildings, corner landmarks ===
+building(18,32,18,105,35,'glass'); building(18,28,18,35,105,'office'); building(18,36,18,105,105,'glass');
+building(18,30,18,-105,35,'office'); building(18,33,18,-35,105,'glass'); building(18,38,18,-105,105,'office');
+building(18,34,18,105,-35,'office'); building(18,26,18,35,-105,'glass'); building(18,40,18,105,-105,'glass');
+building(18,28,18,-105,-35,'glass'); building(18,32,18,-35,-105,'office'); building(18,35,18,-105,-105,'office');
+
+// === EDGE WAREHOUSES — low industrial buildings along the map perimeter ===
+building(20,12,12,75,-115,'grey'); building(20,12,12,-75,-115,'grey');
+building(20,12,12,75,115,'grey'); building(20,12,12,-75,115,'grey');
+building(12,14,20,115,75,'grey'); building(12,14,20,-115,75,'grey');
+building(12,14,20,115,-75,'grey'); building(12,14,20,-115,-75,'grey');
+
+// ── LADDERS ───────────────────────────────────────────────────────────────
+// Ladder lets the player climb onto a building roof. When the player walks
+// into the ladder trigger zone, W = up, S = down, gravity off.
+//   side: 'north' (+z face), 'south' (-z face), 'east' (+x face), 'west' (-x face)
+const ladders = []; // {trigger:Box3, baseY, topY}
+const _ladderRailMat = new THREE.MeshStandardMaterial({color:0x3a3a3a, roughness:.6, metalness:.6});
+const _ladderRungMat = new THREE.MeshStandardMaterial({color:0x5a5a5a, roughness:.6, metalness:.6});
+
+function makeLadder(buildingX, buildingZ, buildingW, buildingD, buildingH, side){
+  // Push ladder far enough off the wall that the player (half-width 0.35) can stand
+  // on the ladder without their collision box intersecting the building wall.
+  // Player center needs to be at distance > 0.35 + small margin from the wall surface.
+  const wallOffset = 0.55;
+  let lx = buildingX, lz = buildingZ;
+  if(side === 'north'){ lz = buildingZ + buildingD/2 + wallOffset; }
+  else if(side === 'south'){ lz = buildingZ - buildingD/2 - wallOffset; }
+  else if(side === 'east'){ lx = buildingX + buildingW/2 + wallOffset; }
+  else if(side === 'west'){ lx = buildingX - buildingW/2 - wallOffset; }
+
+  // Ladder reaches slightly above roof height so stepping off is easier.
+  const topY = buildingH + 0.3;     // player's max climb height (feet ~0.3 above roof)
+  const railHeight = buildingH + 0.9; // visual rails extend above for realism
+
+  // Two vertical rails, 0.5 units apart
+  const railSpacing = 0.5;
+  // Determine rail axis: rails are perpendicular to the wall normal
+  const railAlongX = (side === 'north' || side === 'south');
+
+  const g = new THREE.Group();
+
+  function addRail(offset){
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, railHeight, 0.06), _ladderRailMat);
+    rail.position.y = railHeight/2;
+    if(railAlongX) rail.position.x = offset;
+    else rail.position.z = offset;
+    g.add(rail);
+  }
+  addRail(railSpacing/2);
+  addRail(-railSpacing/2);
+
+  // Rungs every 0.4 units
+  const rungSpacing = 0.4;
+  const nRungs = Math.floor(railHeight / rungSpacing);
+  for(let i = 0; i < nRungs; i++){
+    const rungY = 0.2 + i * rungSpacing;
+    const rung = new THREE.Mesh(
+      railAlongX
+        ? new THREE.BoxGeometry(railSpacing + 0.08, 0.04, 0.04)
+        : new THREE.BoxGeometry(0.04, 0.04, railSpacing + 0.08),
+      _ladderRungMat
+    );
+    rung.position.y = rungY;
+    g.add(rung);
+  }
+
+  // Mounting brackets — short bars that connect the ladder back to the wall,
+  // placed every few units of height so it looks securely attached.
+  const bracketLen = wallOffset; // distance from wall surface to ladder
+  const bracketDir = (side === 'north' || side === 'east') ? -1 : 1; // points toward wall
+  const bracketYs = [];
+  for(let by = 1.5; by < railHeight - 0.5; by += 4){ bracketYs.push(by); }
+  for(const by of bracketYs){
+    for(const offset of [-railSpacing/2, railSpacing/2]){
+      const bracket = new THREE.Mesh(
+        railAlongX
+          ? new THREE.BoxGeometry(0.05, 0.05, bracketLen)
+          : new THREE.BoxGeometry(bracketLen, 0.05, 0.05),
+        _ladderRailMat
+      );
+      bracket.position.y = by;
+      if(railAlongX){
+        bracket.position.x = offset;
+        bracket.position.z = bracketDir * bracketLen/2; // extends toward wall
+      } else {
+        bracket.position.z = offset;
+        bracket.position.x = bracketDir * bracketLen/2;
+      }
+      g.add(bracket);
+    }
+  }
+
+  g.position.set(lx, 0, lz);
+  scene.add(g);
+
+  // Trigger zone — placed on the OUTER side of the ladder only, so the player
+  // can't climb by being on the building's interior side. The trigger sits
+  // between the ladder and the open street.
+  const triggerHalfSide = 0.55; // along the wall
+  const triggerOuterDepth = 0.7; // how far away from the wall the trigger reaches
+  const triggerInnerDepth = 0.0; // how far toward the wall (0 = stops at ladder)
+
+  // Direction pointing AWAY from the building (toward the open street)
+  let outerDirX = 0, outerDirZ = 0;
+  if(side === 'north') outerDirZ = +1;
+  else if(side === 'south') outerDirZ = -1;
+  else if(side === 'east') outerDirX = +1;
+  else if(side === 'west') outerDirX = -1;
+
+  // Trigger spans from the ladder position outward
+  const triggerMinX = lx + Math.min(0, outerDirX * triggerOuterDepth) - (railAlongX ? triggerHalfSide : 0);
+  const triggerMaxX = lx + Math.max(0, outerDirX * triggerOuterDepth) + (railAlongX ? triggerHalfSide : 0);
+  const triggerMinZ = lz + Math.min(0, outerDirZ * triggerOuterDepth) - (railAlongX ? 0 : triggerHalfSide);
+  const triggerMaxZ = lz + Math.max(0, outerDirZ * triggerOuterDepth) + (railAlongX ? 0 : triggerHalfSide);
+
+  const trigger = new THREE.Box3(
+    new THREE.Vector3(triggerMinX, 0, triggerMinZ),
+    new THREE.Vector3(triggerMaxX, topY + 0.5, triggerMaxZ)
+  );
+  // Store the inward direction (toward the building) so the climb code can
+  // push the player onto the roof when they reach the top and press W.
+  ladders.push({trigger, baseY: 0, topY, inwardX: -outerDirX, inwardZ: -outerDirZ});
+}
+
+// Place ladders on selected shorter buildings (only ones <= 16 tall — climbing
+// a 35-tall skyscraper by ladder would be tedious; rooftops on these short
+// buildings give satisfying sniper perches with clear sightlines)
+//
+// Each call: (buildingX, buildingZ, buildingW, buildingD, buildingH, side)
+// 'side' picks which wall the ladder is mounted on — point it toward an open street.
+
+// Inner ring — 4 ladders on the inner ring corners (facing the plaza)
+makeLadder(  8, 24, 10, 8, 10, 'south');   // north-inner east piece (top is 10 tall)
+makeLadder( -8, 24, 10, 8, 12, 'south');   // north-inner west piece (12 tall)
+makeLadder(  8,-24, 10, 8, 10, 'north');   // south-inner east piece
+makeLadder(-8,-24, 10, 8, 14, 'north');    // south-inner west piece
+makeLadder( 24,  8,  8,10, 10, 'west');    // east-inner top piece
+makeLadder( 24,-20,  8,10, 11, 'west');    // east-inner bottom piece
+makeLadder(-24,  8,  8,10, 13, 'east');    // west-inner top piece
+makeLadder(-24,-20,  8,10, 12, 'east');    // west-inner bottom piece
+
+// Mid-ring — ladders on the 4 corner medium buildings (16-20 tall)
+makeLadder( 38, 38, 14,14, 18, 'south');   // NE mid corner (18 tall)
+makeLadder(-38, 38, 14,14, 16, 'south');   // NW mid corner
+makeLadder( 38,-38, 14,14, 20, 'north');   // SE mid corner
+makeLadder(-38,-38, 14,14, 14, 'north');   // SW mid corner — shortest, easiest
+
+// Edge warehouses — 4 of them (12-14 tall) — great vantage on the map edges
+makeLadder( 75,-115, 20,12, 12, 'north');
+makeLadder(-75,-115, 20,12, 12, 'north');
+makeLadder( 75, 115, 20,12, 12, 'south');
+makeLadder(-75, 115, 20,12, 12, 'south');
+makeLadder( 115, 75, 12,20, 14, 'west');
+makeLadder(-115, 75, 12,20, 14, 'east');
+makeLadder( 115,-75, 12,20, 14, 'west');
+makeLadder(-115,-75, 12,20, 14, 'east');
 
 // ── TREES ──────────────────────────────────────────────────────────────────
 const _trunkMat = new THREE.MeshStandardMaterial({color:0x4a3220,roughness:.95});
@@ -546,8 +709,8 @@ const treePositions=[
   [62,-25],[-62,-25],[62,25],[-62,25],
   [25,-62],[-25,-62],[25,62],[-25,62],
   [95,0],[-95,0],[0,95],[0,-95],
-  [70,30],[-70,30],[70,-30],[-70,-30],
-  [30,70],[-30,70],[30,-70],[-30,-70],
+  [60,45],[-60,45],[60,-45],[-60,-45],
+  [45,60],[-45,60],[45,-60],[-45,-60],
   [120,40],[-120,40],[40,120],[-40,120],
   [120,-40],[-120,-40],[40,-120],[-40,-120],
   [125,0],[-125,0],[0,125],[0,-125],
@@ -681,17 +844,17 @@ function makeBench(x,z,ry=0){
 // Street lamps — line the main streets and plaza edges
 [
   [16,16],[-16,16],[16,-16],[-16,-16],
-  [38,8],[-38,8],[38,-8],[-38,-8],[8,38],[-8,38],[8,-38],[-8,-38],
+  [50,4],[-50,4],[50,-4],[-50,-4],[4,50],[-4,50],[4,-50],[-4,-50],
   [58,18],[-58,18],[58,-18],[-58,-18],[18,58],[-18,58],[18,-58],[-18,-58],
-  [88,40],[-88,40],[88,-40],[-88,-40],[40,88],[-40,88],[40,-88],[-40,-88],
+  [90,-15],[-90,-15],[90,15],[-90,15],[15,90],[-15,90],[15,-90],[-15,-90],
   [120,0],[-120,0],[0,120],[0,-120],
 ].forEach(([x,z])=>makeStreetLamp(x,z));
 
 // Fire hydrants — corners and sidewalks
 [
   [10,5],[-10,5],[10,-5],[-10,-5],
-  [33,22],[-33,22],[33,-22],[-33,-22],
-  [56,40],[-56,40],[56,-40],[-56,-40],
+  [30,15],[-30,15],[30,-15],[-30,-15],
+  [48,48],[-48,48],[48,-48],[-48,-48],
   [85,12],[-85,12],[15,85],[-15,85],
 ].forEach(([x,z])=>makeHydrant(x,z));
 
@@ -703,7 +866,7 @@ function makeBench(x,z,ry=0){
 
 // Stop signs — at street corners
 [
-  [21,21,0],[-21,21,Math.PI/2],[21,-21,-Math.PI/2],[-21,-21,Math.PI],
+  [30,30,0],[-30,30,Math.PI/2],[30,-30,-Math.PI/2],[-30,-30,Math.PI],
   [51,15,0],[-51,15,Math.PI/2],[51,-15,-Math.PI/2],[-51,-15,Math.PI],
   [15,51,Math.PI/2],[-15,51,Math.PI],[15,-51,0],[-15,-51,-Math.PI/2],
 ].forEach(([x,z,r])=>makeStopSign(x,z,r));
@@ -712,15 +875,15 @@ function makeBench(x,z,ry=0){
 [
   [17,15],[-17,15],[17,-15],[-17,-15],
   [13,17],[-13,17],[13,-17],[-13,-17],
-  [40,9],[-40,9],[9,40],[-9,40],
+  [52,6],[-52,6],[6,52],[-6,52],
   [60,20],[-60,20],[20,60],[-20,60],
-  [90,42],[-90,42],[42,90],[-42,90],
+  [92,-18],[-92,-18],[18,92],[-18,92],
 ].forEach(([x,z])=>makeTrashCan(x,z));
 
 // Planters — line the plaza
 [
   [9,9],[-9,9],[9,-9],[-9,-9],
-  [30,30],[-30,30],[30,-30],[-30,-30],
+  [48,48],[-48,48],[48,-48],[-48,-48],
 ].forEach(([x,z])=>makePlanter(x,z));
 
 // Newspaper boxes — clustered near building entrances
@@ -731,8 +894,8 @@ function makeBench(x,z,ry=0){
 
 // ATMs — next to bigger buildings
 [
-  [55,-44,0],[-55,-44,0],[55,44,Math.PI],[-55,44,Math.PI],
-  [95,-22,-Math.PI/2],[-95,-22,Math.PI/2],
+  [62,-42,0],[-62,-42,0],[62,42,Math.PI],[-62,42,Math.PI],
+  [92,-12,-Math.PI/2],[-92,-12,Math.PI/2],
 ].forEach(([x,z,r])=>makeATM(x,z,r));
 
 // Bollards — protect plaza edges (clusters)
@@ -743,10 +906,10 @@ function makeBench(x,z,ry=0){
   [0,-14],[2,-14],[-2,-14],
 ].forEach(([x,z])=>makeBollard(x,z));
 
-// AC units — pushed up against buildings
+// AC units — pushed up against buildings (in clear street spaces)
 [
-  [50,-46,0],[-50,-46,0],[50,46,Math.PI],[-50,46,Math.PI],
-  [73,-66,0],[-73,-66,0],[73,66,Math.PI],[-73,66,Math.PI],
+  [38,-46,0],[-38,-46,0],[38,46,Math.PI],[-38,46,Math.PI],
+  [38,-72,0],[-38,-72,0],[38,72,Math.PI],[-38,72,Math.PI],
 ].forEach(([x,z,r])=>makeAC(x,z,r));
 
 // ── CRATES ─────────────────────────────────────────────────────────────────
@@ -765,7 +928,7 @@ function makeBench(x,z,ry=0){
 });
 
 // ── CARS ───────────────────────────────────────────────────────────────────
-[[12,20,0],[-12,20,Math.PI],[12,-20,Math.PI],[-12,-20,0],[25,0,Math.PI/2],[-25,0,-Math.PI/2],[0,28,0],[0,-28,Math.PI]].forEach(([x,z,ry])=>{
+[[14,14,Math.PI/4],[-14,14,-Math.PI/4],[14,-14,-Math.PI*3/4],[-14,-14,Math.PI*3/4],[30,0,Math.PI/2],[-30,0,-Math.PI/2],[0,30,0],[0,-30,Math.PI]].forEach(([x,z,ry])=>{
   const g=new THREE.Group();
   const body=new THREE.Mesh(new THREE.BoxGeometry(4.2,1.2,2),new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(Math.random(),.5,.35),roughness:.4,metalness:.5}));
   body.position.y=.8;body.castShadow=true;g.add(body);
@@ -807,14 +970,14 @@ function makeRifle(col=0x1a1a1a){
 }
 
 const gunModels = {
-  pistol:  makePistol(),
-  shotgun: makeShotgun(),
-  rifle:   makeRifle(),
+  pistol: makePistol(),
+  rifle:  makeRifle(),
+  sniper: makeRifle(0x0a0a0a),
 };
 const gunOffsets = {
-  pistol:  [.28,-.22,-.38],
-  shotgun: [.28,-.24,-.42],
-  rifle:   [.28,-.22,-.44],
+  pistol: [.28,-.22,-.38],
+  rifle:  [.28,-.22,-.44],
+  sniper: [.28,-.22,-.46],
 };
 let playerGun = gunModels.pistol;
 playerGun.position.set(...gunOffsets.pistol);
@@ -1021,29 +1184,7 @@ function spawnBatch(){
   }
 }
 
-// Initial population — spawn far from player
-let wavesActive = false;
-const INITIAL_ENEMY_COUNT = 5;
-const KILLS_TO_START_WAVES = 3;
-let initialKillCount = 0;
-
-function findFarSpawnPos(){
-  const cp = camera.position;
-  for(let tries = 0; tries < 20; tries++){
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 50 + Math.random() * 30; // medium-far: 50-80 units away
-    const x = cp.x + Math.cos(angle) * dist;
-    const z = cp.z + Math.sin(angle) * dist;
-    if(x < -BW + 3 || x > BW - 3 || z < -BW + 3 || z > BW - 3) continue;
-    if(enemyCollides(x, z, 0.5)) continue;
-    return [x, z];
-  }
-  return null;
-}
-for(let i=0;i<INITIAL_ENEMY_COUNT;i++){
-  const pos = findFarSpawnPos();
-  if(pos) spawnEnemyAt(pos[0], pos[1]);
-}
+// Waves start spawning immediately — no initial population, no kill threshold.
 // ── HUD ────────────────────────────────────────────────────────────────────
 function updateHUD(){document.getElementById('hud').innerText=`HP: ${Math.max(0,health)} | AMMO: ${ammo}/${gun.maxAmmo} | KILLS: ${kills} | ${gun.name}`;}
 
@@ -1055,12 +1196,6 @@ function resetGame(){
   enemyBullets.forEach(b=>scene.remove(b));enemyBullets.length=0;
   playerBullets.forEach(b=>scene.remove(b));playerBullets.length=0;
   enemies.forEach(e=>scene.remove(e));enemies.length=0;
-  wavesActive = false;
-  initialKillCount = 0;
-  for(let i=0;i<INITIAL_ENEMY_COUNT;i++){
-    const pos = findFarSpawnPos();
-    if(pos) spawnEnemyAt(pos[0], pos[1]);
-  }
   camera.remove(playerGun);
   playerGun = gunModels[selectedGunKey];
   playerGun.position.set(...gunOffsets[selectedGunKey]);
@@ -1161,7 +1296,7 @@ function playRifleShot() {
   tailSrc.start(t); tailSrc.stop(t + 0.7);
 }
 function playShootSound() {
-  if(selectedGunKey==='shotgun') playShotgunBlast();
+  if(selectedGunKey==='sniper') playRifleShot();
   else if(selectedGunKey==='rifle') playRifleShot();
   else playGunshot();
 }
@@ -1270,9 +1405,17 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
+let lastShotTime = 0;
 function doShoot() {
   if(!document.pointerLockElement||isReloading||ammo<=0) return;
+  // Per-gun fire cooldown
+  const now = performance.now();
+  const cooldown = selectedGunKey === 'sniper' ? 900 : 0;
+  if(now - lastShotTime < cooldown) return;
+  lastShotTime = now;
   ammo--; updateHUD();
+  // Sniper kicks out of scope after firing (must re-scope to fire again)
+  if(selectedGunKey === 'sniper' && isScoped) setScoped(false);
   gunRecoilZ=gun.recoilZ; gunRecoilY=gun.recoilY;
   playShootSound();
   flashLight.intensity=5; setTimeout(()=>flashLight.intensity=0,60);
@@ -1288,7 +1431,7 @@ function doShoot() {
       (Math.random()-0.5)*spread,
       -1
     ).normalize().applyQuaternion(camera.quaternion).normalize();
-    bm.userData={vel:dir.multiplyScalar(gun.bulletSpeed), life:0, damage:gun.damage};
+    bm.userData={vel:dir.multiplyScalar(gun.bulletSpeed), life:0, damage:gun.damage, headshotDamage:gun.headshotDamage||0};
     scene.add(bm); playerBullets.push(bm);
   }
   if(ammo===0&&!isReloading){
@@ -1384,8 +1527,8 @@ function animate(time){
     }
 
     // ── CONTINUOUS BATCH SPAWNING ──
-    // Waves only start after KILLS_TO_START_WAVES of the initial enemies are killed.
-    if(wavesActive && time - lastSpawnTime > SPAWN_INTERVAL && enemies.length < MAX_ENEMIES){
+    // Spawn a batch every SPAWN_INTERVAL ms if below cap.
+    if(time - lastSpawnTime > SPAWN_INTERVAL && enemies.length < MAX_ENEMIES){
       spawnBatch();
       lastSpawnTime = time;
     }
@@ -1393,7 +1536,60 @@ function animate(time){
     const speed=0.14;
     const prevX=camera.position.x, prevZ=camera.position.z, prevY=camera.position.y;
 
+    // ── LADDER CHECK ──
+    // Is the player's body inside any ladder trigger zone?
+    const _ladderCheck = new THREE.Box3(
+      new THREE.Vector3(camera.position.x-0.3, camera.position.y-1.7, camera.position.z-0.3),
+      new THREE.Vector3(camera.position.x+0.3, camera.position.y+0.1, camera.position.z+0.3)
+    );
+    let onLadder = null;
+    for(let li=0; li<ladders.length; li++){
+      if(_ladderCheck.intersectsBox(ladders[li].trigger)){ onLadder = ladders[li]; break; }
+    }
+
+    let skipGroundMovement = false;
+    if(onLadder){
+      // Climbing mode: W (or Space) holds position / climbs up.
+      // Releasing W causes slow auto-descent. S climbs down faster.
+      const climbSpeed = 0.05;
+      const slideSpeed = 0.04; // automatic descent when not pressing W
+      let dyClimb = 0;
+      const holdingUp = keys['KeyW'] || keys['Space'];
+      if(holdingUp) dyClimb += climbSpeed;
+      else if(keys['KeyS']) dyClimb -= climbSpeed;
+      else dyClimb -= slideSpeed; // slowly slide down
+
+      // Apply vertical move. maxY puts the player's feet exactly at roof
+      // height — walking forward off the ladder steps them onto the roof.
+      const newY = camera.position.y + dyClimb;
+      const minY = 1.7; // feet at ground
+      const maxY = onLadder.topY + 1.7; // feet at roof level
+      camera.position.y = Math.max(minY, Math.min(maxY, newY));
+      verticalVelocity = 0;
+      isGrounded = false;
+
+      // Allow small lateral movement so the player can adjust position on the ladder
+      let mvX2=0, mvZ2=0;
+      const lateral = 0.06;
+      if(keys['KeyA']){mvX2-=Math.cos(yaw)*lateral;mvZ2+=Math.sin(yaw)*lateral;}
+      if(keys['KeyD']){mvX2+=Math.cos(yaw)*lateral;mvZ2-=Math.sin(yaw)*lateral;}
+
+      // When at the top of the ladder and pressing W, push the player toward
+      // the building so they step onto the roof.
+      const atTop = camera.position.y >= maxY - 0.05;
+      if(atTop && holdingUp){
+        mvX2 += onLadder.inwardX * 0.08;
+        mvZ2 += onLadder.inwardZ * 0.08;
+      }
+
+      camera.position.x += mvX2;
+      camera.position.z += mvZ2;
+
+      skipGroundMovement = true;
+    }
+
     let mvX=0, mvZ=0;
+    if(!skipGroundMovement){
     if(keys['KeyW']){mvX-=Math.sin(yaw)*speed;mvZ-=Math.cos(yaw)*speed;}
     if(keys['KeyS']){mvX+=Math.sin(yaw)*speed;mvZ+=Math.cos(yaw)*speed;}
     if(keys['KeyA']){mvX-=Math.cos(yaw)*speed;mvZ+=Math.sin(yaw)*speed;}
@@ -1486,6 +1682,7 @@ function animate(time){
 
     camera.position.x=Math.max(-BW+1,Math.min(BW-1,camera.position.x));
     camera.position.z=Math.max(-BW+1,Math.min(BW-1,camera.position.z));
+    } // end if(!skipGroundMovement)
 
     gunRecoilZ*=0.75; gunRecoilY*=0.75;
     const off=gunOffsets[selectedGunKey];
@@ -1499,9 +1696,32 @@ function animate(time){
       for(let ei=enemies.length-1;ei>=0;ei--){
         const e=enemies[ei], ep=e.position;
         const hitR = e.userData.type === 'rioter' ? 1.1 : 0.9;
-        const dx=bp.x-ep.x, dy=bp.y-(ep.y+1), dz=bp.z-ep.z;
-        if(dx*dx+dy*dy+dz*dz < hitR*hitR){
-          if(e.userData.type === 'rioter' && e.userData.shieldHp > 0){
+        // Swept hit test: check if the bullet's path during this frame passed
+        // through the enemy's hit sphere. Without this, fast bullets (sniper)
+        // can teleport past small targets in a single frame and miss.
+        // Bullet end position is bp (current); start position is bp - vel.
+        const v = b.userData.vel;
+        const sx = bp.x - v.x, sy = bp.y - v.y, sz = bp.z - v.z;
+        const cx = ep.x, cy = ep.y + 1, cz = ep.z;
+        // Closest point on segment [s, bp] to enemy center
+        const segDx = v.x, segDy = v.y, segDz = v.z;
+        const segLenSq = segDx*segDx + segDy*segDy + segDz*segDz;
+        let t = 0;
+        if(segLenSq > 0){
+          t = ((cx-sx)*segDx + (cy-sy)*segDy + (cz-sz)*segDz) / segLenSq;
+          if(t < 0) t = 0; else if(t > 1) t = 1;
+        }
+        const closestX = sx + segDx*t, closestY = sy + segDy*t, closestZ = sz + segDz*t;
+        const dx2 = closestX - cx, dy2 = closestY - cy, dz2 = closestZ - cz;
+        const distSq2 = dx2*dx2 + dy2*dy2 + dz2*dz2;
+        if(distSq2 < hitR*hitR){
+          // Use the closest-point Y for headshot detection
+          const headY = ep.y + (e.userData.type === 'rioter' ? 2.06 : 1.72);
+          const isHeadshot = b.userData.headshotDamage > 0 && Math.abs(closestY - headY) < 0.22;
+          const hittingShield = e.userData.type === 'rioter' && e.userData.shieldHp > 0;
+          const dmg = (isHeadshot && !hittingShield) ? b.userData.headshotDamage : b.userData.damage;
+
+          if(hittingShield){
             e.userData.shieldHp -= b.userData.damage;
             if(e.userData.shieldHp <= 0){
               e.userData.shieldHp = 0;
@@ -1511,19 +1731,11 @@ function animate(time){
             }
             playHit();
           } else {
-            e.userData.hp -= b.userData.damage;
+            e.userData.hp -= dmg;
             if(e.userData.hp <= 0){
               kills++; updateHUD();
               scene.remove(e); enemies.splice(ei,1);
-              if(!wavesActive){
-                initialKillCount++;
-                if(initialKillCount >= KILLS_TO_START_WAVES){
-                  wavesActive = true;
-                  lastSpawnTime = time;
-                }
-              } else {
-                setTimeout(spawnEnemy, 1200);
-              }
+              setTimeout(spawnEnemy, 1200);
               playKill();
             } else {
               playHit();
@@ -1589,8 +1801,11 @@ function animate(time){
         // Decay swing animation
         e.userData.swingT *= 0.85;
 
-        // Check melee range and cooldown
-        if(distSq <= 6.25 && time - e.userData.lastSwing > 1100){
+        // Check melee range AND vertical proximity. Rioter's bat is roughly at
+        // its chest height; if the player is significantly higher (on a roof),
+        // the bat can't reach. Allow ~1.5 units of vertical difference.
+        const heightDiff = Math.abs(camera.position.y - (ep.y + 1.7));
+        if(distSq <= 6.25 && heightDiff < 1.5 && time - e.userData.lastSwing > 1100){
           e.userData.lastSwing = time;
           e.userData.swingT = 1.0;
           // Damage the player
