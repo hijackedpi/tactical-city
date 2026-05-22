@@ -419,6 +419,53 @@ const metalTex=noiseCanvas(256,'#5a5f66',20);
 const woodTex=noiseCanvas(256,'#8b6914',18,(c,s)=>{c.strokeStyle='rgba(60,40,10,.25)';c.lineWidth=1;for(let i=0;i<8;i++){c.beginPath();c.moveTo(0,i*s/8);c.lineTo(s,i*s/8);c.stroke();}});
 const rustTex=noiseCanvas(256,'#3a3a3a',20,(c,s)=>{for(let i=0;i<35;i++){c.fillStyle=`rgba(${140+Math.random()*60|0},${50+Math.random()*30|0},20,${Math.random()*.4+.1})`;c.beginPath();c.ellipse(Math.random()*s,Math.random()*s,Math.random()*25+4,Math.random()*18+4,Math.random()*Math.PI,0,Math.PI*2);c.fill();}});
 
+// === NEW BUILDING TEXTURES ===
+// Sandstone — warm beige, fine horizontal banding
+const sandstoneTex=(()=>{
+  const cv=document.createElement('canvas');cv.width=cv.height=512;const c=cv.getContext('2d');
+  c.fillStyle='#c9a878';c.fillRect(0,0,512,512);
+  const id=c.getImageData(0,0,512,512);
+  for(let i=0;i<id.data.length;i+=4){const n=(Math.random()-.5)*22; id.data[i]+=n;id.data[i+1]+=n;id.data[i+2]+=n;}
+  c.putImageData(id,0,0);
+  // Horizontal sediment bands
+  for(let y=0;y<512;y+=Math.random()*40+20){
+    c.fillStyle=`rgba(${130+Math.random()*40|0},${100+Math.random()*30|0},${70+Math.random()*30|0},${Math.random()*.18+.05})`;
+    c.fillRect(0,y,512,Math.random()*4+1);
+  }
+  const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
+})();
+// Dark concrete — heavy industrial look, panel seams
+const darkConcreteTex=(()=>{
+  const cv=document.createElement('canvas');cv.width=cv.height=512;const c=cv.getContext('2d');
+  c.fillStyle='#4a4845';c.fillRect(0,0,512,512);
+  const id=c.getImageData(0,0,512,512);
+  for(let i=0;i<id.data.length;i+=4){const n=(Math.random()-.5)*30; id.data[i]+=n;id.data[i+1]+=n;id.data[i+2]+=n;}
+  c.putImageData(id,0,0);
+  // Vertical panel seams every 128px
+  for(let x=128;x<512;x+=128){c.fillStyle='rgba(20,18,15,.5)';c.fillRect(x-1,0,2,512);}
+  // Horizontal seam at mid
+  c.fillStyle='rgba(20,18,15,.4)';c.fillRect(0,256,512,2);
+  // Dirt streaks
+  for(let i=0;i<6;i++){c.fillStyle=`rgba(${30+Math.random()*30|0},${25+Math.random()*25|0},20,${Math.random()*.15+.05})`;c.fillRect(Math.random()*512,0,Math.random()*6+2,512);}
+  const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
+})();
+// Beige tile — cream-colored ceramic tile grid (looks like a modern hotel/mall)
+const tileTex=(()=>{
+  const cv=document.createElement('canvas');cv.width=cv.height=512;const c=cv.getContext('2d');
+  c.fillStyle='#d6c9a8';c.fillRect(0,0,512,512);
+  // 64px square tiles with darker grout lines
+  for(let r=0;r<512/64+1;r++)for(let col=0;col<512/64+1;col++){
+    const x=col*64,y=r*64;
+    const v=210+Math.random()*30|0;
+    c.fillStyle=`rgb(${v},${v-15},${v-40})`;
+    c.fillRect(x+1,y+1,62,62);
+  }
+  // Grout
+  c.strokeStyle='rgba(70,55,40,.6)';c.lineWidth=2;
+  for(let i=0;i<=512;i+=64){c.beginPath();c.moveTo(0,i);c.lineTo(512,i);c.stroke();c.beginPath();c.moveTo(i,0);c.lineTo(i,512);c.stroke();}
+  const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
+})();
+
 const _matCache = new Map();
 function bmat(t,rx,ry){
   const key = t.uuid + '_' + rx + '_' + ry;
@@ -455,7 +502,7 @@ function building(w,h,d,x,z,style='brick'){
     const tex=glassTex;
     mat=[...Array(4)].map(()=>{const t=tex.clone();t.repeat.set(Math.max(1,d/4|0),Math.max(1,h/4|0));t.needsUpdate=true;return new THREE.MeshStandardMaterial({map:t,roughness:.1,metalness:.5,transparent:true,opacity:.85});}).concat(sides(metalTex,w,1,d).slice(4));
   } else {
-    const styleMap={brick:brickTex,red:brickRedTex,grey:brickGreyTex,stucco:stuccoTex,office:windowedTex};
+    const styleMap={brick:brickTex,red:brickRedTex,grey:brickGreyTex,stucco:stuccoTex,office:windowedTex,sandstone:sandstoneTex,darkconcrete:darkConcreteTex,tile:tileTex};
     mat=sides(styleMap[style]||brickTex,w,h,d);
   }
   addBox(w,h,d,x,0,z,mat);
@@ -481,22 +528,22 @@ building(14,20,14,38,-38,'red'); building(12,16,12,55,-35,'stucco'); building(12
 building(14,14,14,-38,-38,'brick'); building(12,19,12,-55,-35,'office'); building(12,21,12,-38,-55,'stucco');
 
 // === DOWNTOWN CORE — tall buildings clustered along main avenues ===
-building(16,28,14,-28,75,'office'); building(14,35,12,0,78,'glass'); building(16,25,14,28,75,'brick');
-building(16,24,14,-28,-75,'red'); building(14,38,12,0,-78,'glass'); building(16,30,14,28,-75,'office');
-building(14,26,16,75,-28,'stucco'); building(12,40,14,78,0,'glass'); building(14,28,16,75,28,'red');
-building(14,22,16,-75,-28,'brick'); building(12,36,14,-78,0,'glass'); building(14,30,16,-75,28,'office');
+building(16,28,14,-28,75,'office'); building(14,35,12,0,78,'sandstone'); building(16,25,14,28,75,'brick');
+building(16,24,14,-28,-75,'red'); building(14,38,12,0,-78,'tile'); building(16,30,14,28,-75,'office');
+building(14,26,16,75,-28,'stucco'); building(12,40,14,78,0,'darkconcrete'); building(14,28,16,75,28,'red');
+building(14,22,16,-75,-28,'brick'); building(12,36,14,-78,0,'sandstone'); building(14,30,16,-75,28,'office');
 
 // === OUTER RING SKYSCRAPERS — tallest buildings, corner landmarks ===
 building(18,32,18,105,35,'glass'); building(18,28,18,35,105,'office'); building(18,36,18,105,105,'glass');
-building(18,30,18,-105,35,'office'); building(18,33,18,-35,105,'glass'); building(18,38,18,-105,105,'office');
-building(18,34,18,105,-35,'office'); building(18,26,18,35,-105,'glass'); building(18,40,18,105,-105,'glass');
+building(18,34,18,-105,35,'tile'); building(18,36,18,-35,105,'sandstone'); building(18,38,18,-105,105,'office');
+building(18,36,18,105,-35,'darkconcrete'); building(18,32,18,35,-105,'sandstone'); building(18,40,18,105,-105,'glass');
 building(18,28,18,-105,-35,'glass'); building(18,32,18,-35,-105,'office'); building(18,35,18,-105,-105,'office');
 
 // === EDGE WAREHOUSES — low industrial buildings along the map perimeter ===
-building(20,12,12,75,-115,'grey'); building(20,12,12,-75,-115,'grey');
-building(20,12,12,75,115,'grey'); building(20,12,12,-75,115,'grey');
-building(12,14,20,115,75,'grey'); building(12,14,20,-115,75,'grey');
-building(12,14,20,115,-75,'grey'); building(12,14,20,-115,-75,'grey');
+building(20,12,12,75,-115,'grey'); building(20,12,12,-75,-115,'darkconcrete');
+building(20,12,12,75,115,'darkconcrete'); building(20,12,12,-75,115,'grey');
+building(12,14,20,115,75,'grey'); building(12,14,20,-115,75,'darkconcrete');
+building(12,14,20,115,-75,'darkconcrete'); building(12,14,20,-115,-75,'grey');
 
 // ── LADDERS ───────────────────────────────────────────────────────────────
 // Ladder lets the player climb onto a building roof. When the player walks
@@ -969,6 +1016,7 @@ function makeRifle(col=0x1a1a1a){
   return g;
 }
 
+
 const gunModels = {
   pistol: makePistol(),
   rifle:  makeRifle(),
@@ -1405,17 +1453,9 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
-let lastShotTime = 0;
 function doShoot() {
   if(!document.pointerLockElement||isReloading||ammo<=0) return;
-  // Per-gun fire cooldown
-  const now = performance.now();
-  const cooldown = selectedGunKey === 'sniper' ? 900 : 0;
-  if(now - lastShotTime < cooldown) return;
-  lastShotTime = now;
   ammo--; updateHUD();
-  // Sniper kicks out of scope after firing (must re-scope to fire again)
-  if(selectedGunKey === 'sniper' && isScoped) setScoped(false);
   gunRecoilZ=gun.recoilZ; gunRecoilY=gun.recoilY;
   playShootSound();
   flashLight.intensity=5; setTimeout(()=>flashLight.intensity=0,60);
@@ -1777,6 +1817,112 @@ function animate(time){
       const isRioter = e.userData.type === 'rioter';
       const moveSpeed = isRioter ? 0.066 : 0.055;
       const stopDist = isRioter ? 2.2 : 8;
+      const climbSpeed = 0.05; // same as player's climb speed
+
+      // ── LADDER CLIMBING AI ──
+      // If the player is significantly higher than the enemy, look for a nearby
+      // ladder to climb. The enemy walks to the ladder's outer face, then climbs.
+      const heightGap = cp.y - (ep.y + 1.7);
+      let usingLadder = null;
+      if(heightGap > 2.0){
+        // Player is at least 2 units above the enemy's head — search for a ladder
+        let bestLadder = null, bestDist = 25*25; // only consider ladders within 25 units
+        for(let li=0; li<ladders.length; li++){
+          const lt = ladders[li].trigger;
+          const lcx = (lt.min.x + lt.max.x) * 0.5;
+          const lcz = (lt.min.z + lt.max.z) * 0.5;
+          const ldx = lcx - ep.x, ldz = lcz - ep.z;
+          const ld = ldx*ldx + ldz*ldz;
+          if(ld < bestDist){
+            bestDist = ld;
+            bestLadder = ladders[li];
+          }
+        }
+        if(bestLadder){
+          // Check if enemy is at the ladder (XZ overlap with trigger zone)
+          const lt = bestLadder.trigger;
+          const inXZ = ep.x > lt.min.x - 0.3 && ep.x < lt.max.x + 0.3
+                    && ep.z > lt.min.z - 0.3 && ep.z < lt.max.z + 0.3;
+          if(inXZ){
+            usingLadder = bestLadder;
+          } else {
+            // Walk toward the ladder's center XZ. Skip normal player-chase movement.
+            const lcx = (lt.min.x + lt.max.x) * 0.5;
+            const lcz = (lt.min.z + lt.max.z) * 0.5;
+            const ladx = lcx - ep.x, ladz = lcz - ep.z;
+            const ldist = Math.sqrt(ladx*ladx + ladz*ladz);
+            if(ldist > 0.1){
+              const stepX = (ladx/ldist) * moveSpeed;
+              const stepZ = (ladz/ldist) * moveSpeed;
+              const newX = ep.x + stepX;
+              if(!enemyCollides(newX, ep.z, 0.45)){
+                ep.x = Math.max(-BW+2, Math.min(BW-2, newX));
+              }
+              const newZ = ep.z + stepZ;
+              if(!enemyCollides(ep.x, newZ, 0.45)){
+                ep.z = Math.max(-BW+2, Math.min(BW-2, newZ));
+              }
+              e.userData.walkPhase += .18;
+              e.userData.legL.rotation.x = Math.sin(e.userData.walkPhase) * .55;
+              e.userData.legR.rotation.x = Math.sin(e.userData.walkPhase+Math.PI) * .55;
+            }
+            e.lookAt(lcx, ep.y, lcz);
+            // Skip the rest of this enemy's AI this frame
+            continue;
+          }
+        }
+      }
+
+      if(usingLadder){
+        // Climbing: increase ep.y at climb speed, capped at ladder topY.
+        // While climbing, no horizontal movement and no shooting/melee.
+        const maxClimbY = usingLadder.topY;
+        if(ep.y < maxClimbY){
+          ep.y = Math.min(maxClimbY, ep.y + climbSpeed);
+        }
+        // Animate legs as if walking up
+        e.userData.walkPhase += .14;
+        e.userData.legL.rotation.x = Math.sin(e.userData.walkPhase) * .35;
+        e.userData.legR.rotation.x = Math.sin(e.userData.walkPhase+Math.PI) * .35;
+        e.lookAt(cp.x, ep.y, cp.z);
+        // At the top of the ladder, nudge enemy onto the roof so they can keep
+        // chasing the player. We push them slightly inward (toward the building).
+        if(ep.y >= maxClimbY - 0.01){
+          // Find inward direction: ladder center is at the trigger center; the
+          // building center is on the OPPOSITE side from the trigger's outer face.
+          // Use the inward direction stored on the ladder.
+          const ladderObj = usingLadder;
+          if(ladderObj.inwardX !== undefined){
+            ep.x += ladderObj.inwardX * 0.06;
+            ep.z += ladderObj.inwardZ * 0.06;
+          }
+        }
+        continue; // skip combat logic while climbing
+      }
+
+      // When the enemy has climbed up to a roof, they may be at ep.y > 0.
+      // Apply gentle "gravity" only when there's nothing to stand on at their
+      // current position — for simplicity, only descend if no building roof is
+      // beneath them. Check by testing obstacles at their XZ for the highest
+      // top within reach.
+      if(ep.y > 0){
+        let groundY = 0;
+        for(let oi=0; oi<obstacles.length; oi++){
+          const b = obstacles[oi];
+          if(ep.x > b.min.x - 0.4 && ep.x < b.max.x + 0.4
+            && ep.z > b.min.z - 0.4 && ep.z < b.max.z + 0.4){
+            if(b.max.y > groundY && b.max.y <= ep.y + 0.2){
+              groundY = b.max.y;
+            }
+          }
+        }
+        if(ep.y > groundY + 0.05){
+          // Fall toward groundY
+          ep.y = Math.max(groundY, ep.y - 0.20);
+        } else {
+          ep.y = groundY;
+        }
+      }
 
       if(distSq > stopDist*stopDist){
         const dist = Math.sqrt(distSq);
