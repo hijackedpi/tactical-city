@@ -11,6 +11,7 @@
   }
   #crosshair { position:absolute; top:50%; left:50%; width:16px; height:16px; transform:translate(-50%,-50%); pointer-events:none; }
   body.scoped #crosshair { display:none; }
+  body.driving #crosshair { display:none; }
   #scope-overlay svg { width:100%; height:100%; }
   #crosshair::before,#crosshair::after { content:''; position:absolute; background:#f00; }
   #crosshair::before { top:50%; width:100%; height:2px; margin-top:-1px; }
@@ -36,12 +37,27 @@
   #start-btn { padding:14px 44px; background:#fff; color:#111; border:none; font-size:16px; font-weight:bold; letter-spacing:4px; cursor:pointer; }
   #reload-msg { position:absolute; top:60%; left:50%; transform:translateX(-50%); color:#f80; font-size:22px; display:none; font-weight:bold; letter-spacing:3px; }
   #hit-flash  { position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(255,0,0,0); pointer-events:none; transition:background 0.08s; }
+  #enter-prompt {
+    position:absolute; top:62%; left:50%; transform:translateX(-50%);
+    color:#fff; font-size:20px; font-weight:bold; letter-spacing:2px;
+    background:rgba(0,0,0,0.65); padding:9px 18px; border-radius:5px;
+    border:2px solid #ffcc44; display:none; pointer-events:none;
+  }
+  #enter-prompt b { color:#ffcc44; }
+  #speedo {
+    position:absolute; bottom:30px; right:30px; color:#fff; font-size:18px; font-weight:bold;
+    background:rgba(20,25,35,0.85); padding:12px 20px; border-radius:7px;
+    pointer-events:none; border:2px solid #ffcc44; display:none; letter-spacing:2px;
+    text-align:center; min-width:140px;
+  }
+  #speedo .big { font-size:36px; color:#ffcc44; display:block; line-height:1; }
+  #speedo .lbl { font-size:11px; color:#aaa; letter-spacing:3px; }
 </style>
 </head>
 <body>
 <div id="instructions">
   <h1 id="title">TACTICAL CITY</h1>
-  <p id="desc">Urban warfare. Enemies shoot on sight.<br><b>WASD</b> Move &nbsp;|&nbsp; <b>Mouse</b> Aim &nbsp;|&nbsp; <b>Click</b> Shoot &nbsp;|&nbsp; <b>R</b> Reload &nbsp;|&nbsp; <b>Space</b> Jump</p>
+  <p id="desc">Urban warfare. Enemies shoot on sight.<br><b>WASD</b> Move &nbsp;|&nbsp; <b>Mouse</b> Aim &nbsp;|&nbsp; <b>Click</b> Shoot &nbsp;|&nbsp; <b>R</b> Reload &nbsp;|&nbsp; <b>Space</b> Jump &nbsp;|&nbsp; <b>E</b> Enter/Exit Vehicle</p>
   <div id="gun-select">
     <div class="gun-card selected" data-gun="pistol">
       <div class="gun-name">PISTOL</div>
@@ -60,6 +76,8 @@
 </div>
 <div id="hud">HP: 100 | AMMO: 12/12 | KILLS: 0</div>
 <div id="reload-msg">RELOADING...</div>
+<div id="enter-prompt">Press <b>E</b> to enter vehicle</div>
+<div id="speedo"><span class="big" id="speedo-num">0</span><span class="lbl">KM/H</span></div>
 <div id="hit-flash"></div>
 <div id="crosshair"></div>
 
@@ -89,6 +107,18 @@ let isScoped = false;
 const DEFAULT_FOV = 75;
 let currentFov = DEFAULT_FOV;
 let targetFov = DEFAULT_FOV;
+
+// ── VEHICLE STATE ──────────────────────────────────────────────────────────
+const cars = [];                    // {group, pos:{x,z}, angle, speed, halfW, halfL, color, wheels:[], steeringWheel}
+let playerInCar = false;
+let currentCar = null;
+const CAR_MAX_SPEED = 0.55;         // units per frame at top speed
+const CAR_MAX_REVERSE = 0.22;
+const CAR_ACCEL = 0.012;
+const CAR_BRAKE = 0.025;
+const CAR_FRICTION = 0.992;         // velocity decay per frame
+const CAR_TURN_RATE = 0.038;        // radians per frame at max grip
+const CAR_HANDBRAKE_DECAY = 0.94;
 
 function buildScopeSVG(style){
   const svg = document.getElementById('scope-svg');
@@ -161,35 +191,6 @@ function buildScopeSVG(style){
       <ellipse cx="35" cy="84" rx="2.5" ry="1.5" fill="#3a2818" opacity="0.6"/>
       <ellipse cx="65" cy="84" rx="2.5" ry="1.5" fill="#3a2818" opacity="0.6"/>
     `;
-  } else if(style === 'ironsight'){
-    svg.innerHTML = `
-      <defs>
-        <linearGradient id="ironMetal" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#2a2828"/>
-          <stop offset="100%" stop-color="#0a0808"/>
-        </linearGradient>
-        <linearGradient id="ironBarrel" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#3a3a3a"/>
-          <stop offset="40%" stop-color="#181818"/>
-          <stop offset="100%" stop-color="#080808"/>
-        </linearGradient>
-      </defs>
-      <rect x="0" y="58" width="100" height="42" fill="black" fill-opacity="0.20"/>
-      <path d="M 47 30 L 53 30 L 51.5 70 L 48.5 70 Z" fill="url(#ironBarrel)"/>
-      <path d="M 48.5 30 L 50 30 L 49.5 70 L 48.5 70 Z" fill="#444" opacity="0.4"/>
-      <circle cx="50" cy="33" r="0.9" fill="#222"/>
-      <circle cx="50" cy="32.7" r="0.7" fill="#ff8800"/>
-      <circle cx="50" cy="32.6" r="0.4" fill="#ffcc44"/>
-      <path d="M 32 65 L 68 65 L 72 75 L 28 75 Z" fill="url(#ironMetal)"/>
-      <rect x="44" y="62" width="12" height="5" rx="0.5" fill="#0a0a0a"/>
-      <rect x="44" y="62" width="12" height="1" fill="#2a2a2a"/>
-      <path d="M 47 62 L 50 66 L 53 62 Z" fill="#3a3a3a"/>
-      <rect x="30" y="75" width="40" height="6" rx="1" fill="#2a1a0a"/>
-      <rect x="30" y="75" width="40" height="1.5" fill="#3a2818"/>
-      ${[0,1,2,3,4,5,6,7,8].map(i => `<line x1="${33+i*4.5}" y1="76" x2="${33+i*4.5}" y2="80" stroke="#1a0a05" stroke-width="0.3"/>`).join('')}
-      <path d="M 25 81 Q 50 88 75 81 L 75 100 L 25 100 Z" fill="#2a1a0a"/>
-      <path d="M 30 83 Q 50 89 70 83 L 70 96 L 30 96 Z" fill="#3a2818"/>
-    `;
   } else if(style === 'sniper'){
     svg.innerHTML = `
       <defs>
@@ -215,62 +216,14 @@ function buildScopeSVG(style){
       <line x1="50" y1="50" x2="50" y2="54" stroke="#000" stroke-width="0.15"/>
       <line x1="46" y1="50" x2="50" y2="50" stroke="#000" stroke-width="0.15"/>
       <line x1="50" y1="50" x2="54" y2="50" stroke="#000" stroke-width="0.15"/>
-      <circle cx="50" cy="38" r="0.5" fill="#000"/>
-      <circle cx="50" cy="32" r="0.5" fill="#000"/>
-      <circle cx="50" cy="62" r="0.5" fill="#000"/>
-      <circle cx="50" cy="68" r="0.5" fill="#000"/>
-      <circle cx="38" cy="50" r="0.5" fill="#000"/>
-      <circle cx="32" cy="50" r="0.5" fill="#000"/>
-      <circle cx="62" cy="50" r="0.5" fill="#000"/>
-      <circle cx="68" cy="50" r="0.5" fill="#000"/>
       <circle cx="50" cy="50" r="0.35" fill="#ff2020"/>
-      <text x="46" y="34" font-size="1.6" fill="#000" font-family="monospace" text-anchor="end">3</text>
-      <text x="46" y="40" font-size="1.6" fill="#000" font-family="monospace" text-anchor="end">2</text>
-      <text x="46" y="46" font-size="1.6" fill="#000" font-family="monospace" text-anchor="end">1</text>
-      <defs>
-        <linearGradient id="rifleMetal" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#34343a"/>
-          <stop offset="50%" stop-color="#1a1a1e"/>
-          <stop offset="100%" stop-color="#0a0a0c"/>
-        </linearGradient>
-        <linearGradient id="rifleRail" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#2a2a2e"/>
-          <stop offset="100%" stop-color="#0a0a0c"/>
-        </linearGradient>
-        <linearGradient id="rifleWood" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#5a3e22"/>
-          <stop offset="100%" stop-color="#2a1808"/>
-        </linearGradient>
-      </defs>
-      <rect x="58" y="75" width="6" height="5" rx="0.8" fill="url(#rifleMetal)" stroke="#000" stroke-width="0.2"/>
-      <circle cx="61" cy="76" r="0.4" fill="#000"/>
-      <circle cx="61" cy="79" r="0.4" fill="#000"/>
-      <rect x="36" y="75" width="6" height="5" rx="0.8" fill="url(#rifleMetal)" stroke="#000" stroke-width="0.2"/>
-      <circle cx="39" cy="76" r="0.4" fill="#000"/>
-      <circle cx="39" cy="79" r="0.4" fill="#000"/>
-      <rect x="20" y="79" width="60" height="3" fill="url(#rifleRail)"/>
-      <line x1="22" y1="80.5" x2="34" y2="80.5" stroke="#000" stroke-width="0.15"/>
-      <line x1="46" y1="80.5" x2="54" y2="80.5" stroke="#000" stroke-width="0.15"/>
-      <line x1="66" y1="80.5" x2="78" y2="80.5" stroke="#000" stroke-width="0.15"/>
-      <path d="M 8 82 L 92 82 L 94 87 L 6 87 Z" fill="url(#rifleMetal)"/>
-      <rect x="60" y="83" width="10" height="2.5" rx="0.3" fill="#000" opacity="0.75"/>
-      <rect x="40" y="83" width="14" height="2.5" rx="0.4" fill="#1a1a1e" stroke="#3a3a3e" stroke-width="0.15"/>
-      <rect x="42" y="83.4" width="2" height="1.7" fill="#3a3a3e"/>
-      <rect x="50" y="83.4" width="2" height="1.7" fill="#3a3a3e"/>
-      <rect x="88" y="84" width="12" height="2" fill="url(#rifleMetal)"/>
-      <path d="M 44 87 L 56 87 L 55 96 L 45 96 Z" fill="url(#rifleMetal)" stroke="#000" stroke-width="0.2"/>
-      <line x1="45.5" y1="90" x2="54.5" y2="90" stroke="#000" stroke-width="0.15"/>
-      <line x1="45.5" y1="93" x2="54.5" y2="93" stroke="#000" stroke-width="0.15"/>
-      <path d="M 10 87 Q 50 92 90 87 L 92 100 L 8 100 Z" fill="url(#rifleWood)"/>
-      <path d="M 14 89 Q 50 93 86 89 L 86 98 L 14 98 Z" fill="#3a2818" opacity="0.7"/>
-      <ellipse cx="30" cy="92" rx="3" ry="1.5" fill="#28201a" opacity="0.6"/>
-      <ellipse cx="70" cy="92" rx="3" ry="1.5" fill="#28201a" opacity="0.6"/>
     `;
   }
 }
 
 function setScoped(on){
   if(isScoped === on) return;
+  if(playerInCar) return; // no scoping while driving
   isScoped = on;
   if(on){
     targetFov = gun.scopeFov;
@@ -306,7 +259,7 @@ const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x87CEEB);
 scene.fog=new THREE.FogExp2(0x99aacc,0.018);
 
-const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,500);
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,900);
 camera.position.set(0,1.7,0);
 scene.add(camera);
 
@@ -419,48 +372,38 @@ const metalTex=noiseCanvas(256,'#5a5f66',20);
 const woodTex=noiseCanvas(256,'#8b6914',18,(c,s)=>{c.strokeStyle='rgba(60,40,10,.25)';c.lineWidth=1;for(let i=0;i<8;i++){c.beginPath();c.moveTo(0,i*s/8);c.lineTo(s,i*s/8);c.stroke();}});
 const rustTex=noiseCanvas(256,'#3a3a3a',20,(c,s)=>{for(let i=0;i<35;i++){c.fillStyle=`rgba(${140+Math.random()*60|0},${50+Math.random()*30|0},20,${Math.random()*.4+.1})`;c.beginPath();c.ellipse(Math.random()*s,Math.random()*s,Math.random()*25+4,Math.random()*18+4,Math.random()*Math.PI,0,Math.PI*2);c.fill();}});
 
-// === NEW BUILDING TEXTURES ===
-// Sandstone — warm beige, fine horizontal banding
 const sandstoneTex=(()=>{
   const cv=document.createElement('canvas');cv.width=cv.height=512;const c=cv.getContext('2d');
   c.fillStyle='#c9a878';c.fillRect(0,0,512,512);
   const id=c.getImageData(0,0,512,512);
   for(let i=0;i<id.data.length;i+=4){const n=(Math.random()-.5)*22; id.data[i]+=n;id.data[i+1]+=n;id.data[i+2]+=n;}
   c.putImageData(id,0,0);
-  // Horizontal sediment bands
   for(let y=0;y<512;y+=Math.random()*40+20){
     c.fillStyle=`rgba(${130+Math.random()*40|0},${100+Math.random()*30|0},${70+Math.random()*30|0},${Math.random()*.18+.05})`;
     c.fillRect(0,y,512,Math.random()*4+1);
   }
   const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
 })();
-// Dark concrete — heavy industrial look, panel seams
 const darkConcreteTex=(()=>{
   const cv=document.createElement('canvas');cv.width=cv.height=512;const c=cv.getContext('2d');
   c.fillStyle='#4a4845';c.fillRect(0,0,512,512);
   const id=c.getImageData(0,0,512,512);
   for(let i=0;i<id.data.length;i+=4){const n=(Math.random()-.5)*30; id.data[i]+=n;id.data[i+1]+=n;id.data[i+2]+=n;}
   c.putImageData(id,0,0);
-  // Vertical panel seams every 128px
   for(let x=128;x<512;x+=128){c.fillStyle='rgba(20,18,15,.5)';c.fillRect(x-1,0,2,512);}
-  // Horizontal seam at mid
   c.fillStyle='rgba(20,18,15,.4)';c.fillRect(0,256,512,2);
-  // Dirt streaks
   for(let i=0;i<6;i++){c.fillStyle=`rgba(${30+Math.random()*30|0},${25+Math.random()*25|0},20,${Math.random()*.15+.05})`;c.fillRect(Math.random()*512,0,Math.random()*6+2,512);}
   const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
 })();
-// Beige tile — cream-colored ceramic tile grid (looks like a modern hotel/mall)
 const tileTex=(()=>{
   const cv=document.createElement('canvas');cv.width=cv.height=512;const c=cv.getContext('2d');
   c.fillStyle='#d6c9a8';c.fillRect(0,0,512,512);
-  // 64px square tiles with darker grout lines
   for(let r=0;r<512/64+1;r++)for(let col=0;col<512/64+1;col++){
     const x=col*64,y=r*64;
     const v=210+Math.random()*30|0;
     c.fillStyle=`rgb(${v},${v-15},${v-40})`;
     c.fillRect(x+1,y+1,62,62);
   }
-  // Grout
   c.strokeStyle='rgba(70,55,40,.6)';c.lineWidth=2;
   for(let i=0;i<=512;i+=64){c.beginPath();c.moveTo(0,i);c.lineTo(512,i);c.stroke();c.beginPath();c.moveTo(i,0);c.lineTo(i,512);c.stroke();}
   const t=new THREE.CanvasTexture(cv);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
@@ -485,18 +428,301 @@ function addBox(w,h,d,x,y,z,mats,collide=true){
 }
 
 // ── GROUND ─────────────────────────────────────────────────────────────────
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(300,300),new THREE.MeshStandardMaterial({map:asphaltTex,roughness:.95}));
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(650,650),new THREE.MeshStandardMaterial({map:asphaltTex,roughness:.95}));
 floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
 const plazaMesh=new THREE.Mesh(new THREE.PlaneGeometry(32,32),new THREE.MeshStandardMaterial({map:paverTex,roughness:.92}));
 plazaMesh.rotation.x=-Math.PI/2; plazaMesh.position.y=0.02; scene.add(plazaMesh);
 
+// ── ROADS ──────────────────────────────────────────────────────────────────
+const ROAD_WIDTH = 10;
+const SIDEWALK_W = 2.5;
+const roadMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.95 });
+const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x8a8478, roughness: 0.92 });
+const paintWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const paintYellowMat = new THREE.MeshBasicMaterial({ color: 0xddc040 });
+
+const roadSegments = [];
+const intersections = [];
+
+function addRoad(x, z, length, orient){
+  const w = orient === 'h' ? length : ROAD_WIDTH;
+  const d = orient === 'h' ? ROAD_WIDTH : length;
+  const sw = orient === 'h' ? length : ROAD_WIDTH + SIDEWALK_W*2;
+  const sd = orient === 'h' ? ROAD_WIDTH + SIDEWALK_W*2 : length;
+  const sidewalk = new THREE.Mesh(new THREE.PlaneGeometry(sw, sd), sidewalkMat);
+  sidewalk.rotation.x = -Math.PI/2;
+  sidewalk.position.set(x, 0.008, z);
+  sidewalk.receiveShadow = true;
+  scene.add(sidewalk);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(w, d), roadMat);
+  road.rotation.x = -Math.PI/2;
+  road.position.set(x, 0.015, z);
+  road.receiveShadow = true;
+  scene.add(road);
+  roadSegments.push({x, z, w, d, orient});
+
+  const centerLen = length - ROAD_WIDTH;
+  if(centerLen > 0){
+    for(const off of [-0.25, 0.25]){
+      const yw = orient === 'h' ? centerLen : 0.15;
+      const yd = orient === 'h' ? 0.15 : centerLen;
+      const yLine = new THREE.Mesh(new THREE.PlaneGeometry(yw, yd), paintYellowMat);
+      yLine.rotation.x = -Math.PI/2;
+      yLine.position.set(
+        x + (orient === 'h' ? 0 : off),
+        0.025,
+        z + (orient === 'h' ? off : 0)
+      );
+      scene.add(yLine);
+    }
+  }
+  for(const edgeOff of [-ROAD_WIDTH/2 + 0.3, ROAD_WIDTH/2 - 0.3]){
+    const ew = orient === 'h' ? length : 0.12;
+    const ed = orient === 'h' ? 0.12 : length;
+    const eLine = new THREE.Mesh(new THREE.PlaneGeometry(ew, ed), paintWhiteMat);
+    eLine.rotation.x = -Math.PI/2;
+    eLine.position.set(
+      x + (orient === 'h' ? 0 : edgeOff),
+      0.022,
+      z + (orient === 'h' ? edgeOff : 0)
+    );
+    scene.add(eLine);
+  }
+  const dashLen = 2, dashGap = 2;
+  const halfLen = centerLen / 2;
+  for(const laneOff of [-ROAD_WIDTH/4, ROAD_WIDTH/4]){
+    for(let pos = -halfLen + dashLen/2; pos < halfLen; pos += dashLen + dashGap){
+      const dw = orient === 'h' ? dashLen : 0.12;
+      const dd = orient === 'h' ? 0.12 : dashLen;
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(dw, dd), paintWhiteMat);
+      dash.rotation.x = -Math.PI/2;
+      dash.position.set(
+        x + (orient === 'h' ? pos : laneOff),
+        0.023,
+        z + (orient === 'h' ? laneOff : pos)
+      );
+      scene.add(dash);
+    }
+  }
+}
+
+const RING_RADII = [42, 85, 120, 160, 205, 245];
+for(const r of RING_RADII){
+  const len = r * 2;
+  addRoad( 0,  r, len, 'h');
+  addRoad( 0, -r, len, 'h');
+  addRoad( r,  0, len, 'v');
+  addRoad(-r,  0, len, 'v');
+}
+for(let i = 0; i < RING_RADII.length - 1; i++){
+  const r1 = RING_RADII[i];
+  const r2 = RING_RADII[i + 1];
+  const mid = (r1 + r2) / 2;
+  const len = r2 - r1;
+  for(const sx of [1, -1]){
+    for(const sz of [1, -1]){
+      addRoad(sx * r1, sz * mid, len, 'v');
+      addRoad(sx * mid, sz * r1, len, 'h');
+    }
+  }
+}
+const rInner = RING_RADII[0];
+const rOuter = RING_RADII[RING_RADII.length - 1];
+const stubLen = 30;
+for(const sx of [1, -1]){
+  for(const sz of [1, -1]){
+    addRoad(sx * rInner, sz * rInner/2, rInner, 'v');
+    addRoad(sx * rInner/2, sz * rInner, rInner, 'h');
+    addRoad(sx * rOuter, sz * (rOuter + stubLen/2), stubLen, 'v');
+    addRoad(sx * (rOuter + stubLen/2), sz * rOuter, stubLen, 'h');
+  }
+}
+
+for(const r of RING_RADII){
+  intersections.push({x:  r, z:  r});
+  intersections.push({x: -r, z:  r});
+  intersections.push({x:  r, z: -r});
+  intersections.push({x: -r, z: -r});
+}
+const intSize = ROAD_WIDTH;
+const intSwSize = ROAD_WIDTH + SIDEWALK_W*2;
+for(const it of intersections){
+  const swPatch = new THREE.Mesh(new THREE.PlaneGeometry(intSwSize, intSwSize), sidewalkMat);
+  swPatch.rotation.x = -Math.PI/2;
+  swPatch.position.set(it.x, 0.010, it.z);
+  scene.add(swPatch);
+  const roadPatch = new THREE.Mesh(new THREE.PlaneGeometry(intSize, intSize), roadMat);
+  roadPatch.rotation.x = -Math.PI/2;
+  roadPatch.position.set(it.x, 0.017, it.z);
+  scene.add(roadPatch);
+}
+
+// ── TRAFFIC LIGHTS ─────────────────────────────────────────────────────────
+const trafficLights = [];
+const tlPoleMat = new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:.7, metalness:.5});
+const tlHousingMat = new THREE.MeshStandardMaterial({color:0x222222, roughness:.6, metalness:.4});
+
+function makeTrafficLight(x, z, facingYaw, axis){
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 5.5, 8), tlPoleMat);
+  pole.position.y = 2.75; pole.castShadow = true; g.add(pole);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 2.2), tlPoleMat);
+  arm.position.set(0, 5.4, 1.1); arm.castShadow = true; g.add(arm);
+  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.5, 0.5), tlHousingMat);
+  housing.position.set(0, 4.6, 2.2); housing.castShadow = true; g.add(housing);
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.55), tlHousingMat);
+  visor.position.set(0, 5.38, 2.22); g.add(visor);
+
+  const redMat    = new THREE.MeshStandardMaterial({color:0x440000, emissive:0xff0000, emissiveIntensity:0.0, roughness:0.3});
+  const yellowMat = new THREE.MeshStandardMaterial({color:0x443300, emissive:0xffcc00, emissiveIntensity:0.0, roughness:0.3});
+  const greenMat  = new THREE.MeshStandardMaterial({color:0x004400, emissive:0x00ff00, emissiveIntensity:0.0, roughness:0.3});
+
+  const lightGeo = new THREE.CircleGeometry(0.17, 16);
+  const red = new THREE.Mesh(lightGeo, redMat); red.position.set(0, 5.05, 2.46); g.add(red);
+  const yellow = new THREE.Mesh(lightGeo, yellowMat); yellow.position.set(0, 4.6, 2.46); g.add(yellow);
+  const green = new THREE.Mesh(lightGeo, greenMat); green.position.set(0, 4.15, 2.46); g.add(green);
+
+  g.position.set(x, 0, z);
+  g.rotation.y = facingYaw;
+  scene.add(g);
+
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(
+    new THREE.Vector3(x, 1.5, z), new THREE.Vector3(0.5, 3, 0.5)
+  ));
+
+  trafficLights.push({redMat, yellowMat, greenMat, axis});
+}
+const MAJOR_TL_RINGS = [85, 120, 160, 205];
+for(const r of MAJOR_TL_RINGS){
+  const corners = [
+    {ix:  r, iz:  r}, {ix: -r, iz:  r},
+    {ix:  r, iz: -r}, {ix: -r, iz: -r},
+  ];
+  for(const c of corners){
+    const off = ROAD_WIDTH/2 + 1.8;
+    makeTrafficLight(c.ix + off, c.iz + off, -Math.PI*3/4, 'ns');
+    makeTrafficLight(c.ix - off, c.iz + off,  Math.PI*3/4, 'ew');
+    makeTrafficLight(c.ix + off, c.iz - off, -Math.PI/4,    'ew');
+    makeTrafficLight(c.ix - off, c.iz - off,  Math.PI/4,    'ns');
+  }
+}
+
+let tlPhase = 0;
+let tlPhaseStart = 0;
+const TL_PHASE_DURATIONS = [6000, 1500, 800, 6000, 1500, 800];
+
+function updateTrafficLights(now){
+  if(now - tlPhaseStart > TL_PHASE_DURATIONS[tlPhase]){
+    tlPhase = (tlPhase + 1) % 6;
+    tlPhaseStart = now;
+  }
+  let nsR=0, nsY=0, nsG=0, ewR=0, ewY=0, ewG=0;
+  switch(tlPhase){
+    case 0: nsG = 1; ewR = 1; break;
+    case 1: nsY = 1; ewR = 1; break;
+    case 2: nsR = 1; ewR = 1; break;
+    case 3: nsR = 1; ewG = 1; break;
+    case 4: nsR = 1; ewY = 1; break;
+    case 5: nsR = 1; ewR = 1; break;
+  }
+  for(const tl of trafficLights){
+    if(tl.axis === 'ns'){
+      tl.redMat.emissiveIntensity    = nsR * 1.4;
+      tl.yellowMat.emissiveIntensity = nsY * 1.4;
+      tl.greenMat.emissiveIntensity  = nsG * 1.4;
+    } else {
+      tl.redMat.emissiveIntensity    = ewR * 1.4;
+      tl.yellowMat.emissiveIntensity = ewY * 1.4;
+      tl.greenMat.emissiveIntensity  = ewG * 1.4;
+    }
+  }
+}
+
 // ── BORDER WALLS ───────────────────────────────────────────────────────────
-const BW=148,WH=20,WT=4;
+const BW=300,WH=20,WT=4;
 [[BW*2+WT,WH,WT,0,0,BW],[BW*2+WT,WH,WT,0,0,-BW],[WT,WH,BW*2+WT,BW,0,0],[WT,WH,BW*2+WT,-BW,0,0]]
   .forEach(([w,h,d,x,y,z])=>addBox(w,h,d,x,y,z,sides(concreteTex,w,h,d)));
 
+// ── WINDOW DECAL TEXTURE ──────────────────────────────────────────────────
+const windowDecalTex = (()=>{
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
+  const c = cv.getContext('2d');
+  c.clearRect(0,0,256,256);
+  const cols = 4, rows = 6;
+  const padX = 16, padY = 14;
+  const wW = (256 - padX*2) / cols;
+  const wH = (256 - padY*2) / rows;
+  for(let r=0;r<rows;r++)for(let col=0;col<cols;col++){
+    const x = padX + col*wW + 3;
+    const y = padY + r*wH + 3;
+    const ww = wW - 6, wh = wH - 6;
+    const roll = Math.random();
+    if(roll < 0.55){
+      const yellow = 200 + Math.random()*55|0;
+      c.fillStyle = `rgba(255,${yellow},${100+Math.random()*60|0},${.85+Math.random()*.15})`;
+    } else if(roll < 0.85){
+      c.fillStyle = `rgba(${15+Math.random()*15|0},${20+Math.random()*15|0},${30+Math.random()*15|0},.9)`;
+    } else {
+      c.fillStyle = `rgba(${120+Math.random()*40|0},${90+Math.random()*30|0},${60+Math.random()*30|0},.85)`;
+    }
+    c.fillRect(x, y, ww, wh);
+    c.strokeStyle = 'rgba(30,25,20,.7)';
+    c.lineWidth = 1.5;
+    c.strokeRect(x, y, ww, wh);
+    c.beginPath();
+    c.moveTo(x + ww/2, y);
+    c.lineTo(x + ww/2, y + wh);
+    c.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+})();
+
+function addWindowDecal(w, h, d, x, z){
+  const borderX = Math.min(0.8, w*0.1);
+  const borderY = 0.8;
+  const borderZ = Math.min(0.8, d*0.1);
+  const decalOffset = 0.05;
+  const faceW = w - borderX*2;
+  const faceH = h - borderY*2;
+  const repsX = Math.max(1, Math.round(faceW / 4));
+  const repsY = Math.max(1, Math.round(faceH / 3));
+
+  for(const sign of [1, -1]){
+    const tex = windowDecalTex.clone();
+    tex.repeat.set(repsX, repsY);
+    tex.needsUpdate = true;
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex, transparent: true, roughness: 0.3, metalness: 0.4,
+      emissive: 0xffcc66, emissiveMap: tex, emissiveIntensity: 0.35,
+      side: THREE.DoubleSide
+    });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(faceW, faceH), mat);
+    plane.position.set(x, h/2, z + sign*(d/2 + decalOffset));
+    if(sign === -1) plane.rotation.y = Math.PI;
+    scene.add(plane);
+  }
+  const faceD = d - borderZ*2;
+  const repsD = Math.max(1, Math.round(faceD / 4));
+  for(const sign of [1, -1]){
+    const tex = windowDecalTex.clone();
+    tex.repeat.set(repsD, repsY);
+    tex.needsUpdate = true;
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex, transparent: true, roughness: 0.3, metalness: 0.4,
+      emissive: 0xffcc66, emissiveMap: tex, emissiveIntensity: 0.35,
+      side: THREE.DoubleSide
+    });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(faceD, faceH), mat);
+    plane.position.set(x + sign*(w/2 + decalOffset), h/2, z);
+    plane.rotation.y = sign === 1 ? Math.PI/2 : -Math.PI/2;
+    scene.add(plane);
+  }
+}
+
 // ── BUILDINGS ──────────────────────────────────────────────────────────────
-function building(w,h,d,x,z,style='brick'){
+function building(w,h,d,x,z,style='brick',windows=false){
   let mat;
   if(style==='glass'){
     const tex=glassTex;
@@ -512,184 +738,62 @@ function building(w,h,d,x,z,style='brick'){
     const trim=new THREE.Mesh(new THREE.BoxGeometry(w+0.2,0.5,d+0.2),new THREE.MeshStandardMaterial({color:0x4a4239,roughness:.8}));
     trim.position.set(x,h-0.25,z); scene.add(trim);
   }
+  if(windows && style !== 'glass' && style !== 'office'){
+    addWindowDecal(w, h, d, x, z);
+  }
 }
-// === INNER RING — small mixed-use buildings facing the central plaza ===
-building(10,12,8,-8,24,'stucco'); building(10,10,8,8,24,'office');
-building(10,14,8,-8,-24,'red'); building(10,10,8,8,-24,'brick');
-building(8,11,10,24,-20,'brick'); building(8,13,10,24,-8,'office');
-building(8,10,10,24,8,'red'); building(8,12,10,24,20,'stucco');
-building(8,12,10,-24,-20,'stucco'); building(8,10,10,-24,-8,'brick');
-building(8,13,10,-24,8,'office'); building(8,11,10,-24,20,'red');
+building(10,12,8,-10,30,'stucco',true); building(10,10,8,10,30,'office');
+building(10,14,8,-10,-30,'red',true); building(10,10,8,10,-30,'brick',true);
+building(8,11,10,30,-22,'brick'); building(8,13,10,30,-8,'office');
+building(8,10,10,30,8,'red',true); building(8,12,10,30,22,'stucco',true);
+building(8,12,10,-30,-22,'stucco',true); building(8,10,10,-30,-8,'brick',true);
+building(8,13,10,-30,8,'office'); building(8,11,10,-30,22,'red');
 
-// === MID-RING BLOCKS — medium buildings between inner ring and main avenues ===
-building(14,18,14,38,38,'office'); building(12,14,12,55,35,'brick'); building(12,22,12,38,55,'red');
-building(14,16,14,-38,38,'stucco'); building(12,13,12,-55,35,'red'); building(12,24,12,-38,55,'office');
-building(14,20,14,38,-38,'red'); building(12,16,12,55,-35,'stucco'); building(12,18,12,38,-55,'brick');
-building(14,14,14,-38,-38,'brick'); building(12,19,12,-55,-35,'office'); building(12,21,12,-38,-55,'stucco');
+building(14,18,14,55,55,'office'); building(12,14,12,75,52,'brick',true); building(12,22,12,52,75,'red',true);
+building(14,16,14,-55,55,'stucco',true); building(12,13,12,-75,52,'red'); building(12,24,12,-52,75,'office');
+building(14,20,14,55,-55,'red',true); building(12,16,12,75,-52,'stucco',true); building(12,18,12,52,-75,'brick',true);
+building(14,14,14,-55,-55,'brick',true); building(12,19,12,-75,-52,'office'); building(12,21,12,-52,-75,'stucco',true);
 
-// === DOWNTOWN CORE — tall buildings clustered along main avenues ===
-building(16,28,14,-28,75,'office'); building(14,35,12,0,78,'sandstone'); building(16,25,14,28,75,'brick');
-building(16,24,14,-28,-75,'red'); building(14,38,12,0,-78,'tile'); building(16,30,14,28,-75,'office');
-building(14,26,16,75,-28,'stucco'); building(12,40,14,78,0,'darkconcrete'); building(14,28,16,75,28,'red');
-building(14,22,16,-75,-28,'brick'); building(12,36,14,-78,0,'sandstone'); building(14,30,16,-75,28,'office');
+building(16,28,14,-35,100,'office'); building(14,35,12,0,105,'sandstone',true); building(16,25,14,35,100,'brick',true);
+building(16,24,14,-35,-100,'red',true); building(14,38,12,0,-105,'tile',true); building(16,30,14,35,-100,'office');
+building(14,26,16,100,-35,'stucco',true); building(12,40,14,105,0,'darkconcrete',true); building(14,28,16,100,35,'red',true);
+building(14,22,16,-100,-35,'brick',true); building(12,36,14,-105,0,'sandstone',true); building(14,30,16,-100,35,'office');
 
-// === OUTER RING SKYSCRAPERS — tallest buildings, corner landmarks ===
-building(18,32,18,105,35,'glass'); building(18,28,18,35,105,'office'); building(18,36,18,105,105,'glass');
-building(18,34,18,-105,35,'tile'); building(18,36,18,-35,105,'sandstone'); building(18,38,18,-105,105,'office');
-building(18,36,18,105,-35,'darkconcrete'); building(18,32,18,35,-105,'sandstone'); building(18,40,18,105,-105,'glass');
-building(18,28,18,-105,-35,'glass'); building(18,32,18,-35,-105,'office'); building(18,35,18,-105,-105,'office');
+building(18,32,18,140,55,'glass'); building(18,28,18,55,140,'office'); building(18,36,18,140,140,'glass');
+building(18,34,18,-140,55,'tile',true); building(18,36,18,-55,140,'sandstone',true); building(18,38,18,-140,140,'office');
+building(18,36,18,140,-55,'darkconcrete',true); building(18,32,18,55,-140,'sandstone',true); building(18,40,18,140,-140,'glass');
+building(18,28,18,-140,-55,'glass'); building(18,32,18,-55,-140,'office'); building(18,35,18,-140,-140,'office');
 
-// === EDGE WAREHOUSES — low industrial buildings along the map perimeter ===
-building(20,12,12,75,-115,'grey'); building(20,12,12,-75,-115,'darkconcrete');
-building(20,12,12,75,115,'darkconcrete'); building(20,12,12,-75,115,'grey');
-building(12,14,20,115,75,'grey'); building(12,14,20,-115,75,'darkconcrete');
-building(12,14,20,115,-75,'darkconcrete'); building(12,14,20,-115,-75,'grey');
+building(14,16,14,180,20,'red',true); building(14,18,14,180,55,'brick',true); building(14,15,14,180,-55,'stucco',true);
+building(14,17,14,-180,20,'brick',true); building(14,16,14,-180,55,'red',true); building(14,19,14,-180,-55,'stucco',true);
+building(14,18,14,20,180,'stucco',true); building(14,15,14,55,180,'red',true); building(14,17,14,-55,180,'brick',true);
+building(14,16,14,20,-180,'red',true); building(14,19,14,55,-180,'brick',true); building(14,15,14,-55,-180,'stucco',true);
+building(12,14,12,140,100,'red'); building(12,16,12,100,140,'stucco',true);
+building(12,15,12,-140,100,'brick',true); building(12,14,12,-100,140,'red');
+building(12,17,12,140,-100,'stucco',true); building(12,15,12,100,-140,'brick',true);
+building(12,14,12,-140,-100,'red',true); building(12,16,12,-100,-140,'stucco');
 
-// ── LADDERS ───────────────────────────────────────────────────────────────
-// Ladder lets the player climb onto a building roof. When the player walks
-// into the ladder trigger zone, W = up, S = down, gravity off.
-//   side: 'north' (+z face), 'south' (-z face), 'east' (+x face), 'west' (-x face)
-const ladders = []; // {trigger:Box3, baseY, topY}
-const _ladderRailMat = new THREE.MeshStandardMaterial({color:0x3a3a3a, roughness:.6, metalness:.6});
-const _ladderRungMat = new THREE.MeshStandardMaterial({color:0x5a5a5a, roughness:.6, metalness:.6});
+building(16,24,16,225,0,'office'); building(16,22,16,225,55,'tile',true); building(16,26,16,225,-55,'sandstone',true);
+building(16,28,16,-225,0,'darkconcrete',true); building(16,22,16,-225,55,'office'); building(16,24,16,-225,-55,'tile',true);
+building(16,26,16,0,225,'sandstone',true); building(16,24,16,55,225,'office'); building(16,22,16,-55,225,'darkconcrete',true);
+building(16,22,16,0,-225,'tile',true); building(16,26,16,55,-225,'sandstone',true); building(16,28,16,-55,225,'office');
+building(14,20,14,180,140,'office'); building(14,22,14,140,180,'tile',true);
+building(14,22,14,-180,140,'sandstone',true); building(14,20,14,-140,180,'office');
+building(14,18,14,180,-140,'tile',true); building(14,20,14,140,-180,'darkconcrete',true);
+building(14,20,14,-180,-140,'office'); building(14,18,14,-140,-180,'sandstone',true);
 
-function makeLadder(buildingX, buildingZ, buildingW, buildingD, buildingH, side){
-  // Push ladder far enough off the wall that the player (half-width 0.35) can stand
-  // on the ladder without their collision box intersecting the building wall.
-  // Player center needs to be at distance > 0.35 + small margin from the wall surface.
-  const wallOffset = 0.55;
-  let lx = buildingX, lz = buildingZ;
-  if(side === 'north'){ lz = buildingZ + buildingD/2 + wallOffset; }
-  else if(side === 'south'){ lz = buildingZ - buildingD/2 - wallOffset; }
-  else if(side === 'east'){ lx = buildingX + buildingW/2 + wallOffset; }
-  else if(side === 'west'){ lx = buildingX - buildingW/2 - wallOffset; }
+building(24,14,16,265,0,'grey'); building(24,12,16,265,50,'darkconcrete'); building(24,14,16,265,-50,'grey');
+building(24,13,16,-265,0,'darkconcrete'); building(24,14,16,-265,50,'grey'); building(24,12,16,-265,-50,'darkconcrete');
+building(16,14,24,0,265,'grey'); building(16,12,24,50,265,'darkconcrete'); building(16,14,24,-50,265,'grey');
+building(16,13,24,0,-265,'darkconcrete'); building(16,14,24,50,-265,'grey'); building(16,12,24,-50,-265,'darkconcrete');
+building(20,16,20,225,225,'darkconcrete'); building(20,15,20,-225,225,'grey');
+building(20,15,20,225,-225,'grey'); building(20,16,20,-225,-225,'darkconcrete');
+building(18,14,18,265,140,'grey'); building(18,12,18,140,265,'darkconcrete');
+building(18,12,18,-265,140,'darkconcrete'); building(18,14,18,-140,265,'grey');
+building(18,14,18,265,-140,'darkconcrete'); building(18,12,18,140,-265,'grey');
+building(18,12,18,-265,-140,'grey'); building(18,14,18,-140,-265,'darkconcrete');
 
-  // Ladder reaches slightly above roof height so stepping off is easier.
-  const topY = buildingH + 0.3;     // player's max climb height (feet ~0.3 above roof)
-  const railHeight = buildingH + 0.9; // visual rails extend above for realism
-
-  // Two vertical rails, 0.5 units apart
-  const railSpacing = 0.5;
-  // Determine rail axis: rails are perpendicular to the wall normal
-  const railAlongX = (side === 'north' || side === 'south');
-
-  const g = new THREE.Group();
-
-  function addRail(offset){
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, railHeight, 0.06), _ladderRailMat);
-    rail.position.y = railHeight/2;
-    if(railAlongX) rail.position.x = offset;
-    else rail.position.z = offset;
-    g.add(rail);
-  }
-  addRail(railSpacing/2);
-  addRail(-railSpacing/2);
-
-  // Rungs every 0.4 units
-  const rungSpacing = 0.4;
-  const nRungs = Math.floor(railHeight / rungSpacing);
-  for(let i = 0; i < nRungs; i++){
-    const rungY = 0.2 + i * rungSpacing;
-    const rung = new THREE.Mesh(
-      railAlongX
-        ? new THREE.BoxGeometry(railSpacing + 0.08, 0.04, 0.04)
-        : new THREE.BoxGeometry(0.04, 0.04, railSpacing + 0.08),
-      _ladderRungMat
-    );
-    rung.position.y = rungY;
-    g.add(rung);
-  }
-
-  // Mounting brackets — short bars that connect the ladder back to the wall,
-  // placed every few units of height so it looks securely attached.
-  const bracketLen = wallOffset; // distance from wall surface to ladder
-  const bracketDir = (side === 'north' || side === 'east') ? -1 : 1; // points toward wall
-  const bracketYs = [];
-  for(let by = 1.5; by < railHeight - 0.5; by += 4){ bracketYs.push(by); }
-  for(const by of bracketYs){
-    for(const offset of [-railSpacing/2, railSpacing/2]){
-      const bracket = new THREE.Mesh(
-        railAlongX
-          ? new THREE.BoxGeometry(0.05, 0.05, bracketLen)
-          : new THREE.BoxGeometry(bracketLen, 0.05, 0.05),
-        _ladderRailMat
-      );
-      bracket.position.y = by;
-      if(railAlongX){
-        bracket.position.x = offset;
-        bracket.position.z = bracketDir * bracketLen/2; // extends toward wall
-      } else {
-        bracket.position.z = offset;
-        bracket.position.x = bracketDir * bracketLen/2;
-      }
-      g.add(bracket);
-    }
-  }
-
-  g.position.set(lx, 0, lz);
-  scene.add(g);
-
-  // Trigger zone — placed on the OUTER side of the ladder only, so the player
-  // can't climb by being on the building's interior side. The trigger sits
-  // between the ladder and the open street.
-  const triggerHalfSide = 0.55; // along the wall
-  const triggerOuterDepth = 0.7; // how far away from the wall the trigger reaches
-  const triggerInnerDepth = 0.0; // how far toward the wall (0 = stops at ladder)
-
-  // Direction pointing AWAY from the building (toward the open street)
-  let outerDirX = 0, outerDirZ = 0;
-  if(side === 'north') outerDirZ = +1;
-  else if(side === 'south') outerDirZ = -1;
-  else if(side === 'east') outerDirX = +1;
-  else if(side === 'west') outerDirX = -1;
-
-  // Trigger spans from the ladder position outward
-  const triggerMinX = lx + Math.min(0, outerDirX * triggerOuterDepth) - (railAlongX ? triggerHalfSide : 0);
-  const triggerMaxX = lx + Math.max(0, outerDirX * triggerOuterDepth) + (railAlongX ? triggerHalfSide : 0);
-  const triggerMinZ = lz + Math.min(0, outerDirZ * triggerOuterDepth) - (railAlongX ? 0 : triggerHalfSide);
-  const triggerMaxZ = lz + Math.max(0, outerDirZ * triggerOuterDepth) + (railAlongX ? 0 : triggerHalfSide);
-
-  const trigger = new THREE.Box3(
-    new THREE.Vector3(triggerMinX, 0, triggerMinZ),
-    new THREE.Vector3(triggerMaxX, topY + 0.5, triggerMaxZ)
-  );
-  // Store the inward direction (toward the building) so the climb code can
-  // push the player onto the roof when they reach the top and press W.
-  ladders.push({trigger, baseY: 0, topY, inwardX: -outerDirX, inwardZ: -outerDirZ});
-}
-
-// Place ladders on selected shorter buildings (only ones <= 16 tall — climbing
-// a 35-tall skyscraper by ladder would be tedious; rooftops on these short
-// buildings give satisfying sniper perches with clear sightlines)
-//
-// Each call: (buildingX, buildingZ, buildingW, buildingD, buildingH, side)
-// 'side' picks which wall the ladder is mounted on — point it toward an open street.
-
-// Inner ring — 4 ladders on the inner ring corners (facing the plaza)
-makeLadder(  8, 24, 10, 8, 10, 'south');   // north-inner east piece (top is 10 tall)
-makeLadder( -8, 24, 10, 8, 12, 'south');   // north-inner west piece (12 tall)
-makeLadder(  8,-24, 10, 8, 10, 'north');   // south-inner east piece
-makeLadder(-8,-24, 10, 8, 14, 'north');    // south-inner west piece
-makeLadder( 24,  8,  8,10, 10, 'west');    // east-inner top piece
-makeLadder( 24,-20,  8,10, 11, 'west');    // east-inner bottom piece
-makeLadder(-24,  8,  8,10, 13, 'east');    // west-inner top piece
-makeLadder(-24,-20,  8,10, 12, 'east');    // west-inner bottom piece
-
-// Mid-ring — ladders on the 4 corner medium buildings (16-20 tall)
-makeLadder( 38, 38, 14,14, 18, 'south');   // NE mid corner (18 tall)
-makeLadder(-38, 38, 14,14, 16, 'south');   // NW mid corner
-makeLadder( 38,-38, 14,14, 20, 'north');   // SE mid corner
-makeLadder(-38,-38, 14,14, 14, 'north');   // SW mid corner — shortest, easiest
-
-// Edge warehouses — 4 of them (12-14 tall) — great vantage on the map edges
-makeLadder( 75,-115, 20,12, 12, 'north');
-makeLadder(-75,-115, 20,12, 12, 'north');
-makeLadder( 75, 115, 20,12, 12, 'south');
-makeLadder(-75, 115, 20,12, 12, 'south');
-makeLadder( 115, 75, 12,20, 14, 'west');
-makeLadder(-115, 75, 12,20, 14, 'east');
-makeLadder( 115,-75, 12,20, 14, 'west');
-makeLadder(-115,-75, 12,20, 14, 'east');
+const ladders = [];
 
 // ── TREES ──────────────────────────────────────────────────────────────────
 const _trunkMat = new THREE.MeshStandardMaterial({color:0x4a3220,roughness:.95});
@@ -762,7 +866,30 @@ const treePositions=[
   [120,-40],[-120,-40],[40,-120],[-40,-120],
   [125,0],[-125,0],[0,125],[0,-125],
 ];
-treePositions.forEach(([x,z])=>makeTree(x,z, Math.random()>0.7));
+function _onRoad(x, z){
+  const buffer = ROAD_WIDTH/2 + SIDEWALK_W + 0.5;
+  for(const r of RING_RADII){
+    if(Math.abs(Math.abs(z) - r) < buffer && Math.abs(x) < r + buffer) return true;
+    if(Math.abs(Math.abs(x) - r) < buffer && Math.abs(z) < r + buffer) return true;
+  }
+  for(let i = 0; i < RING_RADII.length - 1; i++){
+    const r1 = RING_RADII[i];
+    const r2 = RING_RADII[i + 1];
+    if(Math.abs(Math.abs(x) - r1) < buffer && Math.abs(z) > r1 - buffer && Math.abs(z) < r2 + buffer) return true;
+    if(Math.abs(Math.abs(z) - r1) < buffer && Math.abs(x) > r1 - buffer && Math.abs(x) < r2 + buffer) return true;
+  }
+  const rInner = RING_RADII[0];
+  const rOuter = RING_RADII[RING_RADII.length - 1];
+  if(Math.abs(Math.abs(x) - rInner) < buffer && Math.abs(z) < rInner + buffer) return true;
+  if(Math.abs(Math.abs(z) - rInner) < buffer && Math.abs(x) < rInner + buffer) return true;
+  if(Math.abs(Math.abs(x) - rOuter) < buffer && Math.abs(z) > rOuter - buffer && Math.abs(z) < rOuter + 30 + buffer) return true;
+  if(Math.abs(Math.abs(z) - rOuter) < buffer && Math.abs(x) > rOuter - buffer && Math.abs(x) < rOuter + 30 + buffer) return true;
+  return false;
+}
+treePositions.forEach(([x,z])=>{
+  if(!_onRoad(x, z)) makeTree(x, z, Math.random()>0.7);
+});
+
 // ── STREET FURNITURE ──────────────────────────────────────────────────────
 function makeStreetLamp(x,z){
   const g=new THREE.Group();
@@ -772,7 +899,6 @@ function makeStreetLamp(x,z){
   const arm=new THREE.Mesh(new THREE.BoxGeometry(.08,.08,.6),baseMat); arm.position.set(0,4.85,.3); g.add(arm);
   const housing=new THREE.Mesh(new THREE.BoxGeometry(.35,.18,.35),baseMat); housing.position.set(0,4.78,.55); g.add(housing);
   const bulb=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6),new THREE.MeshBasicMaterial({color:0xffeebb})); bulb.position.set(0,4.65,.55); g.add(bulb);
-  // (point light removed for performance — bulb still glows)
   g.position.set(x,0,z); scene.add(g);
   obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,1,z),new THREE.Vector3(.5,2,.5)));
 }
@@ -803,7 +929,7 @@ function makeStopSign(x,z,ry=0){
   const g=new THREE.Group();
   const post=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,2.6,6),new THREE.MeshStandardMaterial({color:0x666,roughness:.6,metalness:.6}));
   post.position.y=1.3; g.add(post);
-  const signGeo=new THREE.CylinderGeometry(.35,.35,.04,8); // octagon-ish
+  const signGeo=new THREE.CylinderGeometry(.35,.35,.04,8);
   const sign=new THREE.Mesh(signGeo,new THREE.MeshStandardMaterial({color:0xcc1818,roughness:.5}));
   sign.rotation.x=Math.PI/2; sign.position.set(0,2.3,.04); g.add(sign);
   g.position.set(x,0,z); g.rotation.y=ry; scene.add(g);
@@ -866,7 +992,7 @@ function makeAC(x,z,ry=0){
   g.position.set(x,0,z); g.rotation.y=ry; scene.add(g);
   obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.45,z),new THREE.Vector3(1.3,.9,1.1)));
 }
-// ── BENCHES ────────────────────────────────────────────────────────────────
+
 function makeBench(x,z,ry=0){
   const g=new THREE.Group();
   const wm=new THREE.MeshStandardMaterial({color:0x5a3e1f,roughness:.9});
@@ -881,82 +1007,128 @@ function makeBench(x,z,ry=0){
   box.setFromCenterAndSize(new THREE.Vector3(x,0.3,z), new THREE.Vector3(Math.abs(cosR*2.2+sinR*0.5)+0.1, 0.6, Math.abs(cosR*0.5+sinR*2.2)+0.1));
   obstacles.push(box);
 }
-[
-  [11, 14, 0], [-11, 14, 0], [11, -14, Math.PI], [-11, -14, Math.PI],
-  [14, 11, -Math.PI/2], [14, -11, -Math.PI/2], [-14, 11, Math.PI/2], [-14, -11, Math.PI/2],
-  [35, 24, Math.PI], [35, -24, 0], [-35, 24, Math.PI], [-35, -24, 0],
-  [62, 24, Math.PI], [-62, 24, Math.PI], [62, -24, 0], [-62, -24, 0],
-].forEach(p=>makeBench(...p));
-// ── STREET FURNITURE PLACEMENTS ──────────────────────────────────────────
-// Street lamps — line the main streets and plaza edges
-[
-  [16,16],[-16,16],[16,-16],[-16,-16],
-  [50,4],[-50,4],[50,-4],[-50,-4],[4,50],[-4,50],[4,-50],[-4,-50],
-  [58,18],[-58,18],[58,-18],[-58,-18],[18,58],[-18,58],[18,-58],[-18,-58],
-  [90,-15],[-90,-15],[90,15],[-90,15],[15,90],[-15,90],[15,-90],[-15,-90],
-  [120,0],[-120,0],[0,120],[0,-120],
-].forEach(([x,z])=>makeStreetLamp(x,z));
 
-// Fire hydrants — corners and sidewalks
-[
-  [10,5],[-10,5],[10,-5],[-10,-5],
-  [30,15],[-30,15],[30,-15],[-30,-15],
-  [48,48],[-48,48],[48,-48],[-48,-48],
-  [85,12],[-85,12],[15,85],[-15,85],
-].forEach(([x,z])=>makeHydrant(x,z));
+const SW_OFF = ROAD_WIDTH/2 + 1.3;
 
-// Mailboxes — sprinkled near intersections
+for(const r of RING_RADII){
+  for(let x = -r + 8; x <= r - 8; x += 18){
+    if(Math.abs(x) < ROAD_WIDTH) continue;
+    makeStreetLamp(x,  r + SW_OFF);
+    makeStreetLamp(x,  r - SW_OFF);
+    makeStreetLamp(x, -r + SW_OFF);
+    makeStreetLamp(x, -r - SW_OFF);
+  }
+  for(let z = -r + 8; z <= r - 8; z += 18){
+    if(Math.abs(z) < ROAD_WIDTH) continue;
+    makeStreetLamp( r + SW_OFF, z);
+    makeStreetLamp( r - SW_OFF, z);
+    makeStreetLamp(-r + SW_OFF, z);
+    makeStreetLamp(-r - SW_OFF, z);
+  }
+}
+for(let v = -280; v <= 280; v += 22){
+  if(Math.abs(v) < 18) continue;
+  let nearRing = false;
+  for(const r of RING_RADII){ if(Math.abs(Math.abs(v) - r) < ROAD_WIDTH) { nearRing = true; break; } }
+  if(nearRing) continue;
+  makeStreetLamp( SW_OFF, v); makeStreetLamp(-SW_OFF, v);
+  makeStreetLamp(v,  SW_OFF); makeStreetLamp(v, -SW_OFF);
+}
+
+const hydrantSpots = [];
+for(const r of RING_RADII){
+  for(let x = -r + 25; x <= r - 25; x += 50){
+    if(Math.abs(x) < 18) continue;
+    hydrantSpots.push([x,  r + SW_OFF]); hydrantSpots.push([x, -r - SW_OFF]);
+  }
+  for(let z = -r + 25; z <= r - 25; z += 50){
+    if(Math.abs(z) < 18) continue;
+    hydrantSpots.push([ r + SW_OFF, z]); hydrantSpots.push([-r - SW_OFF, z]);
+  }
+}
+hydrantSpots.forEach(([x,z])=>makeHydrant(x,z));
+
+const STOP_SIGN_RINGS = [42, 245];
+for(const r of STOP_SIGN_RINGS){
+  const off = ROAD_WIDTH/2 + 1.4;
+  const intersectionsForRing = [
+    {ix: r, iz: 0}, {ix:-r, iz: 0},
+    {ix: 0, iz: r}, {ix: 0, iz:-r},
+  ];
+  for(const c of intersectionsForRing){
+    makeStopSign(c.ix + off, c.iz + off,  Math.PI*3/4);
+    makeStopSign(c.ix - off, c.iz + off, -Math.PI*3/4);
+    makeStopSign(c.ix + off, c.iz - off,  Math.PI/4);
+    makeStopSign(c.ix - off, c.iz - off, -Math.PI/4);
+  }
+}
+
 [
-  [13,8,0],[-13,8,Math.PI],[8,13,Math.PI/2],[-8,-13,-Math.PI/2],
-  [37,16,0],[-37,-16,Math.PI],[16,-37,Math.PI/2],[-16,37,-Math.PI/2],
+  [42 + SW_OFF, 18,  Math.PI/2], [-42 - SW_OFF, 18, -Math.PI/2],
+  [18, 42 + SW_OFF, 0],          [18, -42 - SW_OFF, Math.PI],
+  [85 + SW_OFF, 22,  Math.PI/2], [-85 - SW_OFF, 22, -Math.PI/2],
+  [22, 85 + SW_OFF, 0],          [22, -85 - SW_OFF, Math.PI],
+  [120 + SW_OFF, 30,  Math.PI/2],[-120 - SW_OFF, 30, -Math.PI/2],
 ].forEach(([x,z,r])=>makeMailbox(x,z,r));
 
-// Stop signs — at street corners
-[
-  [30,30,0],[-30,30,Math.PI/2],[30,-30,-Math.PI/2],[-30,-30,Math.PI],
-  [51,15,0],[-51,15,Math.PI/2],[51,-15,-Math.PI/2],[-51,-15,Math.PI],
-  [15,51,Math.PI/2],[-15,51,Math.PI],[15,-51,0],[-15,-51,-Math.PI/2],
-].forEach(([x,z,r])=>makeStopSign(x,z,r));
+const benchSpots = [
+  [16, 0,  Math.PI/2], [-16, 0, -Math.PI/2],
+  [0, 16,  Math.PI],   [0, -16,  0],
+  [25,  42 - SW_OFF,  Math.PI], [-25,  42 - SW_OFF,  Math.PI],
+  [25, -42 + SW_OFF,  0],       [-25, -42 + SW_OFF,  0],
+  [ 42 - SW_OFF, 25, -Math.PI/2], [ 42 - SW_OFF, -25, -Math.PI/2],
+  [-42 + SW_OFF, 25,  Math.PI/2], [-42 + SW_OFF, -25,  Math.PI/2],
+  [40,  85 - SW_OFF,  Math.PI], [-40,  85 - SW_OFF,  Math.PI],
+  [40, -85 + SW_OFF,  0],       [-40, -85 + SW_OFF,  0],
+];
+benchSpots.forEach(p => makeBench(...p));
 
-// Trash cans — next to lamps and benches
-[
-  [17,15],[-17,15],[17,-15],[-17,-15],
-  [13,17],[-13,17],[13,-17],[-13,-17],
-  [52,6],[-52,6],[6,52],[-6,52],
-  [60,20],[-60,20],[20,60],[-20,60],
-  [92,-18],[-92,-18],[18,92],[-18,92],
-].forEach(([x,z])=>makeTrashCan(x,z));
+const trashSpots = [];
+for(const r of [42, 85, 120]){
+  for(let x = -r + 25; x <= r - 25; x += 35){
+    if(Math.abs(x) < 18) continue;
+    trashSpots.push([x,  r + SW_OFF + 0.7]); trashSpots.push([x, -r - SW_OFF - 0.7]);
+  }
+  for(let z = -r + 25; z <= r - 25; z += 35){
+    if(Math.abs(z) < 18) continue;
+    trashSpots.push([ r + SW_OFF + 0.7, z]); trashSpots.push([-r - SW_OFF - 0.7, z]);
+  }
+}
+trashSpots.forEach(([x,z])=>makeTrashCan(x,z));
 
-// Planters — line the plaza
 [
-  [9,9],[-9,9],[9,-9],[-9,-9],
-  [48,48],[-48,48],[48,-48],[-48,-48],
+  [10, 10], [-10, 10], [10, -10], [-10, -10],
+  [15, 0], [-15, 0], [0, 15], [0, -15],
 ].forEach(([x,z])=>makePlanter(x,z));
 
-// Newspaper boxes — clustered near building entrances
 [
-  [13,11,0],[-13,11,Math.PI],[11,13,Math.PI/2],[-11,-13,-Math.PI/2],
-  [38,20,Math.PI],[-38,-20,0],
+  [85 + SW_OFF + 0.4,  10,  Math.PI/2],
+  [-85 - SW_OFF - 0.4, 10, -Math.PI/2],
+  [10,  85 + SW_OFF + 0.4, 0],
+  [10, -85 - SW_OFF - 0.4, Math.PI],
+  [120 + SW_OFF + 0.4,  35,  Math.PI/2],
+  [-120 - SW_OFF - 0.4, 35, -Math.PI/2],
 ].forEach(([x,z,r])=>makeNewspaperBox(x,z,r));
 
-// ATMs — next to bigger buildings
 [
-  [62,-42,0],[-62,-42,0],[62,42,Math.PI],[-62,42,Math.PI],
-  [92,-12,-Math.PI/2],[-92,-12,Math.PI/2],
+  [105, -42 - SW_OFF - 0.5, 0], [-105, -42 - SW_OFF - 0.5, 0],
+  [105,  42 + SW_OFF + 0.5, Math.PI], [-105, 42 + SW_OFF + 0.5, Math.PI],
+  [-85 - SW_OFF - 0.5, -22,  Math.PI/2], [85 + SW_OFF + 0.5, -22, -Math.PI/2],
 ].forEach(([x,z,r])=>makeATM(x,z,r));
 
-// Bollards — protect plaza edges (clusters)
-[
-  [14,0],[14,2],[14,-2],
-  [-14,0],[-14,2],[-14,-2],
-  [0,14],[2,14],[-2,14],
-  [0,-14],[2,-14],[-2,-14],
-].forEach(([x,z])=>makeBollard(x,z));
+for(let i = -3; i <= 3; i++){
+  if(Math.abs(i) === 0) continue;
+  makeBollard(i*2.5,  17);
+  makeBollard(i*2.5, -17);
+  makeBollard( 17, i*2.5);
+  makeBollard(-17, i*2.5);
+}
 
-// AC units — pushed up against buildings (in clear street spaces)
 [
-  [38,-46,0],[-38,-46,0],[38,46,Math.PI],[-38,46,Math.PI],
-  [38,-72,0],[-38,-72,0],[38,72,Math.PI],[-38,72,Math.PI],
+  [60, -42 - SW_OFF - 1.2, 0], [-60, -42 - SW_OFF - 1.2, 0],
+  [60,  42 + SW_OFF + 1.2, Math.PI], [-60, 42 + SW_OFF + 1.2, Math.PI],
+  [-85 - SW_OFF - 1.2,  60,  Math.PI/2], [85 + SW_OFF + 1.2,  60, -Math.PI/2],
+  [-85 - SW_OFF - 1.2, -60,  Math.PI/2], [85 + SW_OFF + 1.2, -60, -Math.PI/2],
 ].forEach(([x,z,r])=>makeAC(x,z,r));
 
 // ── CRATES ─────────────────────────────────────────────────────────────────
@@ -974,16 +1146,138 @@ function makeBench(x,z,ry=0){
   obstacles.push(new THREE.Box3().setFromObject(g));
 });
 
-// ── CARS ───────────────────────────────────────────────────────────────────
-[[14,14,Math.PI/4],[-14,14,-Math.PI/4],[14,-14,-Math.PI*3/4],[-14,-14,Math.PI*3/4],[30,0,Math.PI/2],[-30,0,-Math.PI/2],[0,30,0],[0,-30,Math.PI]].forEach(([x,z,ry])=>{
-  const g=new THREE.Group();
-  const body=new THREE.Mesh(new THREE.BoxGeometry(4.2,1.2,2),new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(Math.random(),.5,.35),roughness:.4,metalness:.5}));
-  body.position.y=.8;body.castShadow=true;g.add(body);
-  const cab=new THREE.Mesh(new THREE.BoxGeometry(2.4,.9,1.8),new THREE.MeshStandardMaterial({color:0x88aacc,roughness:.1,transparent:true,opacity:.7}));
-  cab.position.set(-.3,1.85,0);g.add(cab);
-  g.position.set(x,0,z);g.rotation.y=ry;scene.add(g);
-  obstacles.push(new THREE.Box3().setFromObject(g));
-});
+// ── CARS (DRIVABLE) ────────────────────────────────────────────────────────
+// Each car is a proper vehicle: body, cabin, wheels, headlights, tail lights.
+// Stored in cars[] with all metadata needed for driving physics.
+const _wheelGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.28, 14);
+const _wheelMat = new THREE.MeshStandardMaterial({color:0x111111, roughness:0.85});
+const _hubMat = new THREE.MeshStandardMaterial({color:0x888888, roughness:0.4, metalness:0.85});
+const _headlightMat = new THREE.MeshStandardMaterial({color:0xffffcc, emissive:0xffffaa, emissiveIntensity:0.6});
+const _taillightMat = new THREE.MeshStandardMaterial({color:0x660000, emissive:0xff2222, emissiveIntensity:0.4});
+
+function makeCar(x, z, ry, hue){
+  const g = new THREE.Group();
+  const carColor = new THREE.Color().setHSL(hue ?? Math.random(), 0.55, 0.42);
+
+  // Lower body (long flat box)
+  const bodyMat = new THREE.MeshStandardMaterial({color: carColor, roughness:0.35, metalness:0.55});
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 4.4), bodyMat);
+  body.position.y = 0.65; body.castShadow = true;
+  g.add(body);
+
+  // Underbody chassis (darker)
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.25, 4.2),
+    new THREE.MeshStandardMaterial({color:0x222222, roughness:0.85}));
+  chassis.position.y = 0.3; g.add(chassis);
+
+  // Cabin (raised cube, slightly inset, with glass)
+  const cabinMat = new THREE.MeshStandardMaterial({
+    color:0x88aacc, roughness:0.1, metalness:0.3, transparent:true, opacity:0.55
+  });
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.85, 2.4), cabinMat);
+  cabin.position.set(0, 1.42, -0.1);
+  g.add(cabin);
+  // Cabin frame (slim dark borders along edges)
+  const frameMat = new THREE.MeshStandardMaterial({color:0x111111, roughness:0.5});
+  const roofFrame = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.06, 2.45), frameMat);
+  roofFrame.position.set(0, 1.83, -0.1); g.add(roofFrame);
+
+  // Hood
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.08, 1.0), bodyMat);
+  hood.position.set(0, 1.04, 1.6); g.add(hood);
+  // Trunk
+  const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.08, 0.9), bodyMat);
+  trunk.position.set(0, 1.04, -1.65); g.add(trunk);
+
+  // Headlights (front, +Z direction)
+  const hl1 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.06), _headlightMat);
+  hl1.position.set(0.65, 0.72, 2.21); g.add(hl1);
+  const hl2 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.06), _headlightMat);
+  hl2.position.set(-0.65, 0.72, 2.21); g.add(hl2);
+  // Tail lights (back, -Z)
+  const tl1 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.06), _taillightMat);
+  tl1.position.set(0.65, 0.78, -2.21); g.add(tl1);
+  const tl2 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.06), _taillightMat);
+  tl2.position.set(-0.65, 0.78, -2.21); g.add(tl2);
+
+  // Front grille / bumper
+  const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.22, 0.12), frameMat);
+  bumper.position.set(0, 0.55, 2.21); g.add(bumper);
+  const bumperR = bumper.clone(); bumperR.position.z = -2.21; g.add(bumperR);
+
+  // Wheels — 4 corners. Each wheel is a small group so we can spin it.
+  // Local positions relative to car center (car faces +Z).
+  const wheelPositions = [
+    {x: 0.95,  z: 1.45,  steer: true},   // front-right
+    {x:-0.95,  z: 1.45,  steer: true},   // front-left
+    {x: 0.95,  z:-1.45,  steer: false},  // rear-right
+    {x:-0.95,  z:-1.45,  steer: false},  // rear-left
+  ];
+  const wheels = [];
+  for(const wp of wheelPositions){
+    const wgroup = new THREE.Group();
+    wgroup.position.set(wp.x, 0.32, wp.z);
+    const tire = new THREE.Mesh(_wheelGeo, _wheelMat);
+    tire.rotation.z = Math.PI/2;
+    tire.castShadow = true;
+    wgroup.add(tire);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.30, 8), _hubMat);
+    hub.rotation.z = Math.PI/2;
+    wgroup.add(hub);
+    g.add(wgroup);
+    wheels.push({group: wgroup, tire: tire, steer: wp.steer});
+  }
+
+  g.position.set(x, 0, z);
+  g.rotation.y = ry;
+  scene.add(g);
+
+  // Half-dimensions for collision (car is 2.0 × 4.4 footprint)
+  const car = {
+    group: g,
+    x: x, z: z,
+    angle: ry,
+    speed: 0,
+    steer: 0,            // current steering angle (radians)
+    halfW: 1.05,         // a touch wider than 2.0/2 for forgiving collision
+    halfL: 2.25,
+    wheels: wheels,
+    bodyMat: bodyMat,
+    headlights: [hl1, hl2],
+    taillights: [tl1, tl2],
+    bbox: new THREE.Box3(),
+  };
+  // Build initial collision box
+  updateCarBox(car);
+  // Cars are obstacles too (but we'll skip self-collision when this car is being driven)
+  car.obstacle = car.bbox.clone();
+  obstacles.push(car.obstacle);
+  cars.push(car);
+  return car;
+}
+
+// Recompute the axis-aligned bounding box of a car at its current angle/pos.
+function updateCarBox(car){
+  const cosA = Math.abs(Math.cos(car.angle));
+  const sinA = Math.abs(Math.sin(car.angle));
+  const ex = car.halfW * cosA + car.halfL * sinA;
+  const ez = car.halfW * sinA + car.halfL * cosA;
+  car.bbox.min.set(car.x - ex, 0, car.z - ez);
+  car.bbox.max.set(car.x + ex, 1.8, car.z + ez);
+}
+
+// Spawn cars at varied positions around the plaza, all parallel to nearest road
+// (or just rotated nicely). The originals were at fixed angles; we'll mimic.
+[
+  [30, 0,   Math.PI/2],
+  [-30, 0,  -Math.PI/2],
+  [0, 30,   0],
+  [0, -30,  Math.PI],
+  [50, 30,  0],
+  [-50, -30, Math.PI],
+  [70, -10, Math.PI/2],
+  [-70, 10, -Math.PI/2],
+].forEach(([x,z,ry]) => makeCar(x, z, ry));
 
 // ── GUN MODELS ─────────────────────────────────────────────────────────────
 function makePistol(col=0x111111){
@@ -991,16 +1285,6 @@ function makePistol(col=0x111111){
   g.add(new THREE.Mesh(new THREE.BoxGeometry(.055,.075,.38),m));
   const grip=new THREE.Mesh(new THREE.BoxGeometry(.048,.16,.085),m);grip.position.set(0,-.11,.1);grip.rotation.x=.28;g.add(grip);
   const guard=new THREE.Mesh(new THREE.BoxGeometry(.038,.055,.075),m);guard.position.set(0,-.055,.02);g.add(guard);
-  return g;
-}
-function makeShotgun(col=0x2a1a0a){
-  const g=new THREE.Group();
-  const wm=new THREE.MeshStandardMaterial({color:0x5a3010,roughness:.9,metalness:.1});
-  const mm=new THREE.MeshStandardMaterial({color:col,roughness:.4,metalness:.7});
-  const barrel=new THREE.Mesh(new THREE.BoxGeometry(.04,.04,.6),mm); g.add(barrel);
-  const pump=new THREE.Mesh(new THREE.BoxGeometry(.055,.04,.12),mm);pump.position.set(0,-.005,-.05);g.add(pump);
-  const stock=new THREE.Mesh(new THREE.BoxGeometry(.04,.09,.22),wm);stock.position.set(0,-.02,.24);stock.rotation.x=-.12;g.add(stock);
-  const grip=new THREE.Mesh(new THREE.BoxGeometry(.04,.14,.07),wm);grip.position.set(0,-.1,.12);grip.rotation.x=.2;g.add(grip);
   return g;
 }
 function makeRifle(col=0x1a1a1a){
@@ -1015,7 +1299,6 @@ function makeRifle(col=0x1a1a1a){
   const scp=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.12,8),mm);scp.rotation.x=Math.PI/2;scp.position.set(0,.065,-.02);g.add(scp);
   return g;
 }
-
 
 const gunModels = {
   pistol: makePistol(),
@@ -1066,109 +1349,6 @@ function makeEnemy(){
   return g;
 }
 
-// ── RIOTER: bigger, faster melee enemy with a riot shield ─────────────────
-function makeRioter(){
-  const g=new THREE.Group();
-  const bm=new THREE.MeshStandardMaterial({color:0x202428,roughness:.7});
-  const sm=new THREE.MeshStandardMaterial({color:0xddbb99,roughness:.8});
-  const armorMat=new THREE.MeshStandardMaterial({color:0x111316,roughness:.55,metalness:.45});
-  const shieldMat=new THREE.MeshStandardMaterial({color:0x445566,roughness:.25,metalness:.4,transparent:true,opacity:.7});
-  const shieldFrame=new THREE.MeshStandardMaterial({color:0x222a35,roughness:.6,metalness:.3});
-
-  // Torso (heavy vest)
-  const torso=new THREE.Mesh(new THREE.BoxGeometry(.55,.75,.32),armorMat);
-  torso.position.y=1.25; torso.castShadow=true;
-  // Head with riot helmet
-  const head=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,.26),sm);
-  head.position.y=1.72; head.castShadow=true;
-  const helmet=new THREE.Mesh(new THREE.BoxGeometry(.30,.18,.32),armorMat);
-  helmet.position.y=1.83; helmet.castShadow=true;
-  // Visor strip
-  const visor=new THREE.Mesh(new THREE.BoxGeometry(.31,.05,.01),new THREE.MeshStandardMaterial({color:0x111111,roughness:.2,metalness:.5}));
-  visor.position.set(0,1.78,.16);
-
-  // Right arm holds bat
-  const armR=new THREE.Group(); armR.position.set(.30,1.55,0);
-  const armRMesh=new THREE.Mesh(new THREE.BoxGeometry(.18,.55,.18),bm); armRMesh.position.y=-.27; armRMesh.castShadow=true;
-  armR.add(armRMesh);
-  // Baseball bat
-  const bat=new THREE.Group();
-  const batHandle=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.32,8),new THREE.MeshStandardMaterial({color:0x4a3022,roughness:.8}));
-  batHandle.position.y=-.16; bat.add(batHandle);
-  const batBarrel=new THREE.Mesh(new THREE.CylinderGeometry(.05,.07,.55,10),new THREE.MeshStandardMaterial({color:0x8a6a40,roughness:.7}));
-  batBarrel.position.y=.28; bat.add(batBarrel);
-  bat.position.set(0,-.25,.05);
-  armR.add(bat);
-
-  // Left arm holds shield
-  const armL=new THREE.Group(); armL.position.set(-.30,1.55,0);
-  const armLMesh=new THREE.Mesh(new THREE.BoxGeometry(.18,.55,.18),bm); armLMesh.position.y=-.27; armLMesh.castShadow=true;
-  armL.add(armLMesh);
-  // Shield: tall transparent panel in front of body
-  const shieldGroup=new THREE.Group();
-  // Curved riot shield — a tall plane with vertices warped to give a gentle horizontal curve,
-  // so the shield wraps around its holder slightly (convex face toward the player).
-  const shieldGeo = new THREE.PlaneGeometry(0.9, 1.3, 12, 1);
-  const sPos = shieldGeo.attributes.position;
-  const curveDepth = 0.35; // pronounced quarter-cylinder wrap like a real riot shield
-  for (let i = 0; i < sPos.count; i++) {
-    const x = sPos.getX(i);
-    // Parabolic curve in Z: max at x=0, zero at x=±0.45
-    const normX = x / 0.45; // -1 .. +1
-    const z = curveDepth * (1 - normX * normX);
-    sPos.setZ(i, z);
-  }
-  sPos.needsUpdate = true;
-  shieldGeo.computeVertexNormals();
-  const shield = new THREE.Mesh(shieldGeo, shieldMat);
-  shield.material.side = THREE.DoubleSide;
-  shieldGroup.add(shield);
-  // Shield frame border
-  const shieldEdgeT=new THREE.Mesh(new THREE.BoxGeometry(.92,.05,.06),shieldFrame); shieldEdgeT.position.y=.65; shieldGroup.add(shieldEdgeT);
-  const shieldEdgeB=new THREE.Mesh(new THREE.BoxGeometry(.92,.05,.06),shieldFrame); shieldEdgeB.position.y=-.65; shieldGroup.add(shieldEdgeB);
-  const shieldEdgeL=new THREE.Mesh(new THREE.BoxGeometry(.05,1.3,.06),shieldFrame); shieldEdgeL.position.x=-.45; shieldGroup.add(shieldEdgeL);
-  const shieldEdgeR=new THREE.Mesh(new THREE.BoxGeometry(.05,1.3,.06),shieldFrame); shieldEdgeR.position.x=.45; shieldGroup.add(shieldEdgeR);
-  // "POLICE" stripe accent (just a band)
-  const band=new THREE.Mesh(new THREE.BoxGeometry(.9,.18,.052),new THREE.MeshStandardMaterial({color:0xddaa22,roughness:.6}));
-  band.position.y=.18; shieldGroup.add(band);
-  // Position shield: hangs from left hand, held in front of body
-  // Shield held in front of body. The armL pivot is at world (-.30, 1.55, 0).
-  // When the arm rotates -PI/2 around X, local +Y points to world -Z (forward).
-  // So place the shield at local (.30, .55, 0) — that resolves to in front of the rioter,
-  // chest-high and centred on the body.
-  // Shield held high and forward, covering chest-to-face level (SWAT pose).
-  // Local Y is raised so shield center is at head height of rioter.
-  shieldGroup.position.set(.30, .85, 0);
-  // Counter-rotate the shield to undo the arm's forward tilt — keep shield UPRIGHT in world space,
-  // with its broad face pointing toward the player. Slight forward tilt for SWAT stance.
-  shieldGroup.rotation.x = -Math.PI * 0.55 + 0.12;
-  armL.add(shieldGroup);
-
-  // Legs
-  const legL=new THREE.Mesh(new THREE.BoxGeometry(.22,.78,.22),bm); legL.position.set(.13,.39,0); legL.castShadow=true;
-  const legR=legL.clone(); legR.position.x=-.13;
-
-  g.add(torso,head,helmet,visor,armR,armL,legL,legR);
-
-  // Scale entire rioter 1.2x
-  g.scale.set(1.2,1.2,1.2);
-
-  g.userData={
-    type:'rioter',
-    legL,legR,
-    armR, armL,
-    shieldGroup, // for hiding when shield breaks
-    hp:50,            // body HP after shield breaks
-    shieldHp:100,     // shield absorbs first 100 damage
-    walkPhase:Math.random()*10,
-    swingT:0,         // 0 = bat at side, 1 = mid-swing
-    lastSwing:0
-  };
-  return g;
-}
-
-// ── SPAWN COLLISION HELPER ─────────────────────────────────────────────────
-// Defined before spawn config so the initial batch can use it.
 const _eBoxTmp = new THREE.Box3();
 function enemyCollides(x, z, halfW = 0.4){
   _eBoxTmp.min.set(x-halfW, 0.2, z-halfW);
@@ -1179,16 +1359,12 @@ function enemyCollides(x, z, halfW = 0.4){
   return false;
 }
 
-// ── SPAWN CONFIG ───────────────────────────────────────────────────────────
-// Enemies spawn in a tight range around the player — close enough to feel threatening,
-// far enough that you have time to react. Each spawn picks a random angle, so a batch
-// of 1–3 enemies will appear at distinct, scattered positions around you.
-const SPAWN_MIN_DIST = 35;   // closest an enemy can appear
-const SPAWN_MAX_DIST = 65;   // furthest an enemy can appear
+const SPAWN_MIN_DIST = 35;
+const SPAWN_MAX_DIST = 65;
 const SPAWN_BATCH_MIN = 1;
 const SPAWN_BATCH_MAX = 3;
 const MAX_ENEMIES = 24;
-const SPAWN_INTERVAL = 6000; // batch spawn every ~6s if below cap
+const SPAWN_INTERVAL = 6000;
 
 function spawnEnemyAt(x, z){
   const isRioter = Math.random() < 0.25;
@@ -1198,10 +1374,6 @@ function spawnEnemyAt(x, z){
   scene.add(e); enemies.push(e);
 }
 
-// Try to pick a spawn position around the player that:
-//  - is within SPAWN_MIN_DIST..SPAWN_MAX_DIST of the player
-//  - is inside the map bounds
-//  - isn't inside a wall/obstacle
 function findSpawnPos(){
   const cp = camera.position;
   for(let tries = 0; tries < 12; tries++){
@@ -1209,9 +1381,7 @@ function findSpawnPos(){
     const dist = SPAWN_MIN_DIST + Math.random() * (SPAWN_MAX_DIST - SPAWN_MIN_DIST);
     const x = cp.x + Math.cos(angle) * dist;
     const z = cp.z + Math.sin(angle) * dist;
-    // Stay inside the playable area
     if(x < -BW + 3 || x > BW - 3 || z < -BW + 3 || z > BW - 3) continue;
-    // Don't spawn inside obstacles
     if(enemyCollides(x, z, 0.5)) continue;
     return [x, z];
   }
@@ -1223,7 +1393,6 @@ function spawnEnemy(){
   if(pos) spawnEnemyAt(pos[0], pos[1]);
 }
 
-// Spawn a batch of 1–3 enemies, each at its own random position around the player.
 function spawnBatch(){
   const n = SPAWN_BATCH_MIN + Math.floor(Math.random() * (SPAWN_BATCH_MAX - SPAWN_BATCH_MIN + 1));
   for(let i = 0; i < n; i++){
@@ -1232,11 +1401,18 @@ function spawnBatch(){
   }
 }
 
-// Waves start spawning immediately — no initial population, no kill threshold.
 // ── HUD ────────────────────────────────────────────────────────────────────
-function updateHUD(){document.getElementById('hud').innerText=`HP: ${Math.max(0,health)} | AMMO: ${ammo}/${gun.maxAmmo} | KILLS: ${kills} | ${gun.name}`;}
+function updateHUD(){
+  if(playerInCar){
+    document.getElementById('hud').innerText=`HP: ${Math.max(0,health)} | DRIVING | KILLS: ${kills}`;
+  } else {
+    document.getElementById('hud').innerText=`HP: ${Math.max(0,health)} | AMMO: ${ammo}/${gun.maxAmmo} | KILLS: ${kills} | ${gun.name}`;
+  }
+}
 
 function resetGame(){
+  // Eject from car if dying mid-drive
+  if(playerInCar) exitCar(true);
   gun={...GUNS[selectedGunKey]};
   health=100;ammo=gun.ammo;kills=0;verticalVelocity=0;yaw=0;pitch=0;
   camera.position.set(0,1.7,0); camera.rotation.set(0,0,0);
@@ -1250,7 +1426,7 @@ function resetGame(){
   camera.add(playerGun);
   updateHUD();
   document.getElementById('title').innerText='KIA';
-  document.getElementById('desc').innerHTML='Eliminated.<br><b>WASD</b> Move | <b>Click</b> Shoot | <b>Space</b> Jump';
+  document.getElementById('desc').innerHTML='Eliminated.<br><b>WASD</b> Move | <b>Click</b> Shoot | <b>Space</b> Jump | <b>E</b> Enter Vehicle';
   document.getElementById('start-btn').innerText='RESPAWN';
   document.getElementById('instructions').style.display='flex';
   if(document.pointerLockElement) document.exitPointerLock();
@@ -1290,33 +1466,6 @@ function playGunshot() {
   sub.frequency.setValueAtTime(90, t); sub.frequency.exponentialRampToValueAtTime(30, t + 0.09);
   const subG = AC.createGain(); subG.gain.setValueAtTime(1.0, t); subG.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
   sub.connect(subG); subG.connect(AC.destination); sub.start(t); sub.stop(t + 0.09);
-  const tailN = noiseBuffer(0.55, x => Math.pow(1 - x, 0.6) * (x < 0.05 ? x / 0.05 : 1));
-  const tailLP = biquad('lowpass', 600);
-  const tailG = AC.createGain(); tailG.gain.setValueAtTime(0.0, t); tailG.gain.linearRampToValueAtTime(0.18, t + 0.015); tailG.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
-  const tailSrc = AC.createBufferSource(); tailSrc.buffer = tailN;
-  tailSrc.connect(tailLP); tailLP.connect(tailG); tailG.connect(AC.destination);
-  tailSrc.start(t); tailSrc.stop(t + 0.55);
-}
-function playShotgunBlast() {
-  const t = AC.currentTime;
-  const boomN = noiseBuffer(0.25, x => Math.pow(1 - x, 0.9));
-  const boomLP = biquad('lowpass', 500);
-  const boomG = AC.createGain(); boomG.gain.setValueAtTime(3.5, t); boomG.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-  const boomSrc = AC.createBufferSource(); boomSrc.buffer = boomN;
-  boomSrc.connect(boomLP); boomLP.connect(boomG); boomG.connect(AC.destination);
-  boomSrc.start(t); boomSrc.stop(t + 0.25);
-  const crackN = noiseBuffer(0.006, x => 1 - x);
-  const crackHP = biquad('highpass', 1500);
-  const crackG = AC.createGain(); crackG.gain.setValueAtTime(4.0, t); crackG.gain.exponentialRampToValueAtTime(0.001, t + 0.006);
-  const crackSrc = AC.createBufferSource(); crackSrc.buffer = crackN;
-  crackSrc.connect(crackHP); crackHP.connect(crackG); crackG.connect(AC.destination);
-  crackSrc.start(t); crackSrc.stop(t + 0.006);
-  const tailN = noiseBuffer(0.9, x => Math.pow(1 - x, 0.5) * (x < 0.04 ? x / 0.04 : 1));
-  const tailLP = biquad('lowpass', 700);
-  const tailG = AC.createGain(); tailG.gain.setValueAtTime(0.0, t); tailG.gain.linearRampToValueAtTime(0.28, t + 0.02); tailG.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
-  const tailSrc = AC.createBufferSource(); tailSrc.buffer = tailN;
-  tailSrc.connect(tailLP); tailLP.connect(tailG); tailG.connect(AC.destination);
-  tailSrc.start(t); tailSrc.stop(t + 0.9);
 }
 function playRifleShot() {
   const t = AC.currentTime;
@@ -1332,16 +1481,6 @@ function playRifleShot() {
   const bodySrc = AC.createBufferSource(); bodySrc.buffer = bodyN;
   bodySrc.connect(bodyBP); bodyBP.connect(bodyG); bodyG.connect(AC.destination);
   bodySrc.start(t); bodySrc.stop(t + 0.08);
-  const sub = AC.createOscillator(); sub.type = 'sine';
-  sub.frequency.setValueAtTime(110, t); sub.frequency.exponentialRampToValueAtTime(35, t + 0.06);
-  const subG = AC.createGain(); subG.gain.setValueAtTime(0.8, t); subG.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-  sub.connect(subG); subG.connect(AC.destination); sub.start(t); sub.stop(t + 0.06);
-  const tailN = noiseBuffer(0.7, x => Math.pow(1 - x, 0.55) * (x < 0.03 ? x / 0.03 : 1));
-  const tailLP = biquad('lowpass', 800);
-  const tailG = AC.createGain(); tailG.gain.setValueAtTime(0.0, t); tailG.gain.linearRampToValueAtTime(0.22, t + 0.01); tailG.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
-  const tailSrc = AC.createBufferSource(); tailSrc.buffer = tailN;
-  tailSrc.connect(tailLP); tailLP.connect(tailG); tailG.connect(AC.destination);
-  tailSrc.start(t); tailSrc.stop(t + 0.7);
 }
 function playShootSound() {
   if(selectedGunKey==='sniper') playRifleShot();
@@ -1364,16 +1503,6 @@ function playKill() {
   const g1 = AC.createGain(); g1.gain.setValueAtTime(2.2, t); g1.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
   const s1 = AC.createBufferSource(); s1.buffer = thudN;
   s1.connect(lp1); lp1.connect(g1); g1.connect(AC.destination); s1.start(t); s1.stop(t + 0.08);
-  const sprayN = noiseBuffer(0.07, x => Math.pow(1 - x, 2.5) * (x < 0.03 ? x / 0.03 : 1));
-  const bp = biquad('bandpass', 1200); bp.Q.value = 0.6;
-  const g2 = AC.createGain(); g2.gain.setValueAtTime(0.0, t); g2.gain.linearRampToValueAtTime(1.4, t + 0.008); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-  const s2 = AC.createBufferSource(); s2.buffer = sprayN;
-  s2.connect(bp); bp.connect(g2); g2.connect(AC.destination); s2.start(t); s2.stop(t + 0.07);
-  const dropN = noiseBuffer(0.18, x => Math.pow(1 - x, 1.3));
-  const lp3 = biquad('lowpass', 180);
-  const g3 = AC.createGain(); g3.gain.setValueAtTime(1.6, t + 0.04); g3.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-  const s3 = AC.createBufferSource(); s3.buffer = dropN;
-  s3.connect(lp3); lp3.connect(g3); g3.connect(AC.destination); s3.start(t + 0.04); s3.stop(t + 0.22);
 }
 function playPlayerHurt() {
   const t = AC.currentTime;
@@ -1382,14 +1511,6 @@ function playPlayerHurt() {
   const g = AC.createGain(); g.gain.setValueAtTime(1.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
   const src = AC.createBufferSource(); src.buffer = impactN;
   src.connect(lp); lp.connect(g); g.connect(AC.destination); src.start(t); src.stop(t + 0.06);
-  const grunt = AC.createOscillator(); grunt.type = 'sawtooth';
-  grunt.frequency.setValueAtTime(160, t + 0.02); grunt.frequency.exponentialRampToValueAtTime(90, t + 0.22);
-  const wave = AC.createWaveShaper();
-  const curve = new Float32Array(256);
-  for(let i=0;i<256;i++){const x=i*2/256-1;curve[i]=Math.tanh(x*3);}
-  wave.curve = curve;
-  const gg = AC.createGain(); gg.gain.setValueAtTime(0.18, t + 0.02); gg.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-  grunt.connect(wave); wave.connect(gg); gg.connect(AC.destination); grunt.start(t + 0.02); grunt.stop(t + 0.22);
 }
 function playReload() {
   const t = AC.currentTime;
@@ -1398,16 +1519,6 @@ function playReload() {
   const gs = AC.createGain(); gs.gain.setValueAtTime(0.18, t); gs.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
   const ss = AC.createBufferSource(); ss.buffer = scrapeN;
   ss.connect(bp1); bp1.connect(gs); gs.connect(AC.destination); ss.start(t); ss.stop(t + 0.14);
-  const thudN = noiseBuffer(0.06, x => Math.pow(1 - x, 2.5));
-  const lp2 = biquad('lowpass', 500);
-  const g2 = AC.createGain(); g2.gain.setValueAtTime(1.3, t + 0.85); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.91);
-  const s2 = AC.createBufferSource(); s2.buffer = thudN;
-  s2.connect(lp2); lp2.connect(g2); g2.connect(AC.destination); s2.start(t + 0.85); s2.stop(t + 0.91);
-  const rackN = noiseBuffer(0.07, x => Math.pow(1 - x, 2));
-  const bp2 = biquad('bandpass', 900); bp2.Q.value = 0.5;
-  const gr = AC.createGain(); gr.gain.setValueAtTime(1.0, t + 1.0); gr.gain.exponentialRampToValueAtTime(0.001, t + 1.07);
-  const sr = AC.createBufferSource(); sr.buffer = rackN;
-  sr.connect(bp2); bp2.connect(gr); gr.connect(AC.destination); sr.start(t + 1.0); sr.stop(t + 1.07);
 }
 function playDeath() {
   const t = AC.currentTime;
@@ -1416,9 +1527,148 @@ function playDeath() {
   const g = AC.createGain(); g.gain.setValueAtTime(1.8, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
   const src = AC.createBufferSource(); src.buffer = thudN;
   src.connect(lp); lp.connect(g); g.connect(AC.destination); src.start(t); src.stop(t + 0.25);
-  const ring = AC.createOscillator(); ring.type = 'sine'; ring.frequency.value = 3800;
-  const ringG = AC.createGain(); ringG.gain.setValueAtTime(0.0, t + 0.1); ringG.gain.linearRampToValueAtTime(0.12, t + 0.3); ringG.gain.exponentialRampToValueAtTime(0.001, t + 1.8);
-  ring.connect(ringG); ringG.connect(AC.destination); ring.start(t + 0.1); ring.stop(t + 1.8);
+}
+
+// ── ENGINE SOUND (looped, while in car) ────────────────────────────────────
+// Continuous oscillator whose frequency tracks car speed. Created lazily.
+let engineOsc = null, engineGain = null, engineFilter = null;
+function startEngine(){
+  if(engineOsc) return;
+  engineOsc = AC.createOscillator();
+  engineOsc.type = 'sawtooth';
+  engineOsc.frequency.value = 60;
+  engineFilter = AC.createBiquadFilter();
+  engineFilter.type = 'lowpass'; engineFilter.frequency.value = 400;
+  engineGain = AC.createGain();
+  engineGain.gain.value = 0;
+  engineOsc.connect(engineFilter); engineFilter.connect(engineGain); engineGain.connect(AC.destination);
+  engineOsc.start();
+}
+function stopEngine(){
+  if(!engineOsc) return;
+  try { engineOsc.stop(); } catch(e){}
+  engineOsc.disconnect(); engineFilter.disconnect(); engineGain.disconnect();
+  engineOsc = null; engineGain = null; engineFilter = null;
+}
+function updateEngine(speed){
+  if(!engineOsc) return;
+  const speedFrac = Math.abs(speed) / CAR_MAX_SPEED;
+  const targetFreq = 60 + speedFrac * 180;
+  const targetGain = 0.04 + speedFrac * 0.07;
+  engineOsc.frequency.linearRampToValueAtTime(targetFreq, AC.currentTime + 0.1);
+  engineGain.gain.linearRampToValueAtTime(targetGain, AC.currentTime + 0.1);
+  engineFilter.frequency.linearRampToValueAtTime(400 + speedFrac * 800, AC.currentTime + 0.1);
+}
+function playCarImpact(){
+  const t = AC.currentTime;
+  const n = noiseBuffer(0.18, x => Math.pow(1 - x, 1.2));
+  const lp = biquad('lowpass', 220);
+  const g = AC.createGain(); g.gain.setValueAtTime(2.0, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  const s = AC.createBufferSource(); s.buffer = n;
+  s.connect(lp); lp.connect(g); g.connect(AC.destination); s.start(t); s.stop(t + 0.18);
+  // metallic ring
+  const ring = AC.createOscillator(); ring.type = 'triangle'; ring.frequency.value = 1800;
+  const rg = AC.createGain(); rg.gain.setValueAtTime(0.0, t); rg.gain.linearRampToValueAtTime(0.18, t + 0.005); rg.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  ring.connect(rg); rg.connect(AC.destination); ring.start(t); ring.stop(t + 0.4);
+}
+
+// ── CAR ENTER / EXIT ───────────────────────────────────────────────────────
+function findNearestCar(){
+  const cp = camera.position;
+  let best = null, bestDist = 9.0; // must be within 3 units (sqrt(9))
+  for(const car of cars){
+    const dx = car.x - cp.x, dz = car.z - cp.z;
+    const d = dx*dx + dz*dz;
+    if(d < bestDist){ bestDist = d; best = car; }
+  }
+  return best;
+}
+function enterCar(car){
+  if(playerInCar) return;
+  // Drop scope state, mouse-button-fire, etc.
+  setScoped(false);
+  mouseHeld = false;
+  if(autoFireInterval){ clearInterval(autoFireInterval); autoFireInterval = null; }
+
+  playerInCar = true;
+  currentCar = car;
+  // Remove this car from obstacles while driving so it doesn't collide with itself
+  const idx = obstacles.indexOf(car.obstacle);
+  if(idx >= 0) obstacles.splice(idx, 1);
+
+  // Hide first-person gun & make camera ride the car as chase cam
+  if(playerGun) playerGun.visible = false;
+  document.body.classList.add('driving');
+  document.getElementById('speedo').style.display = 'block';
+  document.getElementById('enter-prompt').style.display = 'none';
+
+  // Sync yaw to car's heading so camera looks the right way at first
+  // Car faces +Z in local space; in world it points (sin(angle), 0, cos(angle)).
+  // We want yaw such that camera's forward (-sin(yaw), -cos(yaw)) aligns with
+  // the car's forward direction. So yaw = angle + PI.
+  yaw = car.angle + Math.PI;
+  pitch = -0.18; // slight downward tilt for chase view
+
+  if(AC.state === 'suspended') AC.resume();
+  startEngine();
+  updateHUD();
+}
+function exitCar(forced = false){
+  if(!playerInCar || !currentCar) return;
+  const car = currentCar;
+
+  // Place player to the LEFT of the car (driver-side exit) at safe ground level.
+  // Car's local +X axis is "right"; we want to put player along -X relative to car.
+  // World-space left direction is (-cos(angle), 0, sin(angle)).
+  // Try multiple exit positions around the car until we find a clear one.
+  // Order: left, right, back, front, then diagonals.
+  const exitCandidates = [
+    [-Math.cos(car.angle),  Math.sin(car.angle)],   // left
+    [ Math.cos(car.angle), -Math.sin(car.angle)],   // right
+    [-Math.sin(car.angle), -Math.cos(car.angle)],   // back
+    [ Math.sin(car.angle),  Math.cos(car.angle)],   // front
+    [-Math.cos(car.angle) - Math.sin(car.angle), Math.sin(car.angle) - Math.cos(car.angle)], // back-left
+    [ Math.cos(car.angle) - Math.sin(car.angle),-Math.sin(car.angle) - Math.cos(car.angle)], // back-right
+  ];
+  let exitX = car.x, exitZ = car.z;
+  if(!forced){
+    let found = false;
+    for(const [dx, dz] of exitCandidates){
+      const len = Math.hypot(dx, dz) || 1;
+      const tx = car.x + (dx/len) * 2.6;
+      const tz = car.z + (dz/len) * 2.6;
+      if(!playerCollides(tx, tz)){
+        exitX = tx; exitZ = tz;
+        found = true;
+        break;
+      }
+    }
+    // If everything's blocked, place on top of the car (we'll fall to ground)
+    if(!found){ exitX = car.x; exitZ = car.z; }
+  }
+  camera.position.set(exitX, 1.7, exitZ);
+  // Keep current yaw (camera was looking from chase cam, that's fine)
+  pitch = 0;
+  verticalVelocity = 0; isGrounded = true;
+
+  // Restore this car as an obstacle
+  updateCarBox(car);
+  car.obstacle.copy(car.bbox);
+  obstacles.push(car.obstacle);
+
+  // Zero out car momentum so it doesn't drift away
+  car.speed = 0;
+  car.steer = 0;
+
+  playerInCar = false;
+  currentCar = null;
+
+  if(playerGun) playerGun.visible = true;
+  document.body.classList.remove('driving');
+  document.getElementById('speedo').style.display = 'none';
+
+  stopEngine();
+  updateHUD();
 }
 
 // ── INPUT ──────────────────────────────────────────────────────────────────
@@ -1439,11 +1689,24 @@ document.addEventListener('pointerlockchange',()=>{
 document.addEventListener('mousemove',e=>{
   if(!document.pointerLockElement) return;
   yaw-=e.movementX*0.002; pitch-=e.movementY*0.002;
-  pitch=Math.max(-.78,Math.min(.78,pitch));
-  camera.rotation.order='YXZ'; camera.rotation.y=yaw; camera.rotation.x=pitch; camera.rotation.z=0;
+  // Allow looking down further when driving (for chase cam comfort)
+  const pitchMin = playerInCar ? -1.0 : -0.78;
+  const pitchMax = playerInCar ?  0.5 :  0.78;
+  pitch=Math.max(pitchMin,Math.min(pitchMax,pitch));
+  // Camera basis is updated each frame, not here
 });
 window.addEventListener('keydown',e=>{
   keys[e.code]=true;
+  // E: enter/exit car
+  if(e.code==='KeyE'){
+    if(playerInCar) exitCar(false);
+    else {
+      const near = findNearestCar();
+      if(near) enterCar(near);
+    }
+    return;
+  }
+  if(playerInCar) return; // suppress other on-foot bindings while driving
   if(e.code==='Space'&&isGrounded){verticalVelocity=jumpPower;isGrounded=false;}
   if(e.code==='KeyR'&&!isReloading&&ammo<gun.maxAmmo){
     playReload(); isReloading=true;
@@ -1454,7 +1717,7 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
 function doShoot() {
-  if(!document.pointerLockElement||isReloading||ammo<=0) return;
+  if(!document.pointerLockElement||isReloading||ammo<=0||playerInCar) return;
   ammo--; updateHUD();
   gunRecoilZ=gun.recoilZ; gunRecoilY=gun.recoilY;
   playShootSound();
@@ -1485,6 +1748,7 @@ let mouseHeld=false, autoFireInterval=null;
 
 document.addEventListener('mousedown',e=>{
   if(!document.pointerLockElement) return;
+  if(playerInCar) return; // no shooting from car (yet)
   if(e.button===2){
     e.preventDefault();
     setScoped(true);
@@ -1516,7 +1780,6 @@ window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camer
 const _eBulletGeo = new THREE.SphereGeometry(.09,6,6);
 const _eBulletMat = new THREE.MeshBasicMaterial({color:0xffee00});
 
-const _losRay = { ox:0, oy:0, oz:0, dx:0, dy:0, dz:0, maxT:0 };
 function isBlocked(fx, fy, fz, tx, ty, tz){
   const dx = tx-fx, dy = ty-fy, dz = tz-fz;
   const maxT = 1;
@@ -1546,469 +1809,374 @@ function isBlocked(fx, fy, fz, tx, ty, tz){
   return false;
 }
 
-// ── GAME LOOP ──────────────────────────────────────────────────────────────
-const hitFlash=document.getElementById('hit-flash');
-const _tmpVec = new THREE.Vector3();
-const _tmpVec2 = new THREE.Vector3();
-const _tmpBox = new THREE.Box3();
-const _tmpBox2 = new THREE.Box3();
-const _tmpSize = new THREE.Vector3(.7,1.9,.7);
-const _bulletSize = new THREE.Vector3(.15,.15,.15);
-const _enemyBulletSize = new THREE.Vector3(.18,.18,.18);
-let lastSpawnTime = 0;
+// ── PLAYER CONSTANTS ───────────────────────────────────────────────────────
+const playerSpeed = 0.14;
+const FEET_OFFSET = 1.7;
+const PLAYER_HALF = 0.35;
+const _playerBox = new THREE.Box3();
+function playerCollides(x, z){
+  _playerBox.min.set(x-PLAYER_HALF, 0.2, z-PLAYER_HALF);
+  _playerBox.max.set(x+PLAYER_HALF, 1.8, z+PLAYER_HALF);
+  for(let i=0;i<obstacles.length;i++){
+    if(_playerBox.intersectsBox(obstacles[i])) return true;
+  }
+  return false;
+}
 
-function animate(time){
+// ── MAIN GAME LOOP ─────────────────────────────────────────────────────────
+let lastSpawn = 0;
+let wheelRoll = 0;
+
+function animate(now){
   requestAnimationFrame(animate);
-  if(document.pointerLockElement){
-    if(Math.abs(currentFov - targetFov) > 0.1){
-      currentFov += (targetFov - currentFov) * 0.25;
-      camera.fov = currentFov;
-      camera.updateProjectionMatrix();
+  if(!document.pointerLockElement){ renderer.render(scene, camera); return; }
+
+  // FOV smoothing for scope
+  if(Math.abs(currentFov - targetFov) > 0.1){
+    currentFov += (targetFov - currentFov) * 0.25;
+    camera.fov = currentFov;
+    camera.updateProjectionMatrix();
+  }
+
+  updateTrafficLights(now);
+
+  // Enemy spawning
+  if(now - lastSpawn > SPAWN_INTERVAL){
+    lastSpawn = now;
+    if(enemies.length < MAX_ENEMIES) spawnBatch();
+  }
+
+  if(playerInCar && currentCar){
+    // ═══════ DRIVING PHYSICS ═══════
+    const car = currentCar;
+    // Throttle / brake
+    if(keys['KeyW']){
+      car.speed += CAR_ACCEL;
     }
-
-    // ── CONTINUOUS BATCH SPAWNING ──
-    // Spawn a batch every SPAWN_INTERVAL ms if below cap.
-    if(time - lastSpawnTime > SPAWN_INTERVAL && enemies.length < MAX_ENEMIES){
-      spawnBatch();
-      lastSpawnTime = time;
+    if(keys['KeyS']){
+      car.speed -= CAR_ACCEL;
     }
-
-    const speed=0.14;
-    const prevX=camera.position.x, prevZ=camera.position.z, prevY=camera.position.y;
-
-    // ── LADDER CHECK ──
-    // Is the player's body inside any ladder trigger zone?
-    const _ladderCheck = new THREE.Box3(
-      new THREE.Vector3(camera.position.x-0.3, camera.position.y-1.7, camera.position.z-0.3),
-      new THREE.Vector3(camera.position.x+0.3, camera.position.y+0.1, camera.position.z+0.3)
-    );
-    let onLadder = null;
-    for(let li=0; li<ladders.length; li++){
-      if(_ladderCheck.intersectsBox(ladders[li].trigger)){ onLadder = ladders[li]; break; }
+    car.speed = Math.max(-CAR_MAX_REVERSE, Math.min(CAR_MAX_SPEED, car.speed));
+    // Friction
+    car.speed *= CAR_FRICTION;
+    if(Math.abs(car.speed) < 0.0008) car.speed = 0;
+    // Handbrake
+    if(keys['Space']){
+      car.speed *= CAR_HANDBRAKE_DECAY;
     }
+    // Steering input (steer wheel angle target)
+    let steerTarget = 0;
+    if(keys['KeyA']) steerTarget += 0.45;
+    if(keys['KeyD']) steerTarget -= 0.45;
+    // Smooth steering
+    car.steer += (steerTarget - car.steer) * 0.18;
+    // Turn in place — A/D rotate the car regardless of speed
+    if(keys['KeyA']) car.angle += CAR_TURN_RATE;
+    if(keys['KeyD']) car.angle -= CAR_TURN_RATE;
 
-    let skipGroundMovement = false;
-    if(onLadder){
-      // Climbing mode: W (or Space) holds position / climbs up.
-      // Releasing W causes slow auto-descent. S climbs down faster.
-      const climbSpeed = 0.05;
-      const slideSpeed = 0.04; // automatic descent when not pressing W
-      let dyClimb = 0;
-      const holdingUp = keys['KeyW'] || keys['Space'];
-      if(holdingUp) dyClimb += climbSpeed;
-      else if(keys['KeyS']) dyClimb -= climbSpeed;
-      else dyClimb -= slideSpeed; // slowly slide down
+    // Movement: car faces +Z locally, so world forward is (sin(angle), 0, cos(angle))
+    const fx = Math.sin(car.angle);
+    const fz = Math.cos(car.angle);
+    const newX = car.x + fx * car.speed;
+    const newZ = car.z + fz * car.speed;
 
-      // Apply vertical move. maxY puts the player's feet exactly at roof
-      // height — walking forward off the ladder steps them onto the roof.
-      const newY = camera.position.y + dyClimb;
-      const minY = 1.7; // feet at ground
-      const maxY = onLadder.topY + 1.7; // feet at roof level
-      camera.position.y = Math.max(minY, Math.min(maxY, newY));
-      verticalVelocity = 0;
-      isGrounded = false;
+    // Collision: try X axis then Z axis separately so we can slide along walls.
+    const prevX = car.x, prevZ = car.z;
+    // Build a tentative bbox for newX (keep current Z)
+    const cosA = Math.abs(Math.cos(car.angle));
+    const sinA = Math.abs(Math.sin(car.angle));
+    const ex = car.halfW * cosA + car.halfL * sinA;
+    const ez = car.halfW * sinA + car.halfL * cosA;
+    const tmpBox = new THREE.Box3();
 
-      // Allow small lateral movement so the player can adjust position on the ladder
-      let mvX2=0, mvZ2=0;
-      const lateral = 0.06;
-      if(keys['KeyA']){mvX2-=Math.cos(yaw)*lateral;mvZ2+=Math.sin(yaw)*lateral;}
-      if(keys['KeyD']){mvX2+=Math.cos(yaw)*lateral;mvZ2-=Math.sin(yaw)*lateral;}
+    tmpBox.min.set(newX - ex, 0, prevZ - ez);
+    tmpBox.max.set(newX + ex, 1.8, prevZ + ez);
+    let hitX = false;
+    for(let i=0;i<obstacles.length;i++){
+      if(tmpBox.intersectsBox(obstacles[i])){ hitX = true; break; }
+    }
+    if(!hitX) car.x = newX;
 
-      // When at the top of the ladder and pressing W, push the player toward
-      // the building so they step onto the roof.
-      const atTop = camera.position.y >= maxY - 0.05;
-      if(atTop && holdingUp){
-        mvX2 += onLadder.inwardX * 0.08;
-        mvZ2 += onLadder.inwardZ * 0.08;
+    tmpBox.min.set(car.x - ex, 0, newZ - ez);
+    tmpBox.max.set(car.x + ex, 1.8, newZ + ez);
+    let hitZ = false;
+    for(let i=0;i<obstacles.length;i++){
+      if(tmpBox.intersectsBox(obstacles[i])){ hitZ = true; break; }
+    }
+    if(!hitZ) car.z = newZ;
+
+    // Bounce on impact
+    if(hitX || hitZ){
+      if(Math.abs(car.speed) > 0.15){
+        playCarImpact();
       }
-
-      camera.position.x += mvX2;
-      camera.position.z += mvZ2;
-
-      skipGroundMovement = true;
+      car.speed *= -0.25;
     }
 
-    let mvX=0, mvZ=0;
-    if(!skipGroundMovement){
-    if(keys['KeyW']){mvX-=Math.sin(yaw)*speed;mvZ-=Math.cos(yaw)*speed;}
-    if(keys['KeyS']){mvX+=Math.sin(yaw)*speed;mvZ+=Math.cos(yaw)*speed;}
-    if(keys['KeyA']){mvX-=Math.cos(yaw)*speed;mvZ+=Math.sin(yaw)*speed;}
-    if(keys['KeyD']){mvX+=Math.cos(yaw)*speed;mvZ-=Math.sin(yaw)*speed;}
+    // Clamp to play area
+    car.x = Math.max(-BW + 3, Math.min(BW - 3, car.x));
+    car.z = Math.max(-BW + 3, Math.min(BW - 3, car.z));
 
-    const FEET_OFFSET = 1.7;
-    const HEAD_OFFSET = 0.1;
-    const PLAYER_HALF = 0.35;
-
-    camera.position.x = prevX + mvX;
-    let feetY = camera.position.y - FEET_OFFSET;
-    let headY = camera.position.y + HEAD_OFFSET;
-    _tmpBox.min.set(camera.position.x-PLAYER_HALF, feetY+0.01, camera.position.z-PLAYER_HALF);
-    _tmpBox.max.set(camera.position.x+PLAYER_HALF, headY,      camera.position.z+PLAYER_HALF);
-    for(let wi=0;wi<obstacles.length;wi++){
-      const w=obstacles[wi];
-      if(_tmpBox.intersectsBox(w)){
-        const stepHeight = 0.6;
-        if(w.max.y - feetY <= stepHeight && w.max.y > feetY){
-          camera.position.y = w.max.y + FEET_OFFSET;
-          verticalVelocity = 0; isGrounded = true;
-          feetY = camera.position.y - FEET_OFFSET;
-          headY = camera.position.y + HEAD_OFFSET;
-        } else {
-          camera.position.x = prevX;
-          break;
+    // Update visual transform
+    car.group.position.x = car.x;
+    car.group.position.z = car.z;
+    car.group.rotation.y = car.angle;
+    // Run over enemies — 60 damage when car hits one at any speed
+    if(Math.abs(car.speed) > 0.05){
+      for(let j=enemies.length-1; j>=0; j--){
+        const e = enemies[j];
+        const edx = e.position.x - car.x;
+        const edz = e.position.z - car.z;
+        // Transform enemy position into car-local space to check rectangular hit
+        const cosA = Math.cos(-car.angle), sinA = Math.sin(-car.angle);
+        const localX = edx * cosA - edz * sinA;
+        const localZ = edx * sinA + edz * cosA;
+        if(Math.abs(localX) < car.halfW + 0.4 && Math.abs(localZ) < car.halfL + 0.4){
+          e.userData.hp -= 60;
+          playHit();
+          if(e.userData.hp <= 0){
+            scene.remove(e); enemies.splice(j, 1);
+            kills++; playKill(); updateHUD();
+          } else {
+            // Knock them aside so we don't hit the same one repeatedly
+            const knockDist = 1.2;
+            const sign = localX > 0 ? 1 : -1;
+            // Push them perpendicular to car direction
+            const px = -Math.cos(car.angle) * sign * knockDist;
+            const pz =  Math.sin(car.angle) * sign * knockDist;
+            if(!enemyCollides(e.position.x + px, e.position.z + pz, 0.4)){
+              e.position.x += px;
+              e.position.z += pz;
+            }
+          }
         }
       }
     }
 
-    camera.position.z = prevZ + mvZ;
-    feetY = camera.position.y - FEET_OFFSET;
-    headY = camera.position.y + HEAD_OFFSET;
-    _tmpBox.min.set(camera.position.x-PLAYER_HALF, feetY+0.01, camera.position.z-PLAYER_HALF);
-    _tmpBox.max.set(camera.position.x+PLAYER_HALF, headY,      camera.position.z+PLAYER_HALF);
-    for(let wi=0;wi<obstacles.length;wi++){
-      const w=obstacles[wi];
-      if(_tmpBox.intersectsBox(w)){
-        const stepHeight = 0.6;
-        if(w.max.y - feetY <= stepHeight && w.max.y > feetY){
-          camera.position.y = w.max.y + FEET_OFFSET;
-          verticalVelocity = 0; isGrounded = true;
-          feetY = camera.position.y - FEET_OFFSET;
-          headY = camera.position.y + HEAD_OFFSET;
-        } else {
-          camera.position.z = prevZ;
-          break;
-        }
+    // Spin wheels
+    wheelRoll += car.speed / 0.32; // radius
+    for(const w of car.wheels){
+      w.tire.rotation.x = wheelRoll;
+      if(w.steer){
+        w.group.rotation.y = car.steer * 0.7;
       }
     }
 
-    camera.position.y += verticalVelocity;
+    // Update collision box (kept in obstacles[] only when NOT being driven, but
+    // for AI and bullets we still want the box up to date — easy to just write it)
+    updateCarBox(car);
+
+    // Brake-light intensity
+    const braking = (keys['KeyS'] && car.speed > 0) || keys['Space'];
+    for(const tl of car.taillights){
+      tl.material.emissiveIntensity = braking ? 1.3 : 0.4;
+    }
+
+    // Chase camera: position behind the camera's yaw (not the car's heading)
+    // so the player can swing the camera around with the mouse.
+    const camDist = 7.0;
+    const camHeight = 3.6;
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+    camera.rotation.z = 0;
+    // Camera sits behind+above the car, offset along yaw forward direction
+    const camFwdX = -Math.sin(yaw);
+    const camFwdZ = -Math.cos(yaw);
+    camera.position.x = car.x - camFwdX * camDist;
+    camera.position.z = car.z - camFwdZ * camDist;
+    camera.position.y = 1.5 + camHeight + pitch * 1.5;
+
+    // Speedometer (rough km/h conversion)
+    const kmh = Math.abs(car.speed) * 200 | 0;
+    const speedoEl = document.getElementById('speedo-num');
+    if(speedoEl) speedoEl.innerText = kmh;
+    updateEngine(car.speed);
+  } else {
+    // ═══════ ON-FOOT MOVEMENT ═══════
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+    camera.rotation.z = 0;
+
+    // Movement: WASD relative to yaw
+    const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = new THREE.Vector3(-Math.sin(yaw - Math.PI/2), 0, -Math.cos(yaw - Math.PI/2));
+    const moveSpeed = isScoped ? playerSpeed * 0.5 : playerSpeed;
+    let dx = 0, dz = 0;
+    if(keys['KeyW']){ dx += fwd.x; dz += fwd.z; }
+    if(keys['KeyS']){ dx -= fwd.x; dz -= fwd.z; }
+    if(keys['KeyD']){ dx += right.x; dz += right.z; }
+    if(keys['KeyA']){ dx -= right.x; dz -= right.z; }
+    const len = Math.hypot(dx, dz);
+    if(len > 0){ dx = dx/len * moveSpeed; dz = dz/len * moveSpeed; }
+
+    const px = camera.position.x, pz = camera.position.z;
+    if(dx !== 0 && !playerCollides(px + dx, pz)) camera.position.x += dx;
+    if(dz !== 0 && !playerCollides(px, pz + dz)) camera.position.z += dz;
+
+    // Gravity & jumping
     verticalVelocity -= gravity;
-    feetY = camera.position.y - FEET_OFFSET;
-    headY = camera.position.y + HEAD_OFFSET;
-
-    let groundY = 0;
-    _tmpBox.min.set(camera.position.x-PLAYER_HALF, -1000, camera.position.z-PLAYER_HALF);
-    _tmpBox.max.set(camera.position.x+PLAYER_HALF,  1000, camera.position.z+PLAYER_HALF);
-    for(let wi=0;wi<obstacles.length;wi++){
-      const w=obstacles[wi];
-      if(w.max.x<=_tmpBox.min.x||w.min.x>=_tmpBox.max.x) continue;
-      if(w.max.z<=_tmpBox.min.z||w.min.z>=_tmpBox.max.z) continue;
-      if(w.max.y <= prevY - FEET_OFFSET + 0.3 && w.max.y > groundY){
-        groundY = w.max.y;
-      }
-    }
-
-    if(feetY <= groundY && verticalVelocity <= 0){
-      camera.position.y = groundY + FEET_OFFSET;
+    camera.position.y += verticalVelocity;
+    if(camera.position.y < FEET_OFFSET){
+      camera.position.y = FEET_OFFSET;
       verticalVelocity = 0;
       isGrounded = true;
+    }
+    // Clamp to play area
+    camera.position.x = Math.max(-BW + 3, Math.min(BW - 3, camera.position.x));
+    camera.position.z = Math.max(-BW + 3, Math.min(BW - 3, camera.position.z));
+
+    // Show "Press E" prompt when near a car
+    const near = findNearestCar();
+    document.getElementById('enter-prompt').style.display = near ? 'block' : 'none';
+
+    // Gun recoil decay
+    gunRecoilZ *= 0.85; gunRecoilY *= 0.85;
+    if(playerGun){
+      const [ox, oy, oz] = gunOffsets[selectedGunKey];
+      playerGun.position.set(ox, oy + gunRecoilY, oz + gunRecoilZ);
+    }
+  }
+
+  // ── PLAYER BULLETS ──
+  for(let i=playerBullets.length-1;i>=0;i--){
+    const b = playerBullets[i];
+    const prevPos = b.position.clone();
+    b.position.add(b.userData.vel);
+    b.userData.life++;
+    if(b.userData.life > 120){ scene.remove(b); playerBullets.splice(i, 1); continue; }
+    // Check obstacle hit (line segment vs box)
+    if(isBlocked(prevPos.x, prevPos.y, prevPos.z, b.position.x, b.position.y, b.position.z)){
+      scene.remove(b); playerBullets.splice(i, 1); continue;
+    }
+    // Enemy hits
+    let hit = false;
+    for(let j=enemies.length-1;j>=0;j--){
+      const e = enemies[j];
+      const ex = e.position.x, ez = e.position.z;
+      const dx2 = b.position.x - ex, dz2 = b.position.z - ez;
+      if(dx2*dx2 + dz2*dz2 < 0.36){
+        const by = b.position.y;
+        // Head: y ~ 1.6-1.85; torso: 0.9-1.6; legs: <0.9
+        let dmg = b.userData.damage;
+        if(by > 1.55 && b.userData.headshotDamage){ dmg = b.userData.headshotDamage; }
+        e.userData.hp -= dmg;
+        playHit();
+        if(e.userData.hp <= 0){
+          scene.remove(e); enemies.splice(j, 1);
+          kills++; playKill(); updateHUD();
+        }
+        hit = true; break;
+      }
+    }
+    if(hit){ scene.remove(b); playerBullets.splice(i, 1); }
+  }
+
+  // ── ENEMY BULLETS ──
+  for(let i=enemyBullets.length-1;i>=0;i--){
+    const b = enemyBullets[i];
+    const prev = b.position.clone();
+    b.position.add(b.userData.vel);
+    b.userData.life++;
+    if(b.userData.life > 100){ scene.remove(b); enemyBullets.splice(i, 1); continue; }
+    if(isBlocked(prev.x, prev.y, prev.z, b.position.x, b.position.y, b.position.z)){
+      scene.remove(b); enemyBullets.splice(i, 1); continue;
+    }
+    // Player hit
+    const target = playerInCar && currentCar
+      ? new THREE.Vector3(currentCar.x, 1.0, currentCar.z)
+      : camera.position;
+    const tdx = b.position.x - target.x, tdz = b.position.z - target.z, tdy = b.position.y - target.y;
+    const hitR = playerInCar ? 1.8 : 0.6;
+    if(tdx*tdx + tdz*tdz + tdy*tdy < hitR*hitR){
+      // Cars take less damage to player inside (armored-ish)
+      const dmg = playerInCar ? 4 : 12;
+      health -= dmg; updateHUD();
+      playPlayerHurt();
+      document.getElementById('hit-flash').style.background = 'rgba(255,0,0,0.4)';
+      setTimeout(()=>{document.getElementById('hit-flash').style.background='rgba(255,0,0,0)';}, 80);
+      scene.remove(b); enemyBullets.splice(i, 1);
+      if(health <= 0){ playDeath(); resetGame(); return; }
+      continue;
+    }
+  }
+
+  // ── ENEMY AI ──
+  const playerPos = playerInCar && currentCar
+    ? new THREE.Vector3(currentCar.x, 1.0, currentCar.z)
+    : camera.position;
+  for(const e of enemies){
+    const dx = playerPos.x - e.position.x;
+    const dz = playerPos.z - e.position.z;
+    const dist = Math.hypot(dx, dz);
+    if(dist > 90) continue; // skip distant enemies
+    const dirAngle = Math.atan2(dx, dz);
+    e.rotation.y = dirAngle;
+
+    // Walk toward player (stop at range)
+    const stopRange = 14;
+    if(dist > stopRange){
+      const stepSpeed = 0.028;
+      const nx = e.position.x + (dx/dist) * stepSpeed;
+      const nz = e.position.z + (dz/dist) * stepSpeed;
+      if(!enemyCollides(nx, e.position.z, 0.4)) e.position.x = nx;
+      if(!enemyCollides(e.position.x, nz, 0.4)) e.position.z = nz;
+      // Leg walk anim
+      e.userData.walkPhase += 0.18;
+      const swing = Math.sin(e.userData.walkPhase) * 0.35;
+      if(e.userData.legL) e.userData.legL.rotation.x = swing;
+      if(e.userData.legR) e.userData.legR.rotation.x = -swing;
     } else {
-      isGrounded = false;
-    }
-    if(camera.position.y < 1.7){ camera.position.y = 1.7; verticalVelocity = 0; isGrounded = true; }
-
-    if(verticalVelocity > 0){
-      _tmpBox.min.set(camera.position.x-PLAYER_HALF, feetY+0.01, camera.position.z-PLAYER_HALF);
-      _tmpBox.max.set(camera.position.x+PLAYER_HALF, headY,      camera.position.z+PLAYER_HALF);
-      for(let wi=0;wi<obstacles.length;wi++){
-        const w=obstacles[wi];
-        if(_tmpBox.intersectsBox(w) && w.min.y > feetY + 0.5){
-          camera.position.y = w.min.y - HEAD_OFFSET - 0.01;
-          verticalVelocity = 0;
-          break;
-        }
-      }
+      if(e.userData.legL) e.userData.legL.rotation.x = 0;
+      if(e.userData.legR) e.userData.legR.rotation.x = 0;
     }
 
-    camera.position.x=Math.max(-BW+1,Math.min(BW-1,camera.position.x));
-    camera.position.z=Math.max(-BW+1,Math.min(BW-1,camera.position.z));
-    } // end if(!skipGroundMovement)
-
-    gunRecoilZ*=0.75; gunRecoilY*=0.75;
-    const off=gunOffsets[selectedGunKey];
-    playerGun.position.set(off[0],off[1]-gunRecoilY,off[2]+gunRecoilZ);
-    playerGun.rotation.x=-gunRecoilY*2.5;
-
-    for(let i=playerBullets.length-1;i>=0;i--){
-      const b=playerBullets[i]; b.position.add(b.userData.vel); b.userData.life++;
-      let hitEnemy=false;
-      const bp=b.position;
-      for(let ei=enemies.length-1;ei>=0;ei--){
-        const e=enemies[ei], ep=e.position;
-        const hitR = e.userData.type === 'rioter' ? 1.1 : 0.9;
-        // Swept hit test: check if the bullet's path during this frame passed
-        // through the enemy's hit sphere. Without this, fast bullets (sniper)
-        // can teleport past small targets in a single frame and miss.
-        // Bullet end position is bp (current); start position is bp - vel.
-        const v = b.userData.vel;
-        const sx = bp.x - v.x, sy = bp.y - v.y, sz = bp.z - v.z;
-        const cx = ep.x, cy = ep.y + 1, cz = ep.z;
-        // Closest point on segment [s, bp] to enemy center
-        const segDx = v.x, segDy = v.y, segDz = v.z;
-        const segLenSq = segDx*segDx + segDy*segDy + segDz*segDz;
-        let t = 0;
-        if(segLenSq > 0){
-          t = ((cx-sx)*segDx + (cy-sy)*segDy + (cz-sz)*segDz) / segLenSq;
-          if(t < 0) t = 0; else if(t > 1) t = 1;
-        }
-        const closestX = sx + segDx*t, closestY = sy + segDy*t, closestZ = sz + segDz*t;
-        const dx2 = closestX - cx, dy2 = closestY - cy, dz2 = closestZ - cz;
-        const distSq2 = dx2*dx2 + dy2*dy2 + dz2*dz2;
-        if(distSq2 < hitR*hitR){
-          // Use the closest-point Y for headshot detection
-          const headY = ep.y + (e.userData.type === 'rioter' ? 2.06 : 1.72);
-          const isHeadshot = b.userData.headshotDamage > 0 && Math.abs(closestY - headY) < 0.22;
-          const hittingShield = e.userData.type === 'rioter' && e.userData.shieldHp > 0;
-          const dmg = (isHeadshot && !hittingShield) ? b.userData.headshotDamage : b.userData.damage;
-
-          if(hittingShield){
-            e.userData.shieldHp -= b.userData.damage;
-            if(e.userData.shieldHp <= 0){
-              e.userData.shieldHp = 0;
-              if(e.userData.shieldGroup && e.userData.shieldGroup.parent){
-                e.userData.shieldGroup.parent.remove(e.userData.shieldGroup);
-              }
-            }
-            playHit();
-          } else {
-            e.userData.hp -= dmg;
-            if(e.userData.hp <= 0){
-              kills++; updateHUD();
-              scene.remove(e); enemies.splice(ei,1);
-              setTimeout(spawnEnemy, 1200);
-              playKill();
-            } else {
-              playHit();
-            }
-          }
-          hitEnemy=true; break;
-        }
-      }
-      _tmpBox2.setFromCenterAndSize(b.position,_bulletSize);
-      let hitWall=false; for(let wi=0;wi<obstacles.length;wi++)if(_tmpBox2.intersectsBox(obstacles[wi])){hitWall=true;break;}
-      if(hitEnemy||hitWall||b.userData.life>300){scene.remove(b);playerBullets.splice(i,1);}
-    }
-
-    for(let i=enemyBullets.length-1;i>=0;i--){
-      const b=enemyBullets[i]; b.position.add(b.userData.vel);
-      const cp=camera.position, bp=b.position;
-      const dx=bp.x-cp.x, dy=bp.y-cp.y, dz=bp.z-cp.z;
-      if(dx*dx+dy*dy+dz*dz<0.5625){
-        health-=8;updateHUD();
-        hitFlash.style.background='rgba(220,0,0,0.4)';
-        setTimeout(()=>hitFlash.style.background='rgba(255,0,0,0)',100);
-        playPlayerHurt();
-        scene.remove(b);enemyBullets.splice(i,1);
-        if(health<=0){playDeath();resetGame();}
-        continue;
-      }
-      _tmpBox2.setFromCenterAndSize(b.position,_enemyBulletSize);
-      let hw=false; for(let wi=0;wi<obstacles.length;wi++)if(_tmpBox2.intersectsBox(obstacles[wi])){hw=true;break;}
-      if(hw||b.userData.life++>200){scene.remove(b);enemyBullets.splice(i,1);}
-    }
-
-    for(let ei=0;ei<enemies.length;ei++){
-      const e=enemies[ei], ep=e.position, cp=camera.position;
-      const dx=cp.x-ep.x, dz=cp.z-ep.z;
-      const distSq=dx*dx+dz*dz;
-      // Skip AI logic and hide visuals for far enemies
-      if(distSq > 14400){ e.visible=false; continue; }
-      e.visible=true;
-      const isRioter = e.userData.type === 'rioter';
-      const moveSpeed = isRioter ? 0.066 : 0.055;
-      const stopDist = isRioter ? 2.2 : 8;
-      const climbSpeed = 0.05; // same as player's climb speed
-
-      // ── LADDER CLIMBING AI ──
-      // If the player is significantly higher than the enemy, look for a nearby
-      // ladder to climb. The enemy walks to the ladder's outer face, then climbs.
-      const heightGap = cp.y - (ep.y + 1.7);
-      let usingLadder = null;
-      if(heightGap > 2.0){
-        // Player is at least 2 units above the enemy's head — search for a ladder
-        let bestLadder = null, bestDist = 25*25; // only consider ladders within 25 units
-        for(let li=0; li<ladders.length; li++){
-          const lt = ladders[li].trigger;
-          const lcx = (lt.min.x + lt.max.x) * 0.5;
-          const lcz = (lt.min.z + lt.max.z) * 0.5;
-          const ldx = lcx - ep.x, ldz = lcz - ep.z;
-          const ld = ldx*ldx + ldz*ldz;
-          if(ld < bestDist){
-            bestDist = ld;
-            bestLadder = ladders[li];
-          }
-        }
-        if(bestLadder){
-          // Check if enemy is at the ladder (XZ overlap with trigger zone)
-          const lt = bestLadder.trigger;
-          const inXZ = ep.x > lt.min.x - 0.3 && ep.x < lt.max.x + 0.3
-                    && ep.z > lt.min.z - 0.3 && ep.z < lt.max.z + 0.3;
-          if(inXZ){
-            usingLadder = bestLadder;
-          } else {
-            // Walk toward the ladder's center XZ. Skip normal player-chase movement.
-            const lcx = (lt.min.x + lt.max.x) * 0.5;
-            const lcz = (lt.min.z + lt.max.z) * 0.5;
-            const ladx = lcx - ep.x, ladz = lcz - ep.z;
-            const ldist = Math.sqrt(ladx*ladx + ladz*ladz);
-            if(ldist > 0.1){
-              const stepX = (ladx/ldist) * moveSpeed;
-              const stepZ = (ladz/ldist) * moveSpeed;
-              const newX = ep.x + stepX;
-              if(!enemyCollides(newX, ep.z, 0.45)){
-                ep.x = Math.max(-BW+2, Math.min(BW-2, newX));
-              }
-              const newZ = ep.z + stepZ;
-              if(!enemyCollides(ep.x, newZ, 0.45)){
-                ep.z = Math.max(-BW+2, Math.min(BW-2, newZ));
-              }
-              e.userData.walkPhase += .18;
-              e.userData.legL.rotation.x = Math.sin(e.userData.walkPhase) * .55;
-              e.userData.legR.rotation.x = Math.sin(e.userData.walkPhase+Math.PI) * .55;
-            }
-            e.lookAt(lcx, ep.y, lcz);
-            // Skip the rest of this enemy's AI this frame
-            continue;
-          }
-        }
-      }
-
-      if(usingLadder){
-        // Climbing: increase ep.y at climb speed, capped at ladder topY.
-        // While climbing, no horizontal movement and no shooting/melee.
-        const maxClimbY = usingLadder.topY;
-        if(ep.y < maxClimbY){
-          ep.y = Math.min(maxClimbY, ep.y + climbSpeed);
-        }
-        // Animate legs as if walking up
-        e.userData.walkPhase += .14;
-        e.userData.legL.rotation.x = Math.sin(e.userData.walkPhase) * .35;
-        e.userData.legR.rotation.x = Math.sin(e.userData.walkPhase+Math.PI) * .35;
-        e.lookAt(cp.x, ep.y, cp.z);
-        // At the top of the ladder, nudge enemy onto the roof so they can keep
-        // chasing the player. We push them slightly inward (toward the building).
-        if(ep.y >= maxClimbY - 0.01){
-          // Find inward direction: ladder center is at the trigger center; the
-          // building center is on the OPPOSITE side from the trigger's outer face.
-          // Use the inward direction stored on the ladder.
-          const ladderObj = usingLadder;
-          if(ladderObj.inwardX !== undefined){
-            ep.x += ladderObj.inwardX * 0.06;
-            ep.z += ladderObj.inwardZ * 0.06;
-          }
-        }
-        continue; // skip combat logic while climbing
-      }
-
-      // When the enemy has climbed up to a roof, they may be at ep.y > 0.
-      // Apply gentle "gravity" only when there's nothing to stand on at their
-      // current position — for simplicity, only descend if no building roof is
-      // beneath them. Check by testing obstacles at their XZ for the highest
-      // top within reach.
-      if(ep.y > 0){
-        let groundY = 0;
-        for(let oi=0; oi<obstacles.length; oi++){
-          const b = obstacles[oi];
-          if(ep.x > b.min.x - 0.4 && ep.x < b.max.x + 0.4
-            && ep.z > b.min.z - 0.4 && ep.z < b.max.z + 0.4){
-            if(b.max.y > groundY && b.max.y <= ep.y + 0.2){
-              groundY = b.max.y;
-            }
-          }
-        }
-        if(ep.y > groundY + 0.05){
-          // Fall toward groundY
-          ep.y = Math.max(groundY, ep.y - 0.20);
-        } else {
-          ep.y = groundY;
-        }
-      }
-
-      if(distSq > stopDist*stopDist){
-        const dist = Math.sqrt(distSq);
-        const stepX = (dx/dist) * moveSpeed;
-        const stepZ = (dz/dist) * moveSpeed;
-        const newX = ep.x + stepX;
-        if(!enemyCollides(newX, ep.z, 0.45)){
-          ep.x = Math.max(-BW+2, Math.min(BW-2, newX));
-        }
-        const newZ = ep.z + stepZ;
-        if(!enemyCollides(ep.x, newZ, 0.45)){
-          ep.z = Math.max(-BW+2, Math.min(BW-2, newZ));
-        }
-        e.userData.walkPhase += .18;
-        e.userData.legL.rotation.x = Math.sin(e.userData.walkPhase) * .55;
-        e.userData.legR.rotation.x = Math.sin(e.userData.walkPhase+Math.PI) * .55;
-      }
-      e.lookAt(cp.x, ep.y, cp.z);
-
-      if(isRioter){
-        // Rioter: melee bat swing when right next to player
-        // Decay swing animation
-        e.userData.swingT *= 0.85;
-
-        // Check melee range AND vertical proximity. Rioter's bat is roughly at
-        // its chest height; if the player is significantly higher (on a roof),
-        // the bat can't reach. Allow ~1.5 units of vertical difference.
-        const heightDiff = Math.abs(camera.position.y - (ep.y + 1.7));
-        if(distSq <= 6.25 && heightDiff < 1.5 && time - e.userData.lastSwing > 1100){
-          e.userData.lastSwing = time;
-          e.userData.swingT = 1.0;
-          // Damage the player
-          health -= 35; updateHUD();
-          hitFlash.style.background = 'rgba(220,0,0,0.5)';
-          setTimeout(()=>hitFlash.style.background='rgba(255,0,0,0)', 120);
-          playPlayerHurt();
-          if(health <= 0){ playDeath(); resetGame(); }
-        }
-
-        // SHIELD ARM: raised HIGH and forward (above shoulder), covering chest-to-face.
-        //   rotation.x = +PI*0.55 means arm angled forward+up (in front of body, lookAt sends +Z forward).
-        if(e.userData.armL){
-          const targetL = Math.PI * 0.55;
-          e.userData.armL.rotation.x += (targetL - e.userData.armL.rotation.x) * 0.18;
-        }
-        // BAT ARM: hangs at the side at rest (rotation.x = 0).
-        //   Swings UP and forward when attacking: rest=0, swing=+PI*0.7 (raised forward-up).
-        // BAT ARM: raised overhead at rest (bat pointing up, ready to strike).
-        //   Swings DOWN to smash player: rest=-PI*0.8 (raised back), swing=+PI*0.4 (down-forward).
-        if(e.userData.armR){
-          const restRot = -Math.PI * 0.8;
-          const swingRot = Math.PI * 0.4;
-          const target = restRot + (swingRot - restRot) * e.userData.swingT;
-          e.userData.armR.rotation.x += (target - e.userData.armR.rotation.x) * 0.35;
-        }
-      } else {
-        e.userData.aimT *= 0.90;
-
-        const fromX = ep.x, fromY = ep.y + 1.3, fromZ = ep.z;
-        const toX = cp.x, toY = cp.y, toZ = cp.z;
-
-        if(distSq <= 400 && time - e.userData.lastAttack > 1600 && !isBlocked(fromX, fromY, fromZ, toX, toY, toZ)){
-          e.userData.lastAttack = time;
-          e.userData.aimT = 1.0;
+    // Attack
+    {
+      // Gunner: line-of-sight check then fire
+      if(dist < 60 && now - e.userData.lastAttack > 1400){
+        const ey = 1.55;
+        if(!isBlocked(e.position.x, ey, e.position.z, playerPos.x, playerPos.y, playerPos.z)){
+          e.userData.lastAttack = now;
           const bm = new THREE.Mesh(_eBulletGeo, _eBulletMat);
-          bm.position.set(fromX, fromY, fromZ);
-          const odx = toX-fromX, ody = toY-fromY, odz = toZ-fromZ;
-          const ol = Math.sqrt(odx*odx+ody*ody+odz*odz);
-          bm.userData = { vel: new THREE.Vector3(odx/ol*.72, ody/ol*.72, odz/ol*.72), life:0 };
+          bm.position.set(e.position.x, ey, e.position.z);
+          const tdx = playerPos.x - e.position.x;
+          const tdz = playerPos.z - e.position.z;
+          const tdy = playerPos.y - ey;
+          const tlen = Math.hypot(tdx, tdy, tdz);
+          // Add slight aim error
+          const err = 0.04;
+          const vel = new THREE.Vector3(
+            tdx/tlen + (Math.random()-0.5)*err,
+            tdy/tlen + (Math.random()-0.5)*err,
+            tdz/tlen + (Math.random()-0.5)*err
+          ).normalize().multiplyScalar(0.9);
+          bm.userData = { vel, life: 0 };
           scene.add(bm); enemyBullets.push(bm);
           playEnemyShot();
-        }
-
-        if(e.userData.armPivot){
-          const targetRot = -Math.PI/2 * e.userData.aimT;
-          e.userData.armPivot.rotation.x += (targetRot - e.userData.armPivot.rotation.x) * 0.35;
+          // Arm aim animation
+          if(e.userData.armPivot){
+            const aimAngle = -Math.atan2(tdy, Math.hypot(tdx, tdz));
+            e.userData.armPivot.rotation.x = aimAngle - Math.PI/2;
+          }
         }
       }
     }
   }
-  renderer.render(scene,camera);
+
+  renderer.render(scene, camera);
 }
+
+// ── SCOPE OVERLAY ──────────────────────────────────────────────────────────
+const scopeOverlay = document.createElement('div');
+scopeOverlay.id = 'scope-overlay';
+scopeOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;z-index:50;';
+scopeOverlay.innerHTML = '<svg id="scope-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%;"></svg>';
+document.body.appendChild(scopeOverlay);
+
+updateHUD();
 animate(0);
 </script>
-<div id="scope-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;z-index:50;">
-  <svg id="scope-svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" style="position:absolute;top:0;left:0;width:100%;height:100%;"></svg>
-</div>
 </body>
 </html>
