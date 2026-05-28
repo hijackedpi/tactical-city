@@ -10,9 +10,7 @@
     pointer-events:none; border:2px solid #333;
   }
   #crosshair { position:absolute; top:50%; left:50%; width:16px; height:16px; transform:translate(-50%,-50%); pointer-events:none; }
-  body.scoped #crosshair { display:none; }
   body.driving #crosshair { display:none; }
-  #scope-overlay svg { width:100%; height:100%; }
   #crosshair::before,#crosshair::after { content:''; position:absolute; background:#f00; }
   #crosshair::before { top:50%; width:100%; height:2px; margin-top:-1px; }
   #crosshair::after  { left:50%; width:2px; height:100%; margin-left:-1px; }
@@ -23,17 +21,6 @@
   }
   #instructions h1 { font-size:48px; letter-spacing:10px; margin:0 0 10px; }
   #instructions p  { color:#aaa; margin-bottom:20px; text-align:center; line-height:1.8; }
-  #gun-select { display:flex; gap:18px; margin-bottom:28px; }
-  .gun-card {
-    width:150px; padding:16px 12px; border:2px solid #444; border-radius:8px;
-    cursor:pointer; text-align:center; transition:all 0.2s; background:rgba(255,255,255,0.05);
-    color:#ccc;
-  }
-  .gun-card:hover { border-color:#aaa; background:rgba(255,255,255,0.12); }
-  .gun-card.selected { border-color:#fff; background:rgba(255,255,255,0.18); color:#fff; }
-  .gun-card .gun-name { font-size:16px; font-weight:bold; letter-spacing:2px; margin-bottom:8px; }
-  .gun-card .gun-stats { font-size:11px; color:#888; line-height:1.7; }
-  .gun-card.selected .gun-stats { color:#bbb; }
   #start-btn { padding:14px 44px; background:#fff; color:#111; border:none; font-size:16px; font-weight:bold; letter-spacing:4px; cursor:pointer; }
   #reload-msg { position:absolute; top:60%; left:50%; transform:translateX(-50%); color:#f80; font-size:22px; display:none; font-weight:bold; letter-spacing:3px; }
   #hit-flash  { position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(255,0,0,0); pointer-events:none; transition:background 0.08s; }
@@ -52,29 +39,72 @@
   }
   #speedo .big { font-size:36px; color:#ffcc44; display:block; line-height:1; }
   #speedo .lbl { font-size:11px; color:#aaa; letter-spacing:3px; }
+  /* Money readout */
+  #money {
+    position:absolute; top:24px; left:30px; color:#3ad15a; font-size:26px; font-weight:bold;
+    background:rgba(10,20,12,0.78); padding:8px 16px; border-radius:7px;
+    pointer-events:none; border:2px solid #2a8a3e; letter-spacing:1px;
+    font-family:'Segoe UI',monospace;
+  }
+  /* Shop button (top-right) */
+  #shop-btn {
+    position:absolute; top:24px; right:30px; z-index:60;
+    padding:10px 22px; background:rgba(20,25,35,0.9); color:#ffcc44;
+    border:2px solid #ffcc44; border-radius:7px; font-size:16px; font-weight:bold;
+    letter-spacing:3px; cursor:pointer; font-family:'Segoe UI',sans-serif;
+  }
+  #shop-btn:hover { background:rgba(255,204,68,0.18); }
+  /* Shop panel */
+  #shop {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    background:rgba(8,10,16,0.94); z-index:90; display:none;
+    flex-direction:column; align-items:center; justify-content:flex-start;
+    color:#fff; padding-top:60px; box-sizing:border-box;
+  }
+  #shop h2 { font-size:38px; letter-spacing:8px; margin:0 0 6px; }
+  #shop .shop-money { color:#3ad15a; font-size:22px; font-weight:bold; margin-bottom:24px; }
+  #shop-list { display:flex; gap:22px; flex-wrap:wrap; justify-content:center; max-width:880px; }
+  .shop-card {
+    width:220px; padding:20px 16px; border:2px solid #444; border-radius:10px;
+    background:rgba(255,255,255,0.05); text-align:center; transition:all 0.15s;
+  }
+  .shop-card .sc-name { font-size:22px; font-weight:bold; letter-spacing:3px; margin-bottom:10px; }
+  .shop-card .sc-stats { font-size:12px; color:#9aa; line-height:1.8; margin-bottom:16px; }
+  .shop-card .sc-btn {
+    width:100%; padding:11px 0; border:none; border-radius:6px; font-size:14px;
+    font-weight:bold; letter-spacing:2px; cursor:pointer;
+  }
+  .sc-btn.buy     { background:#3ad15a; color:#06210d; }
+  .sc-btn.buy:hover { background:#54e574; }
+  .sc-btn.buy.locked { background:#553; color:#aa8; cursor:not-allowed; }
+  .sc-btn.equip   { background:#3a7adf; color:#fff; }
+  .sc-btn.equip:hover { background:#4f8ef0; }
+  .sc-btn.equipped{ background:#222; color:#ffcc44; border:1px solid #ffcc44; cursor:default; }
+  .shop-card.owned { border-color:#3a7adf; }
+  .shop-card.equipped-card { border-color:#ffcc44; }
+  #shop-close {
+    margin-top:32px; padding:13px 40px; background:#fff; color:#111; border:none;
+    font-size:15px; font-weight:bold; letter-spacing:4px; cursor:pointer;
+  }
+  #shop .hint { color:#778; font-size:13px; margin-top:18px; letter-spacing:1px; }
 </style>
 </head>
 <body>
 <div id="instructions">
   <h1 id="title">TACTICAL CITY</h1>
-  <p id="desc">Urban warfare. Enemies shoot on sight.<br><b>WASD</b> Move &nbsp;|&nbsp; <b>Mouse</b> Aim &nbsp;|&nbsp; <b>Click</b> Shoot &nbsp;|&nbsp; <b>R</b> Reload &nbsp;|&nbsp; <b>Space</b> Jump &nbsp;|&nbsp; <b>E</b> Enter/Exit Vehicle</p>
-  <div id="gun-select">
-    <div class="gun-card selected" data-gun="pistol">
-      <div class="gun-name">PISTOL</div>
-      <div class="gun-stats">DMG: 25<br>AMMO: 12<br>RPM: Fast<br>RANGE: Medium</div>
-    </div>
-    <div class="gun-card" data-gun="rifle">
-      <div class="gun-name">RIFLE</div>
-      <div class="gun-stats">DMG: 20<br>AMMO: 30<br>RPM: Medium<br>RANGE: Long</div>
-    </div>
-    <div class="gun-card" data-gun="sniper">
-      <div class="gun-name">SNIPER</div>
-      <div class="gun-stats">DMG: 85 (100 HS)<br>AMMO: 5<br>RPM: Slow<br>RANGE: Extreme</div>
-    </div>
-  </div>
+  <p id="desc">Urban warfare. Enemies shoot on sight.<br><b>WASD</b> Move &nbsp;|&nbsp; <b>Mouse</b> Aim &nbsp;|&nbsp; <b>Click</b> Shoot &nbsp;|&nbsp; <b>R</b> Reload &nbsp;|&nbsp; <b>Space</b> Jump &nbsp;|&nbsp; <b>E</b> Enter/Exit Vehicle<br>Earn <b>$100</b> per kill &nbsp;|&nbsp; Open the <b>SHOP</b> (top-right) to buy weapons</p>
   <button id="start-btn">DEPLOY</button>
 </div>
 <div id="hud">HP: 100 | AMMO: 12/12 | KILLS: 0</div>
+<div id="money">$0</div>
+<div id="shop-btn">SHOP</div>
+<div id="shop">
+  <h2>ARMORY</h2>
+  <div class="shop-money" id="shop-money">$0</div>
+  <div id="shop-list"></div>
+  <div class="hint">Buy a weapon, then click EQUIP to use it. Pistol is yours from the start.</div>
+  <button id="shop-close">CLOSE</button>
+</div>
 <div id="reload-msg">RELOADING...</div>
 <div id="enter-prompt">Press <b>E</b> to enter vehicle</div>
 <div id="speedo"><span class="big" id="speedo-num">0</span><span class="lbl">KM/H</span></div>
@@ -90,27 +120,20 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ── GUN DEFINITIONS ────────────────────────────────────────────────────────
+// price: cost in the shop ($). order: display order in the shop.
 const GUNS = {
-  pistol:  { name:'PISTOL',  ammo:12, maxAmmo:12, damage:25, pellets:1, spread:0, reloadTime:1200, bulletSpeed:1.80, recoilZ:0.18, recoilY:0.06, bulletColor:0xff4400, bulletSize:0.07, scopeFov:30, scopeStyle:'reddot' },
-  rifle:   { name:'RIFLE',   ammo:30, maxAmmo:30, damage:20, pellets:1, spread:0, reloadTime:1800, bulletSpeed:2.40, recoilZ:0.10, recoilY:0.03, bulletColor:0x00ccff, bulletSize:0.05, scopeFov:35, scopeStyle:'sniper' },
-  sniper:  { name:'SNIPER',  ammo:5,  maxAmmo:5,  damage:85, pellets:1, spread:0, reloadTime:2400, bulletSpeed:4.00, recoilZ:0.45, recoilY:0.18, bulletColor:0xffee44, bulletSize:0.06, scopeFov:12, scopeStyle:'sniper', headshotDamage:100 },
+  pistol: { name:'PISTOL', ammo:12, maxAmmo:12, damage:35, pellets:1, spread:0, reloadTime:1200, bulletSpeed:1.80, recoilZ:0.18, recoilY:0.06, bulletColor:0xff4400, bulletSize:0.07, price:0,   order:0, rpm:'Fast',   range:'Medium' },
+  ak47:   { name:'AK47',   ammo:30, maxAmmo:30, damage:20, pellets:1, spread:0, reloadTime:1800, bulletSpeed:2.40, recoilZ:0.10, recoilY:0.03, bulletColor:0x00ccff, bulletSize:0.05, price:500, order:1, rpm:'Auto',   range:'Long' },
+  deagle: { name:'DESERT EAGLE', ammo:7,  maxAmmo:7,  damage:60, pellets:1, spread:0,    reloadTime:1600, bulletSpeed:2.60, recoilZ:0.65, recoilY:0.28, bulletColor:0xffaa00, bulletSize:0.08, price:800, order:2, rpm:'Slow', range:'Long', fireInterval:750 },
+  mp5:    { name:'MP5',          ammo:30, maxAmmo:30, damage:15, pellets:1, spread:0.012, reloadTime:1500, bulletSpeed:2.20, recoilZ:0.07, recoilY:0.02, bulletColor:0x00ccff, bulletSize:0.045, price:400, order:3, rpm:'Auto', range:'Short' },
 };
 let selectedGunKey = 'pistol';
 let gun = {...GUNS.pistol};
 
-document.querySelectorAll('.gun-card').forEach(card => {
-  card.addEventListener('click', () => {
-    document.querySelectorAll('.gun-card').forEach(c => c.classList.remove('selected'));
-    card.classList.add('selected');
-    selectedGunKey = card.dataset.gun;
-  });
-});
-
-// ── SCOPE STATE ────────────────────────────────────────────────────────────
-let isScoped = false;
-const DEFAULT_FOV = 75;
-let currentFov = DEFAULT_FOV;
-let targetFov = DEFAULT_FOV;
+// ── MONEY & OWNERSHIP ───────────────────────────────────────────────────────
+const KILL_REWARD = 100;
+let money = 0;
+const owned = { pistol: true, ak47: false, deagle: false, mp5: false };  // pistol owned from the start
 
 // ── VEHICLE STATE ──────────────────────────────────────────────────────────
 const cars = [];                    // {group, pos:{x,z}, angle, speed, halfW, halfL, color, wheels:[], steeringWheel}
@@ -124,130 +147,7 @@ const CAR_FRICTION = 0.992;         // velocity decay per frame
 const CAR_TURN_RATE = 0.038;        // radians per frame at max grip
 const CAR_HANDBRAKE_DECAY = 0.94;
 
-function buildScopeSVG(style){
-  const svg = document.getElementById('scope-svg');
-  if(style === 'reddot'){
-    svg.innerHTML = `
-      <defs>
-        <mask id="scopeMask">
-          <rect width="100" height="100" fill="white"/>
-          <rect x="36" y="36" width="28" height="28" rx="2.5" ry="2.5" fill="black"/>
-        </mask>
-        <linearGradient id="glassTint" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#88aacc" stop-opacity="0.06"/>
-          <stop offset="100%" stop-color="#446688" stop-opacity="0.14"/>
-        </linearGradient>
-        <linearGradient id="metalGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#34343a"/>
-          <stop offset="50%" stop-color="#1a1a1e"/>
-          <stop offset="100%" stop-color="#0a0a0c"/>
-        </linearGradient>
-        <linearGradient id="housingTop" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#42424a"/>
-          <stop offset="100%" stop-color="#1c1c22"/>
-        </linearGradient>
-        <linearGradient id="housingBot" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#1a1a1e"/>
-          <stop offset="100%" stop-color="#08080a"/>
-        </linearGradient>
-        <linearGradient id="railGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#2a2a2e"/>
-          <stop offset="100%" stop-color="#0a0a0c"/>
-        </linearGradient>
-      </defs>
-      <rect x="36" y="36" width="28" height="28" rx="2.5" ry="2.5" fill="url(#glassTint)"/>
-      <path d="M 32 36 Q 32 28 38 28 L 62 28 Q 68 28 68 36 L 68 38 L 32 38 Z" fill="url(#housingTop)" stroke="#000" stroke-width="0.3"/>
-      <path d="M 34 30 Q 34 29 36 29 L 64 29 Q 66 29 66 30 L 66 30.8 L 34 30.8 Z" fill="#5a5a64" opacity="0.5"/>
-      <path d="M 32 62 L 68 62 L 70 66 Q 70 70 66 70 L 34 70 Q 30 70 30 66 Z" fill="url(#housingBot)" stroke="#000" stroke-width="0.3"/>
-      <path d="M 32 36 L 36 38 L 36 62 L 32 64 Z" fill="#0a0a0e" stroke="#2a2a30" stroke-width="0.15"/>
-      <path d="M 68 36 L 64 38 L 64 62 L 68 64 Z" fill="#0a0a0e" stroke="#2a2a30" stroke-width="0.15"/>
-      <rect x="36" y="36" width="28" height="28" rx="2.5" ry="2.5" fill="none" stroke="#5a6878" stroke-width="0.12" opacity="0.5"/>
-      <path d="M 37 37 L 47 37 L 39 47 Z" fill="white" fill-opacity="0.06"/>
-      <circle cx="38" cy="32" r="0.7" fill="#0a0a0a" stroke="#555" stroke-width="0.15"/>
-      <circle cx="62" cy="32" r="0.7" fill="#0a0a0a" stroke="#555" stroke-width="0.15"/>
-      <rect x="69" y="42" width="3.5" height="14" rx="0.6" fill="#1a1a1e" stroke="#3a3a3e" stroke-width="0.15"/>
-      <circle cx="70.75" cy="45" r="0.5" fill="#444"/>
-      <circle cx="70.75" cy="49" r="0.5" fill="#444"/>
-      <circle cx="70.75" cy="53" r="0.5" fill="#444"/>
-      <circle cx="29.5" cy="50" r="2" fill="#1a1a1e" stroke="#3a3a3e" stroke-width="0.2"/>
-      <line x1="28" y1="50" x2="31" y2="50" stroke="#444" stroke-width="0.3"/>
-      <circle cx="50" cy="50" r="3.2" fill="none" stroke="#ff1010" stroke-width="0.22" opacity="0.95"/>
-      <circle cx="50" cy="50" r="3.7" fill="none" stroke="#ff2020" stroke-width="0.08" opacity="0.4"/>
-      <line x1="50" y1="46.3" x2="50" y2="47.3" stroke="#ff1010" stroke-width="0.22"/>
-      <line x1="50" y1="52.7" x2="50" y2="53.7" stroke="#ff1010" stroke-width="0.22"/>
-      <line x1="46.3" y1="50" x2="47.3" y2="50" stroke="#ff1010" stroke-width="0.22"/>
-      <line x1="52.7" y1="50" x2="53.7" y2="50" stroke="#ff1010" stroke-width="0.22"/>
-      <circle cx="50" cy="50" r="0.55" fill="#ff2828"/>
-      <circle cx="50" cy="50" r="1.1" fill="#ff2828" fill-opacity="0.35"/>
-      <circle cx="50" cy="50" r="1.9" fill="#ff2828" fill-opacity="0.10"/>
-      <rect x="20" y="70" width="60" height="4" fill="url(#railGrad)"/>
-      <line x1="24" y1="71" x2="38" y2="71" stroke="#000" stroke-width="0.15"/>
-      <line x1="62" y1="71" x2="78" y2="71" stroke="#000" stroke-width="0.15"/>
-      <line x1="24" y1="73" x2="38" y2="73" stroke="#000" stroke-width="0.15"/>
-      <line x1="62" y1="73" x2="78" y2="73" stroke="#000" stroke-width="0.15"/>
-      <path d="M 12 74 L 88 74 L 90 79 L 10 79 Z" fill="url(#metalGrad)"/>
-      <rect x="44" y="75" width="12" height="2.5" rx="0.4" fill="#1a1a1e" stroke="#3a3a3e" stroke-width="0.15"/>
-      <rect x="46" y="75.4" width="2" height="1.7" fill="#3a3a3e"/>
-      <rect x="52" y="75.4" width="2" height="1.7" fill="#3a3a3e"/>
-      <rect x="60" y="76" width="8" height="2" rx="0.3" fill="#000" opacity="0.7"/>
-      <path d="M 20 79 Q 50 86 80 79 L 82 100 L 18 100 Z" fill="#1a1612"/>
-      <path d="M 25 81 Q 50 88 75 81 L 75 96 L 25 96 Z" fill="#28201a"/>
-      <ellipse cx="35" cy="84" rx="2.5" ry="1.5" fill="#3a2818" opacity="0.6"/>
-      <ellipse cx="65" cy="84" rx="2.5" ry="1.5" fill="#3a2818" opacity="0.6"/>
-    `;
-  } else if(style === 'sniper'){
-    svg.innerHTML = `
-      <defs>
-        <mask id="sniperMask">
-          <rect width="100" height="100" fill="white"/>
-          <circle cx="50" cy="50" r="28" fill="black"/>
-        </mask>
-        <linearGradient id="sniperRing" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#1a1a1a"/>
-          <stop offset="50%" stop-color="#000"/>
-          <stop offset="100%" stop-color="#1a1a1a"/>
-        </linearGradient>
-      </defs>
-      <circle cx="50" cy="50" r="28" fill="none" stroke="url(#sniperRing)" stroke-width="2"/>
-      <circle cx="50" cy="50" r="28.8" fill="none" stroke="#0a0a0a" stroke-width="0.3"/>
-      <circle cx="50" cy="50" r="27.3" fill="none" stroke="#444" stroke-width="0.15" opacity="0.8"/>
-      <path d="M 32 32 A 28 28 0 0 1 45 25" fill="none" stroke="white" stroke-width="0.4" opacity="0.18"/>
-      <line x1="50" y1="22" x2="50" y2="46" stroke="#000" stroke-width="0.5"/>
-      <line x1="50" y1="54" x2="50" y2="78" stroke="#000" stroke-width="0.5"/>
-      <line x1="22" y1="50" x2="46" y2="50" stroke="#000" stroke-width="0.5"/>
-      <line x1="54" y1="50" x2="78" y2="50" stroke="#000" stroke-width="0.5"/>
-      <line x1="50" y1="46" x2="50" y2="50" stroke="#000" stroke-width="0.15"/>
-      <line x1="50" y1="50" x2="50" y2="54" stroke="#000" stroke-width="0.15"/>
-      <line x1="46" y1="50" x2="50" y2="50" stroke="#000" stroke-width="0.15"/>
-      <line x1="50" y1="50" x2="54" y2="50" stroke="#000" stroke-width="0.15"/>
-      <circle cx="50" cy="50" r="0.35" fill="#ff2020"/>
-    `;
-  }
-}
-
-function setScoped(on){
-  if(isScoped === on) return;
-  if(playerInCar) return; // no scoping while driving
-  isScoped = on;
-  if(on){
-    targetFov = gun.scopeFov;
-    if(gun.scopeStyle === 'none'){
-      document.getElementById('scope-overlay').style.display='none';
-      document.body.classList.remove('scoped');
-      if(playerGun) playerGun.visible = true;
-    } else {
-      buildScopeSVG(gun.scopeStyle);
-      document.getElementById('scope-overlay').style.display='block';
-      document.body.classList.add('scoped');
-      if(playerGun) playerGun.visible = false;
-    }
-  } else {
-    document.getElementById('scope-overlay').style.display='none';
-    document.body.classList.remove('scoped');
-    targetFov = DEFAULT_FOV;
-    if(playerGun) playerGun.visible = true;
-  }
-}
+// (scope system removed)
 
 window.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -1523,27 +1423,61 @@ function makePistol(col=0x111111){
   return g;
 }
 function makeRifle(col=0x1a1a1a){
+  // Styled as an AK47: dark metal receiver/barrel, orange-brown wood furniture,
+  // and the iconic curved (banana) magazine.
   const g=new THREE.Group();
-  const mm=new THREE.MeshStandardMaterial({color:col,roughness:.3,metalness:.85});
-  const wm=new THREE.MeshStandardMaterial({color:0x3a2010,roughness:.9,metalness:.05});
+  const mm=new THREE.MeshStandardMaterial({color:col,roughness:.35,metalness:.8});
+  const wm=new THREE.MeshStandardMaterial({color:0x6b3d18,roughness:.85,metalness:.05}); // AK wood
   const recv=new THREE.Mesh(new THREE.BoxGeometry(.05,.07,.5),mm); g.add(recv);
-  const brl=new THREE.Mesh(new THREE.BoxGeometry(.025,.025,.28),mm);brl.position.set(0,.01,-.37);g.add(brl);
-  const mag=new THREE.Mesh(new THREE.BoxGeometry(.04,.14,.07),mm);mag.position.set(0,-.11,.08);mag.rotation.x=-.15;g.add(mag);
+  const brl=new THREE.Mesh(new THREE.BoxGeometry(.022,.022,.30),mm);brl.position.set(0,.012,-.40);g.add(brl);
+  // Front sight post
+  const fsight=new THREE.Mesh(new THREE.BoxGeometry(.02,.05,.03),mm);fsight.position.set(0,.05,-.36);g.add(fsight);
+  // Wood handguard over the barrel
+  const hand=new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.18),wm);hand.position.set(0,.0,-.20);g.add(hand);
+  // Curved banana magazine — three angled segments
+  const mag1=new THREE.Mesh(new THREE.BoxGeometry(.045,.08,.06),mm);mag1.position.set(0,-.085,.06);mag1.rotation.x=-.15;g.add(mag1);
+  const mag2=new THREE.Mesh(new THREE.BoxGeometry(.045,.07,.055),mm);mag2.position.set(0,-.15,.085);mag2.rotation.x=-.45;g.add(mag2);
+  const mag3=new THREE.Mesh(new THREE.BoxGeometry(.045,.06,.05),mm);mag3.position.set(0,-.20,.13);mag3.rotation.x=-.75;g.add(mag3);
+  // Wood stock + pistol grip
   const stk=new THREE.Mesh(new THREE.BoxGeometry(.04,.06,.22),wm);stk.position.set(0,-.01,.32);g.add(stk);
-  const grp=new THREE.Mesh(new THREE.BoxGeometry(.04,.12,.06),wm);grp.position.set(0,-.09,.16);grp.rotation.x=.25;g.add(grp);
-  const scp=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.12,8),mm);scp.rotation.x=Math.PI/2;scp.position.set(0,.065,-.02);g.add(scp);
+  const grp=new THREE.Mesh(new THREE.BoxGeometry(.04,.11,.05),wm);grp.position.set(0,-.09,.17);grp.rotation.x=.28;g.add(grp);
+  return g;
+}
+
+function makeDeagle(){
+  // Big chrome hand-cannon: long slide, squared barrel, angled grip.
+  const g=new THREE.Group();
+  const mm=new THREE.MeshStandardMaterial({color:0xb8b8c0,roughness:.25,metalness:.95}); // chrome
+  const slide=new THREE.Mesh(new THREE.BoxGeometry(.06,.085,.46),mm); g.add(slide);
+  const barrel=new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.12),mm); barrel.position.set(0,.005,-.30); g.add(barrel);
+  const grip=new THREE.Mesh(new THREE.BoxGeometry(.05,.18,.09),new THREE.MeshStandardMaterial({color:0x222,roughness:.6,metalness:.4}));
+  grip.position.set(0,-.13,.12); grip.rotation.x=.3; g.add(grip);
+  const guard=new THREE.Mesh(new THREE.BoxGeometry(.04,.06,.08),mm); guard.position.set(0,-.06,.03); g.add(guard);
+  return g;
+}
+function makeMP5(){
+  // Compact SMG: short receiver, stubby barrel, vertical mag, collapsing stock.
+  const g=new THREE.Group();
+  const mm=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:.4,metalness:.7});
+  const recv=new THREE.Mesh(new THREE.BoxGeometry(.05,.075,.34),mm); g.add(recv);
+  const brl=new THREE.Mesh(new THREE.BoxGeometry(.03,.03,.16),mm); brl.position.set(0,.012,-.24); g.add(brl);
+  const mag=new THREE.Mesh(new THREE.BoxGeometry(.04,.16,.06),mm); mag.position.set(0,-.12,.02); mag.rotation.x=-.08; g.add(mag);
+  const grp=new THREE.Mesh(new THREE.BoxGeometry(.04,.11,.05),mm); grp.position.set(0,-.09,.12); grp.rotation.x=.3; g.add(grp);
+  const stk=new THREE.Mesh(new THREE.BoxGeometry(.035,.05,.18),mm); stk.position.set(0,-.01,.27); g.add(stk);
   return g;
 }
 
 const gunModels = {
   pistol: makePistol(),
-  rifle:  makeRifle(),
-  sniper: makeRifle(0x0a0a0a),
+  ak47:   makeRifle(0x2a2a2a),
+  deagle: makeDeagle(),
+  mp5:    makeMP5(),
 };
 const gunOffsets = {
   pistol: [.28,-.22,-.38],
-  rifle:  [.28,-.22,-.44],
-  sniper: [.28,-.22,-.46],
+  ak47:   [.28,-.22,-.44],
+  deagle: [.28,-.22,-.40],
+  mp5:    [.28,-.22,-.42],
 };
 let playerGun = gunModels.pistol;
 playerGun.position.set(...gunOffsets.pistol);
@@ -1709,10 +1643,10 @@ function updateHUD(){
 function resetGame(){
   // Eject from car if dying mid-drive
   if(playerInCar) exitCar(true);
+  // Keep money and owned weapons across deaths; keep the equipped gun.
   gun={...GUNS[selectedGunKey]};
   health=100;ammo=gun.ammo;kills=0;verticalVelocity=0;yaw=0;pitch=0;
   camera.position.set(0,1.7,0); camera.rotation.set(0,0,0);
-  setScoped(false);
   enemyBullets.forEach(b=>scene.remove(b));enemyBullets.length=0;
   playerBullets.forEach(b=>scene.remove(b));playerBullets.length=0;
   enemies.forEach(e=>scene.remove(e));enemies.length=0;
@@ -1720,9 +1654,9 @@ function resetGame(){
   playerGun = gunModels[selectedGunKey];
   playerGun.position.set(...gunOffsets[selectedGunKey]);
   camera.add(playerGun);
-  updateHUD();
+  updateHUD(); updateMoneyUI();
   document.getElementById('title').innerText='KIA';
-  document.getElementById('desc').innerHTML='Eliminated.<br><b>WASD</b> Move | <b>Click</b> Shoot | <b>Space</b> Jump | <b>E</b> Enter Vehicle';
+  document.getElementById('desc').innerHTML='Eliminated. Your cash and weapons are kept.<br><b>WASD</b> Move | <b>Click</b> Shoot | <b>Space</b> Jump | <b>E</b> Enter Vehicle';
   document.getElementById('start-btn').innerText='RESPAWN';
   document.getElementById('instructions').style.display='flex';
   if(document.pointerLockElement) document.exitPointerLock();
@@ -1779,9 +1713,57 @@ function playRifleShot() {
   bodySrc.start(t); bodySrc.stop(t + 0.08);
 }
 function playShootSound() {
-  if(selectedGunKey==='sniper') playRifleShot();
-  else if(selectedGunKey==='rifle') playRifleShot();
+  if(selectedGunKey==='ak47' || selectedGunKey==='mp5') playRifleShot();
+  else if(selectedGunKey==='deagle') playDeagleShot();
   else playGunshot();
+}
+function playDeagleShot() {
+  const t = AC.currentTime;
+  // 1) Supersonic CRACK — very sharp, very loud transient
+  const crackN = noiseBuffer(0.008, x => 1 - x);
+  const crackHP = biquad('highpass', 2500);
+  const crackG = AC.createGain();
+  crackG.gain.setValueAtTime(8.0, t);
+  crackG.gain.exponentialRampToValueAtTime(0.001, t + 0.008);
+  const crackSrc = AC.createBufferSource(); crackSrc.buffer = crackN;
+  crackSrc.connect(crackHP); crackHP.connect(crackG); crackG.connect(AC.destination);
+  crackSrc.start(t); crackSrc.stop(t + 0.008);
+  // 2) Main BLAST body — big mid punch
+  const bodyN = noiseBuffer(0.35, x => Math.pow(1 - x, 0.9));
+  const bodyBP = biquad('bandpass', 900); bodyBP.Q.value = 0.6;
+  const bodyG = AC.createGain();
+  bodyG.gain.setValueAtTime(6.0, t);
+  bodyG.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+  const bodySrc = AC.createBufferSource(); bodySrc.buffer = bodyN;
+  bodySrc.connect(bodyBP); bodyBP.connect(bodyG); bodyG.connect(AC.destination);
+  bodySrc.start(t); bodySrc.stop(t + 0.35);
+  // 3) Deep cannon SUB — heavy low-end boom
+  const sub = AC.createOscillator(); sub.type = 'sine';
+  sub.frequency.setValueAtTime(140, t);
+  sub.frequency.exponentialRampToValueAtTime(22, t + 0.30);
+  const subG = AC.createGain();
+  subG.gain.setValueAtTime(3.2, t);
+  subG.gain.exponentialRampToValueAtTime(0.001, t + 0.30);
+  sub.connect(subG); subG.connect(AC.destination); sub.start(t); sub.stop(t + 0.30);
+  // 4) TAIL / echo — long ringing decay so it sounds huge and magnificent
+  const tailN = noiseBuffer(0.7, x => Math.pow(1 - x, 2.2));
+  const tailLP = biquad('lowpass', 1400);
+  const tailG = AC.createGain();
+  tailG.gain.setValueAtTime(0.0, t);
+  tailG.gain.linearRampToValueAtTime(1.6, t + 0.02);
+  tailG.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+  const tailSrc = AC.createBufferSource(); tailSrc.buffer = tailN;
+  tailSrc.connect(tailLP); tailLP.connect(tailG); tailG.connect(AC.destination);
+  tailSrc.start(t); tailSrc.stop(t + 0.7);
+  // 5) Metallic ring — the "magnificent" high shimmer
+  const ring = AC.createOscillator(); ring.type = 'triangle';
+  ring.frequency.setValueAtTime(2200, t);
+  ring.frequency.exponentialRampToValueAtTime(1100, t + 0.5);
+  const ringG = AC.createGain();
+  ringG.gain.setValueAtTime(0.0, t);
+  ringG.gain.linearRampToValueAtTime(0.4, t + 0.005);
+  ringG.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+  ring.connect(ringG); ringG.connect(AC.destination); ring.start(t); ring.stop(t + 0.5);
 }
 function playEnemyShot() { playGunshot(); }
 function playHit() {
@@ -1881,8 +1863,6 @@ function findNearestCar(){
 }
 function enterCar(car){
   if(playerInCar) return;
-  // Drop scope state, mouse-button-fire, etc.
-  setScoped(false);
   mouseHeld = false;
   if(autoFireInterval){ clearInterval(autoFireInterval); autoFireInterval = null; }
 
@@ -1960,18 +1940,106 @@ function exitCar(forced = false){
 
 // ── INPUT ──────────────────────────────────────────────────────────────────
 document.getElementById('start-btn').addEventListener('click',()=>{
-  gun = {...GUNS[selectedGunKey]};
-  ammo = gun.ammo; maxAmmo = gun.maxAmmo;
-  camera.remove(playerGun);
-  playerGun = gunModels[selectedGunKey];
-  playerGun.position.set(...gunOffsets[selectedGunKey]);
-  camera.add(playerGun);
-  updateHUD();
+  equipGun(selectedGunKey);
+  updateHUD(); updateMoneyUI();
   document.body.requestPointerLock();
 });
+
+// ── MONEY + SHOP UI ─────────────────────────────────────────────────────────
+function updateMoneyUI(){
+  document.getElementById('money').innerText = '$' + money;
+  const sm = document.getElementById('shop-money');
+  if(sm) sm.innerText = '$' + money;
+}
+function addMoney(amount){
+  money += amount;
+  updateMoneyUI();
+}
+// Swap the equipped weapon (model + stats), preserving full mag on swap.
+function equipGun(key){
+  if(!owned[key]) return;
+  selectedGunKey = key;
+  gun = {...GUNS[key]};
+  ammo = gun.ammo; maxAmmo = gun.maxAmmo;
+  camera.remove(playerGun);
+  playerGun = gunModels[key];
+  playerGun.position.set(...gunOffsets[key]);
+  playerGun.visible = !playerInCar;
+  camera.add(playerGun);
+  updateHUD();
+}
+
+const shopEl = document.getElementById('shop');
+function renderShop(){
+  const list = document.getElementById('shop-list');
+  list.innerHTML = '';
+  const keys = Object.keys(GUNS).sort((a,b)=>GUNS[a].order-GUNS[b].order);
+  for(const key of keys){
+    const g = GUNS[key];
+    const isOwned = !!owned[key];
+    const isEquipped = selectedGunKey === key;
+    const card = document.createElement('div');
+    card.className = 'shop-card' + (isEquipped ? ' equipped-card' : (isOwned ? ' owned' : ''));
+    const priceLabel = g.price === 0 ? 'FREE' : ('$' + g.price);
+    let btnHtml;
+    if(isEquipped){
+      btnHtml = '<button class="sc-btn equipped" disabled>EQUIPPED</button>';
+    } else if(isOwned){
+      btnHtml = `<button class="sc-btn equip" data-action="equip" data-gun="${key}">EQUIP</button>`;
+    } else {
+      const afford = money >= g.price;
+      btnHtml = `<button class="sc-btn buy${afford?'':' locked'}" data-action="buy" data-gun="${key}" ${afford?'':'disabled'}>BUY ${priceLabel}</button>`;
+    }
+    card.innerHTML = `
+      <div class="sc-name">${g.name}</div>
+      <div class="sc-stats">
+        DMG: ${g.damage}<br>
+        AMMO: ${g.maxAmmo}<br>
+        FIRE: ${g.rpm}<br>
+        RANGE: ${g.range}<br>
+        ${isOwned ? '<span style="color:#3a7adf">OWNED</span>' : 'PRICE: ' + priceLabel}
+      </div>
+      ${btnHtml}
+    `;
+    list.appendChild(card);
+  }
+  // Wire up buttons
+  list.querySelectorAll('.sc-btn[data-action]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const key = btn.dataset.gun;
+      if(btn.dataset.action === 'buy'){
+        if(money >= GUNS[key].price && !owned[key]){
+          addMoney(-GUNS[key].price);
+          owned[key] = true;
+          renderShop();  // now shows EQUIP
+        }
+      } else if(btn.dataset.action === 'equip'){
+        equipGun(key);
+        renderShop();  // now shows EQUIPPED
+      }
+    });
+  });
+}
+function openShop(){
+  renderShop();
+  updateMoneyUI();
+  shopEl.style.display = 'flex';
+  if(document.pointerLockElement) document.exitPointerLock();
+}
+function closeShop(){
+  shopEl.style.display = 'none';
+  // If a game is in progress (player already deployed), re-lock the pointer.
+  const menuOpen = document.getElementById('instructions').style.display === 'flex';
+  if(!menuOpen) document.body.requestPointerLock();
+}
+document.getElementById('shop-btn').addEventListener('click', openShop);
+document.getElementById('shop-close').addEventListener('click', closeShop);
 document.addEventListener('pointerlockchange',()=>{
-  document.getElementById('instructions').style.display=document.pointerLockElement?'none':'flex';
-  if(!document.pointerLockElement) setScoped(false);
+  // Don't force the menu open just because the shop grabbed the pointer.
+  const shopOpen = document.getElementById('shop').style.display === 'flex';
+  if(!shopOpen){
+    document.getElementById('instructions').style.display = document.pointerLockElement ? 'none' : 'flex';
+  }
 });
 document.addEventListener('mousemove',e=>{
   if(!document.pointerLockElement) return;
@@ -1984,6 +2052,13 @@ document.addEventListener('mousemove',e=>{
 });
 window.addEventListener('keydown',e=>{
   keys[e.code]=true;
+  // B: toggle shop (works during play)
+  if(e.code==='KeyB'){
+    const shopOpen = document.getElementById('shop').style.display === 'flex';
+    const menuOpen = document.getElementById('instructions').style.display === 'flex';
+    if(!menuOpen){ shopOpen ? closeShop() : openShop(); }
+    return;
+  }
   // E: enter/exit car
   if(e.code==='KeyE'){
     if(playerInCar) exitCar(false);
@@ -2003,8 +2078,14 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
+let _lastShotTime = 0;
 function doShoot() {
   if(!document.pointerLockElement||isReloading||ammo<=0||playerInCar) return;
+  if(gun.fireInterval){
+    const nowT = performance.now();
+    if(nowT - _lastShotTime < gun.fireInterval) return;
+    _lastShotTime = nowT;
+  }
   ammo--; updateHUD();
   gunRecoilZ=gun.recoilZ; gunRecoilY=gun.recoilY;
   playShootSound();
@@ -2035,28 +2116,19 @@ let mouseHeld=false, autoFireInterval=null;
 
 document.addEventListener('mousedown',e=>{
   if(!document.pointerLockElement) return;
-  if(playerInCar) return; // no shooting from car (yet)
-  if(e.button===2){
-    e.preventDefault();
-    setScoped(true);
-    return;
-  }
+  if(playerInCar) return; // no shooting from car
   if(e.button!==0) return;
   mouseHeld=true;
   doShoot();
-  if(selectedGunKey==='rifle'){
+  if(selectedGunKey==='ak47' || selectedGunKey==='mp5'){
     autoFireInterval=setInterval(()=>{
       if(!mouseHeld||ammo<=0||isReloading){ clearInterval(autoFireInterval); autoFireInterval=null; return; }
       doShoot();
-    }, 175);
+    }, selectedGunKey==='mp5' ? 80 : 110);
   }
 });
 
 document.addEventListener('mouseup',e=>{
-  if(e.button===2){
-    setScoped(false);
-    return;
-  }
   if(e.button!==0) return;
   mouseHeld=false;
   if(autoFireInterval){ clearInterval(autoFireInterval); autoFireInterval=null; }
@@ -2123,13 +2195,6 @@ let wheelRoll = 0;
 function animate(now){
   requestAnimationFrame(animate);
   if(!document.pointerLockElement){ renderer.render(scene, camera); return; }
-
-  // FOV smoothing for scope
-  if(Math.abs(currentFov - targetFov) > 0.1){
-    currentFov += (targetFov - currentFov) * 0.25;
-    camera.fov = currentFov;
-    camera.updateProjectionMatrix();
-  }
 
   updateTrafficLights(now);
 
@@ -2231,7 +2296,7 @@ function animate(now){
           playHit();
           if(e.userData.hp <= 0){
             scene.remove(e); enemies.splice(j, 1);
-            kills++; playKill(); updateHUD();
+            kills++; addMoney(KILL_REWARD); playKill(); updateHUD();
           } else {
             const sign = localX > 0 ? 1 : -1;
             const px = -Math.cos(car.angle) * sign * 1.2;
@@ -2293,7 +2358,7 @@ function animate(now){
     // Movement: WASD relative to yaw
     const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
     const right = new THREE.Vector3(-Math.sin(yaw - Math.PI/2), 0, -Math.cos(yaw - Math.PI/2));
-    const moveSpeed = isScoped ? playerSpeed * 0.5 : playerSpeed;
+    const moveSpeed = playerSpeed;
     let dx = 0, dz = 0;
     if(keys['KeyW']){ dx += fwd.x; dz += fwd.z; }
     if(keys['KeyS']){ dx -= fwd.x; dz -= fwd.z; }
@@ -2346,8 +2411,16 @@ function animate(now){
     for(let j=enemies.length-1;j>=0;j--){
       const e = enemies[j];
       const ex = e.position.x, ez = e.position.z;
-      const dx2 = b.position.x - ex, dz2 = b.position.z - ez;
-      if(dx2*dx2 + dz2*dz2 < 0.36){
+      // Swept check: closest distance from the enemy to the segment the bullet
+      // traveled this frame, so fast bullets can't skip over an enemy in one step.
+      const sx = prevPos.x, sz = prevPos.z;
+      const vx = b.position.x - sx, vz = b.position.z - sz;
+      const segLen2 = vx*vx + vz*vz;
+      let tHit = segLen2 > 0 ? (((ex - sx)*vx + (ez - sz)*vz) / segLen2) : 0;
+      tHit = Math.max(0, Math.min(1, tHit));
+      const cx = sx + vx*tHit, cz = sz + vz*tHit;
+      const ddx = cx - ex, ddz = cz - ez;
+      if(ddx*ddx + ddz*ddz < 0.5){
         const by = b.position.y;
         // Head: y ~ 1.6-1.85; torso: 0.9-1.6; legs: <0.9
         let dmg = b.userData.damage;
@@ -2356,7 +2429,7 @@ function animate(now){
         playHit();
         if(e.userData.hp <= 0){
           scene.remove(e); enemies.splice(j, 1);
-          kills++; playKill(); updateHUD();
+          kills++; addMoney(KILL_REWARD); playKill(); updateHUD();
         }
         hit = true; break;
       }
@@ -2382,7 +2455,7 @@ function animate(now){
     const hitR = playerInCar ? 1.8 : 0.6;
     if(tdx*tdx + tdz*tdz + tdy*tdy < hitR*hitR){
       // Cars take less damage to player inside (armored-ish)
-      const dmg = playerInCar ? 4 : 12;
+      const dmg = playerInCar ? 4 : 8;
       health -= dmg; updateHUD();
       playPlayerHurt();
       document.getElementById('hit-flash').style.background = 'rgba(255,0,0,0.4)';
@@ -2425,7 +2498,7 @@ function animate(now){
 
     // Attack — gunner: line-of-sight check then fire
     {
-      if(dist < 60 && now - e.userData.lastAttack > 1400){
+      if(dist < 30 && now - e.userData.lastAttack > 1400){
         const ey = 1.55;
         if(!isBlocked(e.position.x, ey, e.position.z, playerPos.x, playerPos.y, playerPos.z)){
           e.userData.lastAttack = now;
@@ -2458,14 +2531,8 @@ function animate(now){
   renderer.render(scene, camera);
 }
 
-// ── SCOPE OVERLAY ──────────────────────────────────────────────────────────
-const scopeOverlay = document.createElement('div');
-scopeOverlay.id = 'scope-overlay';
-scopeOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;z-index:50;';
-scopeOverlay.innerHTML = '<svg id="scope-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:100%;"></svg>';
-document.body.appendChild(scopeOverlay);
-
 updateHUD();
+updateMoneyUI();
 animate(0);
 </script>
 </body>
