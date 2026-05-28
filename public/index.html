@@ -81,9 +81,13 @@
 <div id="hit-flash"></div>
 <div id="crosshair"></div>
 
-<script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+<script type="importmap">{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }</script>
 <script type="module">
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ── GUN DEFINITIONS ────────────────────────────────────────────────────────
 const GUNS = {
@@ -422,7 +426,9 @@ function sides(t,w,h,d){const rx=Math.max(1,w/4|0),ry=Math.max(1,h/4|0),rz=Math.
 
 function addBox(w,h,d,x,y,z,mats,collide=true){
   const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mats);
-  m.position.set(x,y+h/2,z); m.castShadow=true; m.receiveShadow=true; scene.add(m);
+  m.position.set(x,y+h/2,z); m.castShadow=true; m.receiveShadow=true;
+  m.matrixAutoUpdate=false; m.updateMatrix();
+  scene.add(m);
   if(collide) obstacles.push(new THREE.Box3().setFromObject(m));
   return m;
 }
@@ -443,6 +449,24 @@ const paintYellowMat = new THREE.MeshBasicMaterial({ color: 0xddc040 });
 
 const roadSegments = [];
 const intersections = [];
+
+// Paint stripes (lane lines, dashes, edges) are collected as geometries and
+// merged into a single mesh per color at the end — turns thousands of draw
+// calls into two, with identical visuals.
+const _yellowPaintGeos = [];
+const _whitePaintGeos = [];
+const _planeXZ = new THREE.PlaneGeometry(1, 1); // unit plane, reused
+function _addPaint(arr, w, d, px, pz, py){
+  const g = _planeXZ.clone();
+  const m = new THREE.Matrix4();
+  // scale to w×d, rotate flat (-90° about X), translate
+  m.makeRotationX(-Math.PI/2);
+  const s = new THREE.Matrix4().makeScale(w, d, 1);
+  m.multiply(s);
+  m.setPosition(px, py, pz);
+  g.applyMatrix4(m);
+  arr.push(g);
+}
 
 function addRoad(x, z, length, orient){
   const w = orient === 'h' ? length : ROAD_WIDTH;
@@ -466,27 +490,15 @@ function addRoad(x, z, length, orient){
     for(const off of [-0.25, 0.25]){
       const yw = orient === 'h' ? centerLen : 0.15;
       const yd = orient === 'h' ? 0.15 : centerLen;
-      const yLine = new THREE.Mesh(new THREE.PlaneGeometry(yw, yd), paintYellowMat);
-      yLine.rotation.x = -Math.PI/2;
-      yLine.position.set(
-        x + (orient === 'h' ? 0 : off),
-        0.025,
-        z + (orient === 'h' ? off : 0)
-      );
-      scene.add(yLine);
+      _addPaint(_yellowPaintGeos, yw, yd,
+        x + (orient === 'h' ? 0 : off), z + (orient === 'h' ? off : 0), 0.025);
     }
   }
   for(const edgeOff of [-ROAD_WIDTH/2 + 0.3, ROAD_WIDTH/2 - 0.3]){
     const ew = orient === 'h' ? length : 0.12;
     const ed = orient === 'h' ? 0.12 : length;
-    const eLine = new THREE.Mesh(new THREE.PlaneGeometry(ew, ed), paintWhiteMat);
-    eLine.rotation.x = -Math.PI/2;
-    eLine.position.set(
-      x + (orient === 'h' ? 0 : edgeOff),
-      0.022,
-      z + (orient === 'h' ? edgeOff : 0)
-    );
-    scene.add(eLine);
+    _addPaint(_whitePaintGeos, ew, ed,
+      x + (orient === 'h' ? 0 : edgeOff), z + (orient === 'h' ? edgeOff : 0), 0.022);
   }
   const dashLen = 2, dashGap = 2;
   const halfLen = centerLen / 2;
@@ -494,14 +506,8 @@ function addRoad(x, z, length, orient){
     for(let pos = -halfLen + dashLen/2; pos < halfLen; pos += dashLen + dashGap){
       const dw = orient === 'h' ? dashLen : 0.12;
       const dd = orient === 'h' ? 0.12 : dashLen;
-      const dash = new THREE.Mesh(new THREE.PlaneGeometry(dw, dd), paintWhiteMat);
-      dash.rotation.x = -Math.PI/2;
-      dash.position.set(
-        x + (orient === 'h' ? pos : laneOff),
-        0.023,
-        z + (orient === 'h' ? laneOff : pos)
-      );
-      scene.add(dash);
+      _addPaint(_whitePaintGeos, dw, dd,
+        x + (orient === 'h' ? pos : laneOff), z + (orient === 'h' ? laneOff : pos), 0.023);
     }
   }
 }
@@ -555,6 +561,22 @@ for(const it of intersections){
   roadPatch.rotation.x = -Math.PI/2;
   roadPatch.position.set(it.x, 0.017, it.z);
   scene.add(roadPatch);
+}
+
+// Merge all road paint into a single mesh per color (one draw call each).
+if(_yellowPaintGeos.length){
+  const merged = mergeGeometries(_yellowPaintGeos, false);
+  const m = new THREE.Mesh(merged, paintYellowMat);
+  m.matrixAutoUpdate = false; m.updateMatrix();
+  scene.add(m);
+  _yellowPaintGeos.forEach(g => g.dispose());
+}
+if(_whitePaintGeos.length){
+  const merged = mergeGeometries(_whitePaintGeos, false);
+  const m = new THREE.Mesh(merged, paintWhiteMat);
+  m.matrixAutoUpdate = false; m.updateMatrix();
+  scene.add(m);
+  _whitePaintGeos.forEach(g => g.dispose());
 }
 
 // ── TRAFFIC LIGHTS ─────────────────────────────────────────────────────────
@@ -644,79 +666,110 @@ const BW=300,WH=20,WT=4;
   .forEach(([w,h,d,x,y,z])=>addBox(w,h,d,x,y,z,sides(concreteTex,w,h,d)));
 
 // ── WINDOW DECAL TEXTURE ──────────────────────────────────────────────────
+// One texture tile == ONE FLOOR of an apartment building. The face is tiled
+// vertically once per floor and horizontally once per window-bay, so windows
+// land at realistic architectural spacing (≈3 m floors, ≈3 m bays) with solid
+// wall between them — not a dense grid of tiny panes.
 const windowDecalTex = (()=>{
-  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
+  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
   const c = cv.getContext('2d');
-  c.clearRect(0,0,256,256);
-  const cols = 4, rows = 6;
-  const padX = 16, padY = 14;
-  const wW = (256 - padX*2) / cols;
-  const wH = (256 - padY*2) / rows;
-  for(let r=0;r<rows;r++)for(let col=0;col<cols;col++){
-    const x = padX + col*wW + 3;
-    const y = padY + r*wH + 3;
-    const ww = wW - 6, wh = wH - 6;
-    const roll = Math.random();
-    if(roll < 0.55){
-      const yellow = 200 + Math.random()*55|0;
-      c.fillStyle = `rgba(255,${yellow},${100+Math.random()*60|0},${.85+Math.random()*.15})`;
-    } else if(roll < 0.85){
-      c.fillStyle = `rgba(${15+Math.random()*15|0},${20+Math.random()*15|0},${30+Math.random()*15|0},.9)`;
-    } else {
-      c.fillStyle = `rgba(${120+Math.random()*40|0},${90+Math.random()*30|0},${60+Math.random()*30|0},.85)`;
-    }
-    c.fillRect(x, y, ww, wh);
-    c.strokeStyle = 'rgba(30,25,20,.7)';
-    c.lineWidth = 1.5;
-    c.strokeRect(x, y, ww, wh);
-    c.beginPath();
-    c.moveTo(x + ww/2, y);
-    c.lineTo(x + ww/2, y + wh);
-    c.stroke();
-  }
+  // Transparent background = the building's own wall material shows through
+  // as the pillars/spandrels between windows.
+  c.clearRect(0,0,128,128);
+
+  // A single glass window, centered, occupying the middle ~55% width and
+  // ~60% height of the tile. The surrounding margin is the wall (transparent).
+  const winW = 128 * 0.55;
+  const winH = 128 * 0.60;
+  const wx = (128 - winW) / 2;
+  const wy = (128 - winH) / 2;
+
+  // Glass fill — cool reflective blue with a subtle vertical gradient so it
+  // reads as real glazing rather than a flat panel.
+  const grad = c.createLinearGradient(wx, wy, wx, wy + winH);
+  grad.addColorStop(0,   'rgba(150,185,210,0.92)');
+  grad.addColorStop(0.5, 'rgba(95,140,175,0.92)');
+  grad.addColorStop(1,   'rgba(60,100,140,0.92)');
+  c.fillStyle = grad;
+  c.fillRect(wx, wy, winW, winH);
+
+  // Diagonal sky reflection streak
+  c.save();
+  c.beginPath(); c.rect(wx, wy, winW, winH); c.clip();
+  c.fillStyle = 'rgba(255,255,255,0.18)';
+  c.beginPath();
+  c.moveTo(wx, wy + winH*0.15);
+  c.lineTo(wx + winW*0.5, wy);
+  c.lineTo(wx + winW*0.8, wy);
+  c.lineTo(wx, wy + winH*0.6);
+  c.closePath();
+  c.fill();
+  c.restore();
+
+  // Window frame (mullion border) — dark aluminium
+  c.strokeStyle = 'rgba(40,45,52,0.95)';
+  c.lineWidth = 3;
+  c.strokeRect(wx, wy, winW, winH);
+  // Single horizontal transom + central vertical mullion (typical apt window)
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(wx + winW/2, wy); c.lineTo(wx + winW/2, wy + winH);     // vertical
+  c.moveTo(wx, wy + winH*0.55); c.lineTo(wx + winW, wy + winH*0.55); // transom
+  c.stroke();
+
+  // Sill highlight under the window
+  c.fillStyle = 'rgba(200,205,210,0.25)';
+  c.fillRect(wx, wy + winH, winW, 2);
+
   const t = new THREE.CanvasTexture(cv);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 })();
 
 function addWindowDecal(w, h, d, x, z){
-  const borderX = Math.min(0.8, w*0.1);
-  const borderY = 0.8;
-  const borderZ = Math.min(0.8, d*0.1);
   const decalOffset = 0.05;
-  const faceW = w - borderX*2;
-  const faceH = h - borderY*2;
-  const repsX = Math.max(1, Math.round(faceW / 4));
-  const repsY = Math.max(1, Math.round(faceH / 3));
+  // Realistic architecture: one floor ≈ 3.2 m tall, one window bay ≈ 3.4 m wide.
+  // Leave a ground-floor band (no apartment windows at street level) and a small
+  // top margin so windows don't run into the roof trim.
+  const FLOOR_H = 3.2;
+  const BAY_W = 3.4;
+  const groundBand = 2.2;           // solid wall at street level
+  const topMargin = 1.0;
+  const faceH = Math.max(FLOOR_H, h - groundBand - topMargin);
+  const floors = Math.max(1, Math.round(faceH / FLOOR_H));
+  const yCenter = groundBand + faceH / 2;
 
-  for(const sign of [1, -1]){
+  function glassMat(reps){
     const tex = windowDecalTex.clone();
-    tex.repeat.set(repsX, repsY);
+    tex.repeat.set(reps, floors);
     tex.needsUpdate = true;
-    const mat = new THREE.MeshStandardMaterial({
-      map: tex, transparent: true, roughness: 0.3, metalness: 0.4,
-      emissive: 0xffcc66, emissiveMap: tex, emissiveIntensity: 0.35,
+    return new THREE.MeshStandardMaterial({
+      map: tex, transparent: true,
+      roughness: 0.12, metalness: 0.6,
+      // faint cool glow so lit windows read at night without the old warm grid
+      emissive: 0x335577, emissiveMap: tex, emissiveIntensity: 0.18,
       side: THREE.DoubleSide
     });
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(faceW, faceH), mat);
-    plane.position.set(x, h/2, z + sign*(d/2 + decalOffset));
+  }
+
+  // Front / back faces (span width W)
+  const baysW = Math.max(1, Math.round(w / BAY_W));
+  const faceWInset = w - 0.6; // small reveal at the corners
+  for(const sign of [1, -1]){
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(faceWInset, faceH), glassMat(baysW));
+    plane.position.set(x, yCenter, z + sign*(d/2 + decalOffset));
     if(sign === -1) plane.rotation.y = Math.PI;
+    plane.matrixAutoUpdate = false; plane.updateMatrix();
     scene.add(plane);
   }
-  const faceD = d - borderZ*2;
-  const repsD = Math.max(1, Math.round(faceD / 4));
+  // Side faces (span depth D)
+  const baysD = Math.max(1, Math.round(d / BAY_W));
+  const faceDInset = d - 0.6;
   for(const sign of [1, -1]){
-    const tex = windowDecalTex.clone();
-    tex.repeat.set(repsD, repsY);
-    tex.needsUpdate = true;
-    const mat = new THREE.MeshStandardMaterial({
-      map: tex, transparent: true, roughness: 0.3, metalness: 0.4,
-      emissive: 0xffcc66, emissiveMap: tex, emissiveIntensity: 0.35,
-      side: THREE.DoubleSide
-    });
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(faceD, faceH), mat);
-    plane.position.set(x + sign*(w/2 + decalOffset), h/2, z);
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(faceDInset, faceH), glassMat(baysD));
+    plane.position.set(x + sign*(w/2 + decalOffset), yCenter, z);
     plane.rotation.y = sign === 1 ? Math.PI/2 : -Math.PI/2;
+    plane.matrixAutoUpdate = false; plane.updateMatrix();
     scene.add(plane);
   }
 }
@@ -728,7 +781,9 @@ function building(w,h,d,x,z,style='brick',windows=false){
     const tex=glassTex;
     mat=[...Array(4)].map(()=>{const t=tex.clone();t.repeat.set(Math.max(1,d/4|0),Math.max(1,h/4|0));t.needsUpdate=true;return new THREE.MeshStandardMaterial({map:t,roughness:.1,metalness:.5,transparent:true,opacity:.85});}).concat(sides(metalTex,w,1,d).slice(4));
   } else {
-    const styleMap={brick:brickTex,red:brickRedTex,grey:brickGreyTex,stucco:stuccoTex,office:windowedTex,sandstone:sandstoneTex,darkconcrete:darkConcreteTex,tile:tileTex};
+    // 'office' now uses a plain concrete facade and gets realistic spaced glass
+    // windows applied as decals (below), instead of the old dense window grid.
+    const styleMap={brick:brickTex,red:brickRedTex,grey:brickGreyTex,stucco:stuccoTex,office:concreteTex,sandstone:sandstoneTex,darkconcrete:darkConcreteTex,tile:tileTex};
     mat=sides(styleMap[style]||brickTex,w,h,d);
   }
   addBox(w,h,d,x,0,z,mat);
@@ -738,7 +793,9 @@ function building(w,h,d,x,z,style='brick',windows=false){
     const trim=new THREE.Mesh(new THREE.BoxGeometry(w+0.2,0.5,d+0.2),new THREE.MeshStandardMaterial({color:0x4a4239,roughness:.8}));
     trim.position.set(x,h-0.25,z); scene.add(trim);
   }
-  if(windows && style !== 'glass' && style !== 'office'){
+  // Realistic spaced glass windows for office buildings (always) and for any
+  // other non-glass style that opts in via the `windows` flag.
+  if(style !== 'glass' && (style === 'office' || windows)){
     addWindowDecal(w, h, d, x, z);
   }
 }
@@ -749,10 +806,10 @@ building(8,10,10,30,8,'red',true); building(8,12,10,30,22,'stucco',true);
 building(8,12,10,-30,-22,'stucco',true); building(8,10,10,-30,-8,'brick',true);
 building(8,13,10,-30,8,'office'); building(8,11,10,-30,22,'red');
 
-building(14,18,14,55,55,'office'); building(12,14,12,75,52,'brick',true); building(12,22,12,52,75,'red',true);
-building(14,16,14,-55,55,'stucco',true); building(12,13,12,-75,52,'red'); building(12,24,12,-52,75,'office');
-building(14,20,14,55,-55,'red',true); building(12,16,12,75,-52,'stucco',true); building(12,18,12,52,-75,'brick',true);
-building(14,14,14,-55,-55,'brick',true); building(12,19,12,-75,-52,'office'); building(12,21,12,-52,-75,'stucco',true);
+building(14,18,14,55,55,'office'); building(12,14,12,73,55,'brick',true); building(12,22,12,54,71,'red',true);
+building(14,16,14,-55,55,'stucco',true); building(12,13,12,-71,54,'red'); building(12,24,12,-56,73,'office');
+building(14,20,14,55,-55,'red',true); building(12,16,12,71,-54,'stucco',true); building(12,18,12,56,-73,'brick',true);
+building(14,14,14,-55,-55,'brick',true); building(12,19,12,-73,-56,'office'); building(12,21,12,-54,-72,'stucco',true);
 
 building(16,28,14,-35,100,'office'); building(14,35,12,0,105,'sandstone',true); building(16,25,14,35,100,'brick',true);
 building(16,24,14,-35,-100,'red',true); building(14,38,12,0,-105,'tile',true); building(16,30,14,35,-100,'office');
@@ -776,7 +833,7 @@ building(12,14,12,-140,-100,'red',true); building(12,16,12,-100,-140,'stucco');
 building(16,24,16,225,0,'office'); building(16,22,16,225,55,'tile',true); building(16,26,16,225,-55,'sandstone',true);
 building(16,28,16,-225,0,'darkconcrete',true); building(16,22,16,-225,55,'office'); building(16,24,16,-225,-55,'tile',true);
 building(16,26,16,0,225,'sandstone',true); building(16,24,16,55,225,'office'); building(16,22,16,-55,225,'darkconcrete',true);
-building(16,22,16,0,-225,'tile',true); building(16,26,16,55,-225,'sandstone',true); building(16,28,16,-55,225,'office');
+building(16,22,16,0,-225,'tile',true); building(16,26,16,55,-225,'sandstone',true); building(16,28,16,-37,225,'office');
 building(14,20,14,180,140,'office'); building(14,22,14,140,180,'tile',true);
 building(14,22,14,-180,140,'sandstone',true); building(14,20,14,-140,180,'office');
 building(14,18,14,180,-140,'tile',true); building(14,20,14,140,-180,'darkconcrete',true);
@@ -794,6 +851,50 @@ building(18,14,18,265,-140,'darkconcrete'); building(18,12,18,140,-265,'grey');
 building(18,12,18,-265,-140,'grey'); building(18,14,18,-140,-265,'darkconcrete');
 
 const ladders = [];
+
+// ── ADDITIONAL STRUCTURES (added density) ───────────────────────────────────
+// Fill empty quadrant blocks between the ring roads with extra buildings so the
+// city reads as denser and more continuous.
+building(10,9,8,-24,32,'brick',true);  building(10,11,8,21,32,'stucco',true);
+building(10,10,8,-21,-32,'office');    building(10,12,8,24,-32,'red',true);
+building(9,13,9,52,22,'red',true);     building(9,11,9,52,-22,'office');
+building(9,10,9,-52,25,'stucco',true); building(9,12,9,-52,-19,'brick',true);
+
+building(11,15,11,68,30,'office');     building(11,13,11,68,-30,'tile',true);
+building(11,14,11,-68,30,'red',true);  building(11,16,11,-68,-30,'sandstone',true);
+building(11,13,11,30,68,'stucco',true);building(11,15,11,-30,68,'office');
+building(11,14,11,30,-68,'brick',true);building(11,12,11,-30,-68,'tile',true);
+
+building(13,20,13,100,70,'office');    building(13,18,13,-100,70,'sandstone',true);
+building(13,22,13,100,-70,'glass');    building(13,19,13,-100,-70,'tile',true);
+building(13,21,13,70,100,'red',true);  building(13,17,13,-70,100,'office');
+building(13,20,13,70,-100,'darkconcrete',true); building(13,18,13,-70,-100,'brick',true);
+
+building(15,26,15,146,85,'office');    building(15,30,15,-147,85,'glass');
+building(15,28,15,147,-85,'tile',true);building(15,24,15,-147,-85,'sandstone',true);
+building(15,27,15,85,147,'glass');     building(15,25,15,-85,146,'office');
+building(15,29,15,85,-146,'darkconcrete',true); building(15,26,15,-85,-147,'tile',true);
+
+building(17,30,17,191,123,'office');   building(17,34,17,-190,120,'glass');
+building(17,32,17,191,-115,'sandstone',true); building(17,28,17,-190,-120,'tile',true);
+building(17,31,17,115,191,'glass');    building(17,29,17,-122,190,'office');
+building(17,33,17,123,-190,'darkconcrete',true); building(17,30,17,-116,-191,'sandstone',true);
+
+// Tall landmark towers near downtown core
+building(20,52,20,176,0,'glass');      building(20,48,20,-144,0,'glass');
+building(20,50,20,1,176,'glass');      building(20,46,20,3,-144,'glass');
+building(22,60,22,187,187,'glass');    building(22,56,22,-188,187,'glass');
+building(22,58,22,187,-187,'glass');   building(22,54,22,-186,-188,'glass');
+
+// Low-rise infill along the outer industrial ring
+building(20,11,14,229,93,'grey');      building(20,10,14,261,-90,'darkconcrete');
+building(14,11,20,86,229,'grey');      building(14,10,20,-94,229,'darkconcrete');
+building(20,11,14,-229,90,'darkconcrete'); building(20,10,14,-229,-90,'grey');
+building(14,11,20,93,-229,'darkconcrete'); building(14,10,20,-87,-229,'grey');
+
+// Parking-structure style blocks (wide, mid-height, open look via dark concrete)
+building(26,16,18,265,90,'darkconcrete'); building(26,16,18,-265,90,'darkconcrete');
+building(18,16,26,90,265,'darkconcrete'); building(18,16,26,-90,265,'darkconcrete');
 
 // ── TREES ──────────────────────────────────────────────────────────────────
 const _trunkMat = new THREE.MeshStandardMaterial({color:0x4a3220,roughness:.95});
@@ -1131,6 +1232,136 @@ for(let i = -3; i <= 3; i++){
   [-85 - SW_OFF - 1.2, -60,  Math.PI/2], [85 + SW_OFF + 1.2, -60, -Math.PI/2],
 ].forEach(([x,z,r])=>makeAC(x,z,r));
 
+// ── ADDITIONAL STREET FURNITURE (new types + more density) ──────────────────
+
+// Bus stop: shelter with roof, back panel, and a bench
+function makeBusStop(x, z, ry=0){
+  const g = new THREE.Group();
+  const frameMat = new THREE.MeshStandardMaterial({color:0x2a3038, roughness:.5, metalness:.6});
+  const glassMat = new THREE.MeshStandardMaterial({color:0x88aacc, roughness:.1, metalness:.3, transparent:true, opacity:.4, side:THREE.DoubleSide});
+  // Posts
+  for(const px of [-1.4, 1.4]){
+    const post = new THREE.Mesh(new THREE.BoxGeometry(.1,2.4,.1), frameMat);
+    post.position.set(px, 1.2, -0.6); post.castShadow = true; g.add(post);
+  }
+  // Roof
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(3.2,.12,1.5), frameMat);
+  roof.position.set(0, 2.45, 0); roof.castShadow = true; g.add(roof);
+  // Back glass panel
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 2.0), glassMat);
+  back.position.set(0, 1.3, -0.62); g.add(back);
+  // Side glass
+  const side = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 2.0), glassMat);
+  side.position.set(-1.45, 1.3, 0); side.rotation.y = Math.PI/2; g.add(side);
+  // Bench
+  const bm = new THREE.MeshStandardMaterial({color:0x445, roughness:.6, metalness:.4});
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(2.6,.1,.45), bm);
+  seat.position.set(0,.55,-0.3); seat.castShadow = true; g.add(seat);
+  g.position.set(x,0,z); g.rotation.y = ry; scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,1.2,z), new THREE.Vector3(3.4,2.4,1.6)));
+}
+
+// Phone booth
+function makePhoneBooth(x, z, ry=0){
+  const g = new THREE.Group();
+  const m = new THREE.MeshStandardMaterial({color:0xaa1818, roughness:.5, metalness:.3});
+  const glassMat = new THREE.MeshStandardMaterial({color:0x99bbdd, roughness:.1, transparent:true, opacity:.35});
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.9,2.4,.9), m);
+  body.position.y = 1.2; body.castShadow = true; g.add(body);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(.7,1.7,.7), glassMat);
+  glass.position.y = 1.3; g.add(glass);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.0,.18,1.0), m);
+  roof.position.y = 2.45; g.add(roof);
+  g.position.set(x,0,z); g.rotation.y = ry; scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,1.2,z), new THREE.Vector3(1,2.4,1)));
+}
+
+// Bike rack with a couple of bikes (simplified)
+function makeBikeRack(x, z, ry=0){
+  const g = new THREE.Group();
+  const m = new THREE.MeshStandardMaterial({color:0x666, roughness:.5, metalness:.6});
+  for(let i=0;i<4;i++){
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(.25,.03,6,12,Math.PI), m);
+    loop.position.set(-0.9 + i*0.6, .25, 0); g.add(loop);
+  }
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(2.2,.05,.05), m);
+  bar.position.y = .05; g.add(bar);
+  g.position.set(x,0,z); g.rotation.y = ry; scene.add(g);
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x,.3,z), new THREE.Vector3(2.4,.6,.6)));
+}
+
+// Traffic cone (small, non-colliding so cars can flatten them visually)
+function makeCone(x, z){
+  const g = new THREE.Group();
+  const m = new THREE.MeshStandardMaterial({color:0xff5500, roughness:.7});
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(.18,.5,10), m);
+  cone.position.y = .25; g.add(cone);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(.4,.05,.4), m);
+  base.position.y = .025; g.add(base);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(.13,.15,.08,10), new THREE.MeshStandardMaterial({color:0xffffff}));
+  band.position.y = .3; g.add(band);
+  g.position.set(x,0,z); scene.add(g);
+}
+
+// Bus shelters at major ring corners
+[
+  [85 + SW_OFF + 1.5, 30, -Math.PI/2],
+  [-85 - SW_OFF - 1.5, 30, Math.PI/2],
+  [30, 85 + SW_OFF + 1.5, Math.PI],
+  [30, -85 - SW_OFF - 1.5, 0],
+  [120 + SW_OFF + 1.5, 45, -Math.PI/2],
+  [-120 - SW_OFF - 1.5, 45, Math.PI/2],
+  [45, 120 + SW_OFF + 1.5, Math.PI],
+  [45, -120 - SW_OFF - 1.5, 0],
+].forEach(([x,z,r]) => makeBusStop(x,z,r));
+
+// Phone booths scattered on inner sidewalks
+[
+  [42 + SW_OFF + 0.6, 30, Math.PI/2], [-42 - SW_OFF - 0.6, 30, -Math.PI/2],
+  [30, 42 + SW_OFF + 0.6, 0], [30, -42 - SW_OFF - 0.6, Math.PI],
+  [85 + SW_OFF + 0.6, -45, Math.PI/2], [-85 - SW_OFF - 0.6, -45, -Math.PI/2],
+].forEach(([x,z,r]) => makePhoneBooth(x,z,r));
+
+// Bike racks
+[
+  [20, 42 - SW_OFF - 0.8, 0], [-20, 42 - SW_OFF - 0.8, 0],
+  [42 - SW_OFF - 0.8, 20, Math.PI/2], [42 - SW_OFF - 0.8, -20, Math.PI/2],
+  [55, 85 - SW_OFF - 0.8, 0], [-55, 85 - SW_OFF - 0.8, 0],
+].forEach(([x,z,r]) => makeBikeRack(x,z,r));
+
+// Traffic cones in little clusters (roadwork vibe)
+[
+  [38, 5],[40, 5],[42, 5],[40, 7],
+  [-38, -5],[-40, -5],[-42, -5],[-40, -7],
+  [5, 38],[5, 40],[7, 40],
+  [105, 12],[107, 12],[109, 12],
+].forEach(([x,z]) => makeCone(x,z));
+
+// More street lamps along radial connector roads (between rings)
+for(let i=0;i<RING_RADII.length-1;i++){
+  const r1 = RING_RADII[i], r2 = RING_RADII[i+1];
+  for(let d = r1 + 8; d < r2 - 4; d += 16){
+    for(const s1 of [1,-1]) for(const s2 of [1,-1]){
+      makeStreetLamp(s1*(r1 + SW_OFF), s2*d);
+      makeStreetLamp(s1*d, s2*(r1 + SW_OFF));
+    }
+  }
+}
+
+// Extra trash cans, hydrants, planters in the mid rings
+for(const r of [160, 205]){
+  for(let x = -r + 30; x <= r - 30; x += 45){
+    if(Math.abs(x) < 20) continue;
+    makeTrashCan(x, r + SW_OFF + 0.7);
+    makeTrashCan(x, -r - SW_OFF - 0.7);
+    makeHydrant(x + 8, r + SW_OFF);
+  }
+}
+for(let i=0;i<6;i++){
+  const a = (i/6)*Math.PI*2;
+  makePlanter(Math.cos(a)*20, Math.sin(a)*20);
+}
+
 // ── CRATES ─────────────────────────────────────────────────────────────────
 [[1.5,1.2,1.5,15,12],[1.5,1.2,1.5,17,12],[1.5,2.4,1.5,16,12],
  [1.5,1.2,1.5,-15,-12],[1.5,2.4,1.5,-17,-12],[2,1.2,2,35,5],[2,2.4,2,35,5]]
@@ -1277,6 +1508,10 @@ function updateCarBox(car){
   [-50, -30, Math.PI],
   [70, -10, Math.PI/2],
   [-70, 10, -Math.PI/2],
+  [95, 20,  0],
+  [-95, -20, Math.PI],
+  [20, 95,  Math.PI/2],
+  [-20, -95, -Math.PI/2],
 ].forEach(([x,z,ry]) => makeCar(x, z, ry));
 
 // ── GUN MODELS ─────────────────────────────────────────────────────────────
@@ -1350,11 +1585,73 @@ function makeEnemy(){
 }
 
 const _eBoxTmp = new THREE.Box3();
+
+// ── SPATIAL GRID (broadphase) ───────────────────────────────────────────────
+// Static obstacles (everything except the movable car boxes) are bucketed into
+// a uniform grid so collision / line-of-sight queries only test nearby boxes
+// instead of all ~600. Results are identical; it's purely a culling speedup.
+const GRID_CELL = 12;
+const _carObstacleSet = new Set(cars.map(c => c.obstacle));
+const grid = new Map();
+function _cellKey(cx, cz){ return cx + ',' + cz; }
+function _buildGrid(){
+  grid.clear();
+  for(const b of obstacles){
+    if(_carObstacleSet.has(b)) continue; // cars handled separately (they move)
+    const minCx = Math.floor(b.min.x / GRID_CELL), maxCx = Math.floor(b.max.x / GRID_CELL);
+    const minCz = Math.floor(b.min.z / GRID_CELL), maxCz = Math.floor(b.max.z / GRID_CELL);
+    for(let cx = minCx; cx <= maxCx; cx++){
+      for(let cz = minCz; cz <= maxCz; cz++){
+        const k = _cellKey(cx, cz);
+        let arr = grid.get(k);
+        if(!arr){ arr = []; grid.set(k, arr); }
+        arr.push(b);
+      }
+    }
+  }
+}
+// Gather unique static obstacle boxes overlapping an AABB region into `out`.
+const _queryScratch = new Set();
+function _queryRegion(minx, minz, maxx, maxz, out){
+  _queryScratch.clear();
+  const minCx = Math.floor(minx / GRID_CELL), maxCx = Math.floor(maxx / GRID_CELL);
+  const minCz = Math.floor(minz / GRID_CELL), maxCz = Math.floor(maxz / GRID_CELL);
+  for(let cx = minCx; cx <= maxCx; cx++){
+    for(let cz = minCz; cz <= maxCz; cz++){
+      const arr = grid.get(_cellKey(cx, cz));
+      if(!arr) continue;
+      for(let i=0;i<arr.length;i++) _queryScratch.add(arr[i]);
+    }
+  }
+  out.length = 0;
+  for(const b of _queryScratch) out.push(b);
+  // Add the (few) active car obstacles — they move, so always check all.
+  for(let i=0;i<obstacles.length;i++){
+    if(_carObstacleSet.has(obstacles[i])) out.push(obstacles[i]);
+  }
+  return out;
+}
+_buildGrid();
+
+// Freeze transform updates for all static scene objects (everything that exists
+// now except the cars, which move). Saves per-frame matrix recomputation for
+// hundreds of buildings, lamps, trees, furniture. Appearance is unchanged.
+const _carGroups = new Set(cars.map(c => c.group));
+for(const obj of scene.children){
+  if(obj === camera) continue;
+  if(obj.isLight) continue;
+  if(_carGroups.has(obj)) continue;
+  obj.matrixAutoUpdate = false;
+  obj.updateMatrix();
+}
+const _nearby = [];
+
 function enemyCollides(x, z, halfW = 0.4){
   _eBoxTmp.min.set(x-halfW, 0.2, z-halfW);
   _eBoxTmp.max.set(x+halfW, 1.8, z+halfW);
-  for(let i=0;i<obstacles.length;i++){
-    if(_eBoxTmp.intersectsBox(obstacles[i])) return true;
+  _queryRegion(x-halfW, z-halfW, x+halfW, z+halfW, _nearby);
+  for(let i=0;i<_nearby.length;i++){
+    if(_eBoxTmp.intersectsBox(_nearby[i])) return true;
   }
   return false;
 }
@@ -1367,9 +1664,8 @@ const MAX_ENEMIES = 24;
 const SPAWN_INTERVAL = 6000;
 
 function spawnEnemyAt(x, z){
-  const isRioter = Math.random() < 0.25;
-  const e = isRioter ? makeRioter() : makeEnemy();
-  if(!isRioter) e.userData.type='gunner';
+  const e = makeEnemy();
+  e.userData.type='gunner';
   e.position.set(x, 0, z);
   scene.add(e); enemies.push(e);
 }
@@ -1620,31 +1916,22 @@ function exitCar(forced = false){
   // Place player to the LEFT of the car (driver-side exit) at safe ground level.
   // Car's local +X axis is "right"; we want to put player along -X relative to car.
   // World-space left direction is (-cos(angle), 0, sin(angle)).
-  // Try multiple exit positions around the car until we find a clear one.
-  // Order: left, right, back, front, then diagonals.
   const exitCandidates = [
-    [-Math.cos(car.angle),  Math.sin(car.angle)],   // left
-    [ Math.cos(car.angle), -Math.sin(car.angle)],   // right
-    [-Math.sin(car.angle), -Math.cos(car.angle)],   // back
-    [ Math.sin(car.angle),  Math.cos(car.angle)],   // front
-    [-Math.cos(car.angle) - Math.sin(car.angle), Math.sin(car.angle) - Math.cos(car.angle)], // back-left
-    [ Math.cos(car.angle) - Math.sin(car.angle),-Math.sin(car.angle) - Math.cos(car.angle)], // back-right
+    [-Math.cos(car.angle),  Math.sin(car.angle)],
+    [ Math.cos(car.angle), -Math.sin(car.angle)],
+    [-Math.sin(car.angle), -Math.cos(car.angle)],
+    [ Math.sin(car.angle),  Math.cos(car.angle)],
+    [-Math.cos(car.angle) - Math.sin(car.angle), Math.sin(car.angle) - Math.cos(car.angle)],
+    [ Math.cos(car.angle) - Math.sin(car.angle),-Math.sin(car.angle) - Math.cos(car.angle)],
   ];
   let exitX = car.x, exitZ = car.z;
   if(!forced){
-    let found = false;
     for(const [dx, dz] of exitCandidates){
       const len = Math.hypot(dx, dz) || 1;
       const tx = car.x + (dx/len) * 2.6;
       const tz = car.z + (dz/len) * 2.6;
-      if(!playerCollides(tx, tz)){
-        exitX = tx; exitZ = tz;
-        found = true;
-        break;
-      }
+      if(!playerCollides(tx, tz)){ exitX = tx; exitZ = tz; break; }
     }
-    // If everything's blocked, place on top of the car (we'll fall to ground)
-    if(!found){ exitX = car.x; exitZ = car.z; }
   }
   camera.position.set(exitX, 1.7, exitZ);
   // Keep current yaw (camera was looking from chase cam, that's fine)
@@ -1786,8 +2073,9 @@ function isBlocked(fx, fy, fz, tx, ty, tz){
   const idx = dx===0 ? Infinity : 1/dx;
   const idy = dy===0 ? Infinity : 1/dy;
   const idz = dz===0 ? Infinity : 1/dz;
-  for(let i=0;i<obstacles.length;i++){
-    const b = obstacles[i];
+  _queryRegion(Math.min(fx,tx), Math.min(fz,tz), Math.max(fx,tx), Math.max(fz,tz), _nearbyLOS);
+  for(let i=0;i<_nearbyLOS.length;i++){
+    const b = _nearbyLOS[i];
     let tmin = (b.min.x - fx) * idx;
     let tmax = (b.max.x - fx) * idx;
     if(tmin > tmax){ const t=tmin; tmin=tmax; tmax=t; }
@@ -1808,6 +2096,7 @@ function isBlocked(fx, fy, fz, tx, ty, tz){
   }
   return false;
 }
+const _nearbyLOS = [];
 
 // ── PLAYER CONSTANTS ───────────────────────────────────────────────────────
 const playerSpeed = 0.14;
@@ -1817,13 +2106,17 @@ const _playerBox = new THREE.Box3();
 function playerCollides(x, z){
   _playerBox.min.set(x-PLAYER_HALF, 0.2, z-PLAYER_HALF);
   _playerBox.max.set(x+PLAYER_HALF, 1.8, z+PLAYER_HALF);
-  for(let i=0;i<obstacles.length;i++){
-    if(_playerBox.intersectsBox(obstacles[i])) return true;
+  _queryRegion(x-PLAYER_HALF, z-PLAYER_HALF, x+PLAYER_HALF, z+PLAYER_HALF, _nearbyPC);
+  for(let i=0;i<_nearbyPC.length;i++){
+    if(_playerBox.intersectsBox(_nearbyPC[i])) return true;
   }
   return false;
 }
+const _nearbyPC = [];
 
 // ── MAIN GAME LOOP ─────────────────────────────────────────────────────────
+const _nearbyCar = [];
+const _carTmpBox = new THREE.Box3();
 let lastSpawn = 0;
 let wheelRoll = 0;
 
@@ -1887,21 +2180,23 @@ function animate(now){
     const sinA = Math.abs(Math.sin(car.angle));
     const ex = car.halfW * cosA + car.halfL * sinA;
     const ez = car.halfW * sinA + car.halfL * cosA;
-    const tmpBox = new THREE.Box3();
+    const tmpBox = _carTmpBox;
 
     tmpBox.min.set(newX - ex, 0, prevZ - ez);
     tmpBox.max.set(newX + ex, 1.8, prevZ + ez);
     let hitX = false;
-    for(let i=0;i<obstacles.length;i++){
-      if(tmpBox.intersectsBox(obstacles[i])){ hitX = true; break; }
+    _queryRegion(newX - ex, prevZ - ez, newX + ex, prevZ + ez, _nearbyCar);
+    for(let i=0;i<_nearbyCar.length;i++){
+      if(tmpBox.intersectsBox(_nearbyCar[i])){ hitX = true; break; }
     }
     if(!hitX) car.x = newX;
 
     tmpBox.min.set(car.x - ex, 0, newZ - ez);
     tmpBox.max.set(car.x + ex, 1.8, newZ + ez);
     let hitZ = false;
-    for(let i=0;i<obstacles.length;i++){
-      if(tmpBox.intersectsBox(obstacles[i])){ hitZ = true; break; }
+    _queryRegion(car.x - ex, newZ - ez, car.x + ex, newZ + ez, _nearbyCar);
+    for(let i=0;i<_nearbyCar.length;i++){
+      if(tmpBox.intersectsBox(_nearbyCar[i])){ hitZ = true; break; }
     }
     if(!hitZ) car.z = newZ;
 
@@ -1921,16 +2216,16 @@ function animate(now){
     car.group.position.x = car.x;
     car.group.position.z = car.z;
     car.group.rotation.y = car.angle;
-    // Run over enemies — 60 damage when car hits one at any speed
+
+    // Run over enemies — 60 damage when the car strikes one
     if(Math.abs(car.speed) > 0.05){
       for(let j=enemies.length-1; j>=0; j--){
         const e = enemies[j];
         const edx = e.position.x - car.x;
         const edz = e.position.z - car.z;
-        // Transform enemy position into car-local space to check rectangular hit
-        const cosA = Math.cos(-car.angle), sinA = Math.sin(-car.angle);
-        const localX = edx * cosA - edz * sinA;
-        const localZ = edx * sinA + edz * cosA;
+        const cA = Math.cos(-car.angle), sA = Math.sin(-car.angle);
+        const localX = edx * cA - edz * sA;
+        const localZ = edx * sA + edz * cA;
         if(Math.abs(localX) < car.halfW + 0.4 && Math.abs(localZ) < car.halfL + 0.4){
           e.userData.hp -= 60;
           playHit();
@@ -1938,15 +2233,11 @@ function animate(now){
             scene.remove(e); enemies.splice(j, 1);
             kills++; playKill(); updateHUD();
           } else {
-            // Knock them aside so we don't hit the same one repeatedly
-            const knockDist = 1.2;
             const sign = localX > 0 ? 1 : -1;
-            // Push them perpendicular to car direction
-            const px = -Math.cos(car.angle) * sign * knockDist;
-            const pz =  Math.sin(car.angle) * sign * knockDist;
+            const px = -Math.cos(car.angle) * sign * 1.2;
+            const pz =  Math.sin(car.angle) * sign * 1.2;
             if(!enemyCollides(e.position.x + px, e.position.z + pz, 0.4)){
-              e.position.x += px;
-              e.position.z += pz;
+              e.position.x += px; e.position.z += pz;
             }
           }
         }
@@ -2132,9 +2423,8 @@ function animate(now){
       if(e.userData.legR) e.userData.legR.rotation.x = 0;
     }
 
-    // Attack
+    // Attack — gunner: line-of-sight check then fire
     {
-      // Gunner: line-of-sight check then fire
       if(dist < 60 && now - e.userData.lastAttack > 1400){
         const ey = 1.55;
         if(!isBlocked(e.position.x, ey, e.position.z, playerPos.x, playerPos.y, playerPos.z)){
