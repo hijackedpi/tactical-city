@@ -11,6 +11,9 @@
   }
   #crosshair { position:absolute; top:50%; left:50%; width:16px; height:16px; transform:translate(-50%,-50%); pointer-events:none; }
   body.driving #crosshair { display:none; }
+  body.scoped #crosshair { display:none; }
+  #scope-overlay { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; display:none; z-index:50; }
+  #scope-overlay svg { width:100%; height:100%; }
   #crosshair::before,#crosshair::after { content:''; position:absolute; background:#f00; }
   #crosshair::before { top:50%; width:100%; height:2px; margin-top:-1px; }
   #crosshair::after  { left:50%; width:2px; height:100%; margin-left:-1px; }
@@ -59,11 +62,18 @@
     position:absolute; top:0; left:0; width:100%; height:100%;
     background:rgba(8,10,16,0.94); z-index:90; display:none;
     flex-direction:column; align-items:center; justify-content:flex-start;
-    color:#fff; padding-top:60px; box-sizing:border-box;
+    color:#fff; padding:40px 20px; box-sizing:border-box;
+    overflow-y:auto;
   }
   #shop h2 { font-size:38px; letter-spacing:8px; margin:0 0 6px; }
   #shop .shop-money { color:#3ad15a; font-size:22px; font-weight:bold; margin-bottom:24px; }
-  #shop-list { display:flex; gap:22px; flex-wrap:wrap; justify-content:center; max-width:880px; }
+  #shop-list { display:flex; flex-direction:column; gap:14px; align-items:center; max-width:920px; width:100%; }
+  .shop-section-header {
+    color:#ffcc44; font-size:16px; font-weight:bold; letter-spacing:6px;
+    border-bottom:1px solid #444; padding:6px 0 4px; margin-top:6px;
+    width:100%; max-width:920px; text-align:left;
+  }
+  .shop-section-row { display:flex; gap:22px; flex-wrap:wrap; justify-content:center; width:100%; }
   .shop-card {
     width:220px; padding:20px 16px; border:2px solid #444; border-radius:10px;
     background:rgba(255,255,255,0.05); text-align:center; transition:all 0.15s;
@@ -110,6 +120,9 @@
 <div id="speedo"><span class="big" id="speedo-num">0</span><span class="lbl">KM/H</span></div>
 <div id="hit-flash"></div>
 <div id="crosshair"></div>
+<div id="scope-overlay">
+  <svg id="scope-svg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+</div>
 
 <script type="importmap">{ "imports": {
   "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
@@ -122,10 +135,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // ── GUN DEFINITIONS ────────────────────────────────────────────────────────
 // price: cost in the shop ($). order: display order in the shop.
 const GUNS = {
-  pistol: { name:'PISTOL', ammo:12, maxAmmo:12, damage:35, pellets:1, spread:0, reloadTime:1200, bulletSpeed:1.80, recoilZ:0.18, recoilY:0.06, bulletColor:0xff4400, bulletSize:0.07, price:0,   order:0, rpm:'Fast',   range:'Medium' },
-  ak47:   { name:'AK47',   ammo:30, maxAmmo:30, damage:20, pellets:1, spread:0, reloadTime:1800, bulletSpeed:2.40, recoilZ:0.10, recoilY:0.03, bulletColor:0x00ccff, bulletSize:0.05, price:500, order:1, rpm:'Auto',   range:'Long' },
-  deagle: { name:'DESERT EAGLE', ammo:7,  maxAmmo:7,  damage:60, pellets:1, spread:0,    reloadTime:1600, bulletSpeed:2.60, recoilZ:0.65, recoilY:0.28, bulletColor:0xffaa00, bulletSize:0.08, price:800, order:2, rpm:'Slow', range:'Long', fireInterval:750 },
-  mp5:    { name:'MP5',          ammo:30, maxAmmo:30, damage:15, pellets:1, spread:0.012, reloadTime:1500, bulletSpeed:2.20, recoilZ:0.07, recoilY:0.02, bulletColor:0x00ccff, bulletSize:0.045, price:400, order:3, rpm:'Auto', range:'Short' },
+  pistol: { name:'PISTOL', ammo:12, maxAmmo:12, damage:35, pellets:1, spread:0, reloadTime:1200, bulletSpeed:1.80, recoilZ:0.18, recoilY:0.06, bulletColor:0xff4400, bulletSize:0.07, price:0,   order:0, rpm:'Fast',   range:'Medium', category:'pistols' },
+  ak47:   { name:'AK47',   ammo:30, maxAmmo:30, damage:20, pellets:1, spread:0, reloadTime:1800, bulletSpeed:2.40, recoilZ:0.10, recoilY:0.03, bulletColor:0x00ccff, bulletSize:0.05, price:1200, order:1, rpm:'Auto',   range:'Long', category:'rifles' },
+  deagle: { name:'DESERT EAGLE', ammo:7,  maxAmmo:7,  damage:60, pellets:1, spread:0,    reloadTime:1600, bulletSpeed:2.60, recoilZ:0.65, recoilY:0.28, bulletColor:0xffaa00, bulletSize:0.08, price:1600, order:2, rpm:'Slow', range:'Long', fireInterval:750, category:'pistols' },
+  mp5:    { name:'MP5',          ammo:30, maxAmmo:30, damage:15, pellets:1, spread:0.012, reloadTime:1500, bulletSpeed:2.20, recoilZ:0.07, recoilY:0.02, bulletColor:0x00ccff, bulletSize:0.045, price:700, order:3, rpm:'Auto', range:'Short', category:'smgs' },
+  awp:    { name:'AWP',          ammo:5,  maxAmmo:5,  damage:80, pellets:1, spread:0,    reloadTime:2400, bulletSpeed:4.20, recoilZ:0.55, recoilY:0.22, bulletColor:0xffffaa, bulletSize:0.07, price:2200, order:4, rpm:'Bolt', range:'Extreme', fireInterval:1100, headshotDamage:100, scopeFov:12, category:'snipers' },
+  glock18:{ name:'GLOCK 18',     ammo:18, maxAmmo:18, damage:18, pellets:1, spread:0.018, reloadTime:1300, bulletSpeed:1.90, recoilZ:0.08, recoilY:0.03, bulletColor:0xff6600, bulletSize:0.06, price:800, order:5, rpm:'Auto', range:'Short', category:'pistols' },
+  m4a1:   { name:'M4A1',         ammo:30, maxAmmo:30, damage:18, pellets:1, spread:0.004, reloadTime:1700, bulletSpeed:2.50, recoilZ:0.07, recoilY:0.02, bulletColor:0x44ddff, bulletSize:0.05, price:1300, order:6, rpm:'Auto', range:'Long', category:'rifles' },
 };
 let selectedGunKey = 'pistol';
 let gun = {...GUNS.pistol};
@@ -133,7 +149,58 @@ let gun = {...GUNS.pistol};
 // ── MONEY & OWNERSHIP ───────────────────────────────────────────────────────
 const KILL_REWARD = 100;
 let money = 0;
-const owned = { pistol: true, ak47: false, deagle: false, mp5: false };  // pistol owned from the start
+const owned = { pistol: true, ak47: false, deagle: false, mp5: false, awp: false, glock18: false, m4a1: false };  // pistol owned from the start
+
+// ── SCOPE STATE ────────────────────────────────────────────────────────────
+let isScoped = false;
+const DEFAULT_FOV = 75;
+let currentFov = DEFAULT_FOV;
+let targetFov = DEFAULT_FOV;
+function buildScopeSVG(){
+  // Classic sniper scope reticle: black ring vignette + crosshair lines + small
+  // mil-dots. Drawn as SVG so it scales cleanly to any window size.
+  const svg = document.getElementById('scope-svg');
+  if(!svg) return;
+  svg.innerHTML = `
+    <defs>
+      <radialGradient id="scopeFade" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"  stop-color="#000" stop-opacity="0"/>
+        <stop offset="48%" stop-color="#000" stop-opacity="0"/>
+        <stop offset="50%" stop-color="#000" stop-opacity="1"/>
+        <stop offset="100%" stop-color="#000" stop-opacity="1"/>
+      </radialGradient>
+    </defs>
+    <rect width="100" height="100" fill="url(#scopeFade)"/>
+    <circle cx="50" cy="50" r="28" fill="none" stroke="#000" stroke-width="2.2"/>
+    <circle cx="50" cy="50" r="27.3" fill="none" stroke="#444" stroke-width="0.18"/>
+    <line x1="50" y1="22" x2="50" y2="46" stroke="#000" stroke-width="0.5"/>
+    <line x1="50" y1="54" x2="50" y2="78" stroke="#000" stroke-width="0.5"/>
+    <line x1="22" y1="50" x2="46" y2="50" stroke="#000" stroke-width="0.5"/>
+    <line x1="54" y1="50" x2="78" y2="50" stroke="#000" stroke-width="0.5"/>
+    <line x1="50" y1="46" x2="50" y2="54" stroke="#000" stroke-width="0.15"/>
+    <line x1="46" y1="50" x2="54" y2="50" stroke="#000" stroke-width="0.15"/>
+    <circle cx="50" cy="50" r="0.35" fill="#ff2020"/>
+  `;
+}
+function setScoped(on){
+  if(isScoped === on) return;
+  if(playerInCar) return;          // no scoping while driving
+  if(!gun.scopeFov) return;        // gun must support a scope
+  isScoped = on;
+  if(on){
+    targetFov = gun.scopeFov;
+    buildScopeSVG();
+    document.getElementById('scope-overlay').style.display='block';
+    document.body.classList.add('scoped');
+    if(playerGun) playerGun.visible = false;
+  } else {
+    targetFov = DEFAULT_FOV;
+    document.getElementById('scope-overlay').style.display='none';
+    document.body.classList.remove('scoped');
+    if(playerGun) playerGun.visible = !playerInCar;
+  }
+}
+window.addEventListener('contextmenu', e => e.preventDefault());
 
 // ── VEHICLE STATE ──────────────────────────────────────────────────────────
 const cars = [];                    // {group, pos:{x,z}, angle, speed, halfW, halfL, color, wheels:[], steeringWheel}
@@ -156,6 +223,12 @@ let health=100, ammo=12, maxAmmo=12, isReloading=false, kills=0;
 let yaw=0, pitch=0, verticalVelocity=0, isGrounded=true;
 const gravity=0.015, jumpPower=0.25;
 let gunRecoilZ=0, gunRecoilY=0;
+// Enhanced weapon feel
+let camShake = 0;                 // decays each frame, jitters the camera
+let bloom = 0;                    // accumulated spray inaccuracy (0..1)
+let swayTime = 0;                 // drives idle/walk weapon sway
+let gunKickPitch = 0;             // visual muzzle climb that recovers
+const BLOOM_MAX = 1;
 const keys={}, enemies=[], obstacles=[], enemyBullets=[], playerBullets=[];
 
 // ── SCENE ──────────────────────────────────────────────────────────────────
@@ -163,11 +236,11 @@ const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x87CEEB);
 scene.fog=new THREE.FogExp2(0x99aacc,0.018);
 
-const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,900);
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,420);
 camera.position.set(0,1.7,0);
 scene.add(camera);
 
-const renderer=new THREE.WebGLRenderer({antialias:true});
+const renderer=new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
 renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled=true;
@@ -178,10 +251,12 @@ document.body.appendChild(renderer.domElement);
 scene.add(new THREE.AmbientLight(0xd0d8e8,0.6));
 const sun=new THREE.DirectionalLight(0xfff0d0,1.8);
 sun.position.set(60,90,40); sun.castShadow=true;
-sun.shadow.mapSize.set(2048,2048);
+sun.shadow.mapSize.set(1024,1024);
+// Cull tiny shadow casters at scene-build time (invisible micro-shadows, big cost)
+const _origMesh = THREE.Mesh;
 sun.shadow.autoUpdate = false;
 sun.shadow.needsUpdate = true;
-Object.assign(sun.shadow.camera,{near:1,far:400,left:-160,right:160,top:160,bottom:-160});
+Object.assign(sun.shadow.camera,{near:1,far:400,left:-70,right:70,top:70,bottom:-70});
 sun.shadow.camera.updateProjectionMatrix();
 sun.shadow.bias=-0.0003; scene.add(sun);
 scene.add(new THREE.HemisphereLight(0x7090c0,0x806050,0.4));
@@ -645,10 +720,9 @@ function addWindowDecal(w, h, d, x, z){
     tex.needsUpdate = true;
     return new THREE.MeshStandardMaterial({
       map: tex, transparent: true,
-      roughness: 0.12, metalness: 0.6,
-      // faint cool glow so lit windows read at night without the old warm grid
-      emissive: 0x335577, emissiveMap: tex, emissiveIntensity: 0.18,
-      side: THREE.DoubleSide
+      roughness: 0.5, metalness: 0.0,
+      emissive: 0x223344, emissiveIntensity: 0.10,
+      side: THREE.FrontSide
     });
   }
 
@@ -674,15 +748,123 @@ function addWindowDecal(w, h, d, x, z){
   }
 }
 
-// ── BUILDINGS ──────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+//  BUILDING SYSTEM  —  drop-in replacement
+//  Paste this block in place of your existing:
+//    • the `function building(...)` definition
+//    • ALL the building(...) placement lines (the big lists)
+//    • (keep your texture defs above; this adds a few extra interior textures)
+//  Requires (already in your file): addBox, bmat, sides, obstacles[], scene,
+//  woodTex, metalTex, brickTex, brickRedTex, brickGreyTex, stuccoTex,
+//  concreteTex, sandstoneTex, darkConcreteTex, tileTex, glassTex, addWindowDecal,
+//  THREE.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── EXTRA INTERIOR TEXTURES (procedural, detailed) ──────────────────────────
+// Wood plank flooring — directional grain, plank seams, subtle varnish sheen.
+const floorPlankTex = (()=>{
+  const cv=document.createElement('canvas'); cv.width=cv.height=512; const c=cv.getContext('2d');
+  const plankH=64;
+  for(let row=0; row<512/plankH; row++){
+    const base=92+Math.random()*30;
+    const hueShift=(Math.random()-0.5)*14;
+    for(let x=0;x<512;x++){
+      // grain: layered sine streaks + noise
+      const g = Math.sin(x*0.06 + row*1.7)*6 + Math.sin(x*0.21)*3 + (Math.random()-0.5)*10;
+      const r=base+g+18+hueShift, gg=base+g-6+hueShift, b=base+g-34+hueShift;
+      c.fillStyle=`rgb(${r|0},${gg|0},${b|0})`;
+      c.fillRect(x,row*plankH,1,plankH);
+    }
+    // plank seam shadow
+    c.fillStyle='rgba(20,12,4,0.55)'; c.fillRect(0,row*plankH+plankH-2,512,2);
+    c.fillStyle='rgba(255,240,210,0.06)'; c.fillRect(0,row*plankH,512,1);
+    // staggered vertical butt-joints
+    const joints=2+(Math.random()*2|0);
+    for(let j=0;j<joints;j++){
+      const jx=(Math.random()*512)|0;
+      c.fillStyle='rgba(20,12,4,0.4)'; c.fillRect(jx,row*plankH,2,plankH);
+    }
+  }
+  const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
+})();
+
+// Interior plaster wall — soft off-white with faint trowel mottling + baseboard.
+const plasterTex = (()=>{
+  const cv=document.createElement('canvas'); cv.width=cv.height=512; const c=cv.getContext('2d');
+  c.fillStyle='#d8d2c4'; c.fillRect(0,0,512,512);
+  const id=c.getImageData(0,0,512,512);
+  for(let i=0;i<id.data.length;i+=4){const n=(Math.random()-0.5)*14; id.data[i]+=n;id.data[i+1]+=n;id.data[i+2]+=n;}
+  c.putImageData(id,0,0);
+  for(let i=0;i<40;i++){
+    c.strokeStyle=`rgba(150,142,128,${Math.random()*0.05})`; c.lineWidth=Math.random()*30+5;
+    c.beginPath(); c.moveTo(Math.random()*512,Math.random()*512);
+    c.quadraticCurveTo(Math.random()*512,Math.random()*512,Math.random()*512,Math.random()*512); c.stroke();
+  }
+  const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
+})();
+
+// Fabric (sofa/cushions) — woven micro-weave with directional sheen.
+function fabricTex(hex){
+  const cv=document.createElement('canvas'); cv.width=cv.height=128; const c=cv.getContext('2d');
+  c.fillStyle=hex; c.fillRect(0,0,128,128);
+  for(let y=0;y<128;y+=2) for(let x=0;x<128;x+=2){
+    const v=(Math.random()-0.5)*22; const w=((x/2+y/2)%2)?8:-8;
+    c.fillStyle=`rgba(${v+w>0?255:0},${v+w>0?255:0},${v+w>0?255:0},${Math.abs(v+w)/255*0.5})`;
+    c.fillRect(x,y,2,2);
+  }
+  const t=new THREE.CanvasTexture(cv); t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
+}
+
+// Persian-style rug — bordered medallion pattern.
+const rugTex = (()=>{
+  const cv=document.createElement('canvas'); cv.width=cv.height=256; const c=cv.getContext('2d');
+  c.fillStyle='#7a2e26'; c.fillRect(0,0,256,256);
+  c.fillStyle='#5a201a'; c.fillRect(0,0,256,256);
+  c.fillStyle='#8d3a2e'; c.fillRect(20,20,216,216);
+  // border bands
+  c.strokeStyle='#d9b25a'; c.lineWidth=6; c.strokeRect(28,28,200,200);
+  c.strokeStyle='#244a52'; c.lineWidth=10; c.strokeRect(40,40,176,176);
+  // central medallion
+  c.fillStyle='#d9b25a';
+  c.beginPath(); c.ellipse(128,128,52,72,0,0,Math.PI*2); c.fill();
+  c.fillStyle='#244a52';
+  c.beginPath(); c.ellipse(128,128,30,46,0,0,Math.PI*2); c.fill();
+  c.fillStyle='#c0392b';
+  c.beginPath(); c.ellipse(128,128,12,22,0,0,Math.PI*2); c.fill();
+  // corner motifs
+  for(const [mx,my] of [[60,60],[196,60],[60,196],[196,196]]){
+    c.fillStyle='#d9b25a'; c.beginPath(); c.arc(mx,my,10,0,Math.PI*2); c.fill();
+  }
+  const t=new THREE.CanvasTexture(cv); return t;
+})();
+
+// Framed picture / poster art for walls.
+function pictureTex(){
+  const cv=document.createElement('canvas'); cv.width=128; cv.height=160; const c=cv.getContext('2d');
+  const g=c.createLinearGradient(0,0,0,160);
+  const hue=Math.random()*360;
+  g.addColorStop(0,`hsl(${hue},45%,72%)`); g.addColorStop(1,`hsl(${(hue+40)%360},50%,42%)`);
+  c.fillStyle=g; c.fillRect(0,0,128,160);
+  // abstract hills/shapes
+  c.fillStyle=`hsl(${(hue+180)%360},35%,30%)`;
+  c.beginPath(); c.moveTo(0,120); c.quadraticCurveTo(64,80,128,120); c.lineTo(128,160); c.lineTo(0,160); c.fill();
+  c.fillStyle=`hsl(${hue},80%,85%)`;
+  c.beginPath(); c.arc(90,40,18,0,Math.PI*2); c.fill();
+  const t=new THREE.CanvasTexture(cv); return t;
+}
+
+// Ceiling — clean stippled white panels.
+const ceilTex = (()=>{
+  const t=plasterTex.clone(); t.needsUpdate=true; return t;
+})();
+
+// ── SOLID BUILDING (towers & non-enterable) ─────────────────────────────────
 function building(w,h,d,x,z,style='brick',windows=false){
   let mat;
   if(style==='glass'){
     const tex=glassTex;
     mat=[...Array(4)].map(()=>{const t=tex.clone();t.repeat.set(Math.max(1,d/4|0),Math.max(1,h/4|0));t.needsUpdate=true;return new THREE.MeshStandardMaterial({map:t,roughness:.1,metalness:.5,transparent:true,opacity:.85});}).concat(sides(metalTex,w,1,d).slice(4));
   } else {
-    // 'office' now uses a plain concrete facade and gets realistic spaced glass
-    // windows applied as decals (below), instead of the old dense window grid.
     const styleMap={brick:brickTex,red:brickRedTex,grey:brickGreyTex,stucco:stuccoTex,office:concreteTex,sandstone:sandstoneTex,darkconcrete:darkConcreteTex,tile:tileTex};
     mat=sides(styleMap[style]||brickTex,w,h,d);
   }
@@ -693,24 +875,301 @@ function building(w,h,d,x,z,style='brick',windows=false){
     const trim=new THREE.Mesh(new THREE.BoxGeometry(w+0.2,0.5,d+0.2),new THREE.MeshStandardMaterial({color:0x4a4239,roughness:.8}));
     trim.position.set(x,h-0.25,z); scene.add(trim);
   }
-  // Realistic spaced glass windows for office buildings (always) and for any
-  // other non-glass style that opts in via the `windows` flag.
   if(style !== 'glass' && (style === 'office' || windows)){
     addWindowDecal(w, h, d, x, z);
   }
 }
-building(10,12,8,-10,30,'stucco',true); building(10,10,8,10,30,'office');
-building(10,14,8,-10,-30,'red',true); building(10,10,8,10,-30,'brick',true);
-building(8,11,10,30,-22,'brick'); building(8,13,10,30,-8,'office');
-building(8,10,10,30,8,'red',true); building(8,12,10,30,22,'stucco',true);
-building(8,12,10,-30,-22,'stucco',true); building(8,10,10,-30,-8,'brick',true);
-building(8,13,10,-30,8,'office'); building(8,11,10,-30,22,'red');
 
-building(14,18,14,55,55,'office'); building(12,14,12,73,55,'brick',true); building(12,22,12,54,71,'red',true);
-building(14,16,14,-55,55,'stucco',true); building(12,13,12,-71,54,'red'); building(12,24,12,-56,73,'office');
-building(14,20,14,55,-55,'red',true); building(12,16,12,71,-54,'stucco',true); building(12,18,12,56,-73,'brick',true);
-building(14,14,14,-55,-55,'brick',true); building(12,19,12,-73,-56,'office'); building(12,21,12,-54,-72,'stucco',true);
+// ── ENTERABLE BUILDING ───────────────────────────────────────────────────────
+// "front" = the side the door faces (point it at the street/plaza so it's seen).
+const interiorLights = [];    // proximity-toggled point lights
 
+function enterableBuilding(w,h,d,x,z,style='brick',doorSide='south'){
+  const WALL_T=0.35, DOOR_W=2.4, DOOR_H=3.2;
+  const styleMap={brick:brickTex,red:brickRedTex,grey:brickGreyTex,stucco:stuccoTex,office:concreteTex,sandstone:sandstoneTex,darkconcrete:darkConcreteTex,tile:tileTex};
+  const extTex=styleMap[style]||brickTex;
+
+  // Exterior parapet + roof slab (roof collides so you can't fall in from above)
+  const rm=metalTex.clone(); rm.repeat.set(Math.max(1,w/4|0),Math.max(1,d/4|0)); rm.needsUpdate=true;
+  addBox(w,0.4,d,x,h,z,new THREE.MeshStandardMaterial({map:rm,roughness:.5,metalness:.6}),true);
+  const trim=new THREE.Mesh(new THREE.BoxGeometry(w+0.3,0.6,d+0.3),new THREE.MeshStandardMaterial({color:0x4a4239,roughness:.85}));
+  trim.position.set(x,h-0.1,z); scene.add(trim);
+
+  // Interior floor (wood) — thin slab, collidable
+  addBox(w-WALL_T*2, 0.15, d-WALL_T*2, x, 0.0, z, [bmat(floorPlankTex, Math.max(1,(w/3)|0), Math.max(1,(d/3)|0))], true);
+
+  // Interior ceiling underside (so you see a finished ceiling from inside)
+  const ceil=new THREE.Mesh(new THREE.PlaneGeometry(w-WALL_T*2,d-WALL_T*2),
+              new THREE.MeshStandardMaterial({map:bmat(ceilTex,2,2).map,roughness:0.95,side:THREE.DoubleSide}));
+  ceil.rotation.x=Math.PI/2; ceil.position.set(x,h-0.45,z); scene.add(ceil);
+
+  // Wall builder — exterior face uses building texture, interior face plaster.
+  // We give each wall a 2-material array via a thin double box: cheaper to just
+  // use exterior texture on the slab and add a plaster inner liner plane.
+  function wallSlab(ww,hh,dd,wx,wz){
+    addBox(ww,hh,dd,wx,0.1,wz,sides(extTex,ww,hh,dd),true);
+  }
+  function innerLiner(horizontal, fixedCoord, length, faceSign){
+    // plaster plane just inside the wall for a finished interior look
+    const liner=new THREE.Mesh(new THREE.PlaneGeometry(length-0.1,h-0.6),
+                new THREE.MeshStandardMaterial({map:bmat(plasterTex,Math.max(1,length/4|0),Math.max(1,h/4|0)).map,roughness:0.96}));
+    if(horizontal){ liner.position.set(x, (h-0.6)/2+0.15, fixedCoord+faceSign*(WALL_T/2+0.02)); if(faceSign>0) liner.rotation.y=Math.PI; }
+    else { liner.position.set(fixedCoord+faceSign*(WALL_T/2+0.02), (h-0.6)/2+0.15, z); liner.rotation.y=faceSign>0?-Math.PI/2:Math.PI/2; }
+    // baseboard
+    const bb=new THREE.Mesh(new THREE.BoxGeometry(horizontal?length-0.1:0.04, 0.22, horizontal?0.04:length-0.1),
+              new THREE.MeshStandardMaterial({color:0xece4d4,roughness:0.7}));
+    if(horizontal) bb.position.set(x,0.26,fixedCoord+faceSign*(WALL_T/2+0.03));
+    else bb.position.set(fixedCoord+faceSign*(WALL_T/2+0.03),0.26,z);
+    scene.add(liner,bb);
+  }
+
+  const hw=w/2, hd=d/2;
+  const solidNS=(zPos,face)=>{ wallSlab(w,h,WALL_T,x,zPos); innerLiner(true,zPos,w,face); };
+  const solidEW=(xPos,face)=>{ wallSlab(WALL_T,h,d,xPos,z); innerLiner(false,xPos,d,face); };
+
+  let doorCX,doorCZ,doorYaw;
+  function wallWithDoor(horizontal, fixed, face){
+    const span=horizontal?w:d;
+    const sideLen=(span-DOOR_W)/2;
+    const lintelH=h-DOOR_H;
+    if(horizontal){
+      wallSlab(sideLen,h,WALL_T, x-(DOOR_W/2+sideLen/2), fixed);
+      wallSlab(sideLen,h,WALL_T, x+(DOOR_W/2+sideLen/2), fixed);
+      addBox(DOOR_W,lintelH,WALL_T, x, 0.1+DOOR_H, fixed, sides(extTex,DOOR_W,lintelH,WALL_T), true);
+      doorCX=x; doorCZ=fixed; doorYaw=face>0?0:Math.PI;
+    } else {
+      wallSlab(WALL_T,h,sideLen, fixed, z-(DOOR_W/2+sideLen/2));
+      wallSlab(WALL_T,h,sideLen, fixed, z+(DOOR_W/2+sideLen/2));
+      addBox(WALL_T,lintelH,DOOR_W, fixed, 0.1+DOOR_H, z, sides(extTex,WALL_T,lintelH,DOOR_W), true);
+      doorCX=fixed; doorCZ=z; doorYaw=face>0?-Math.PI/2:Math.PI/2;
+    }
+  }
+
+  // Place the three solid walls + the door wall on the chosen front side.
+  if(doorSide==='south'){ solidNS(z-hd,1); solidEW(x-hw,1); solidEW(x+hw,-1); wallWithDoor(true, z+hd, 1); }
+  else if(doorSide==='north'){ solidNS(z+hd,-1); solidEW(x-hw,1); solidEW(x+hw,-1); wallWithDoor(true, z-hd, -1); }
+  else if(doorSide==='east'){ solidEW(x-hw,1); solidNS(z-hd,1); solidNS(z+hd,-1); wallWithDoor(false, x+hw, 1); }
+  else { solidEW(x+hw,-1); solidNS(z-hd,1); solidNS(z+hd,-1); wallWithDoor(false, x-hw, -1); }
+
+  // ── INTERIOR LIGHTING ──
+  const light=new THREE.PointLight(0xffe4b8, 0, Math.max(w,d)*1.5, 1.6);
+  light.position.set(x,h-1.4,z); scene.add(light);
+  const fxBody=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.5,8),new THREE.MeshStandardMaterial({color:0x222})); 
+  fxBody.position.set(x,h-0.7,z); scene.add(fxBody);
+  const shade=new THREE.Mesh(new THREE.ConeGeometry(0.45,0.4,16,1,true),
+              new THREE.MeshStandardMaterial({color:0xfff4d8,emissive:0xffd890,emissiveIntensity:0.6,side:THREE.DoubleSide}));
+  shade.position.set(x,h-1.05,z); scene.add(shade);
+  interiorLights.push({light,cx:x,cz:z,radius:Math.max(w,d)});
+
+  // ── FURNISH ──
+  furnishRoom(x,z,w,d,h,doorSide);
+
+  return {x,z};
+}
+
+// ── DETAILED FURNITURE ───────────────────────────────────────────────────────
+function pushObstacle(cx,cy,cz,sx,sy,sz){
+  obstacles.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(cx,cy,cz),new THREE.Vector3(sx,sy,sz)));
+}
+
+function makeSofa(x,z,ry,colorHex){
+  const g=new THREE.Group();
+  const fab=new THREE.MeshStandardMaterial({map:fabricTex(colorHex),roughness:0.95});
+  const wood=new THREE.MeshStandardMaterial({map:woodTex.clone(),roughness:0.7});
+  const base=new THREE.Mesh(new THREE.BoxGeometry(2.3,0.45,0.95),fab); base.position.y=0.55; base.castShadow=true; g.add(base);
+  const back=new THREE.Mesh(new THREE.BoxGeometry(2.3,0.7,0.22),fab); back.position.set(0,0.95,-0.36); g.add(back);
+  for(const ax of [-0.95,0.95]){ const arm=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.55,0.95),fab); arm.position.set(ax,0.7,0); g.add(arm); }
+  // seat cushions
+  for(const cxp of [-0.55,0.55]){ const cu=new THREE.Mesh(new THREE.BoxGeometry(0.95,0.18,0.8),fab); cu.position.set(cxp,0.82,0.02); g.add(cu); }
+  // back cushions
+  for(const cxp of [-0.55,0.55]){ const cu=new THREE.Mesh(new THREE.BoxGeometry(0.92,0.5,0.16),fab); cu.position.set(cxp,1.0,-0.28); g.add(cu); }
+  // wooden legs
+  for(const [lx,lz] of [[1.0,0.4],[-1.0,0.4],[1.0,-0.4],[-1.0,-0.4]]){ const lg=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.35,0.1),wood); lg.position.set(lx,0.17,lz); g.add(lg); }
+  g.position.set(x,0.15,z); g.rotation.y=ry; scene.add(g);
+  const ext=Math.abs(Math.cos(ry))*2.5+Math.abs(Math.sin(ry))*1.1;
+  const extZ=Math.abs(Math.cos(ry))*1.1+Math.abs(Math.sin(ry))*2.5;
+  pushObstacle(x,0.7,z,ext,1.4,extZ);
+}
+
+function makeCoffeeTable(x,z){
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({map:woodTex.clone(),roughness:0.45,metalness:0.05});
+  const top=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.1,0.85),wood); top.position.y=0.55; top.castShadow=true; g.add(top);
+  const lower=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.06,0.7),wood); lower.position.y=0.22; g.add(lower);
+  for(const [lx,lz] of [[0.65,0.36],[-0.65,0.36],[0.65,-0.36],[-0.65,-0.36]]){ const lg=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.04,0.55,8),wood); lg.position.set(lx,0.27,lz); g.add(lg); }
+  // a couple of books on top
+  for(let i=0;i<3;i++){ const bk=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.05,0.24),new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(Math.random(),0.5,0.4)})); bk.position.set(-0.2+i*0.02,0.62+i*0.05,0.1); bk.rotation.y=0.2; g.add(bk); }
+  g.position.set(x,0.15,z); scene.add(g);
+  pushObstacle(x,0.4,z,1.5,0.8,0.85);
+}
+
+function makeBookshelf(x,z,ry){
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({map:woodTex.clone(),roughness:0.7});
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(1.8,2.4,0.4),wood); frame.position.y=1.2; frame.castShadow=true; g.add(frame);
+  // shelves recessed
+  const back=new THREE.Mesh(new THREE.BoxGeometry(1.6,2.2,0.05),new THREE.MeshStandardMaterial({color:0x4a3826,roughness:0.8})); back.position.set(0,1.2,-0.16); g.add(back);
+  for(let s=0;s<5;s++){
+    const y=0.35+s*0.45;
+    const shelf=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.05,0.34),wood); shelf.position.set(0,y,0.02); g.add(shelf);
+    // books on each shelf
+    let bx=-0.72;
+    while(bx<0.72){
+      const bw=0.06+Math.random()*0.05, bh=0.28+Math.random()*0.1;
+      const book=new THREE.Mesh(new THREE.BoxGeometry(bw,bh,0.26),new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(Math.random(),0.55,0.4),roughness:0.8}));
+      book.position.set(bx+bw/2,y+bh/2+0.025,0.03); g.add(book); bx+=bw+0.01;
+    }
+  }
+  g.position.set(x,0.15,z); g.rotation.y=ry; scene.add(g);
+  const ext=Math.abs(Math.cos(ry))*1.8+Math.abs(Math.sin(ry))*0.4;
+  const extZ=Math.abs(Math.cos(ry))*0.4+Math.abs(Math.sin(ry))*1.8;
+  pushObstacle(x,1.2,z,ext,2.4,extZ);
+}
+
+function makeBed(x,z,ry){
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({map:woodTex.clone(),roughness:0.6});
+  const sheet=new THREE.MeshStandardMaterial({color:0xf2efe6,roughness:0.95});
+  const duvet=new THREE.MeshStandardMaterial({color:0x3f5d75,roughness:0.95});
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.35,2.2),wood); frame.position.y=0.32; g.add(frame);
+  const mattress=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.28,2.1),sheet); mattress.position.y=0.62; g.add(mattress);
+  const cover=new THREE.Mesh(new THREE.BoxGeometry(1.52,0.12,1.4),duvet); cover.position.set(0,0.76,0.32); g.add(cover);
+  const headboard=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.9,0.12),wood); headboard.position.set(0,0.75,-1.1); headboard.castShadow=true; g.add(headboard);
+  for(const px of [-0.38,0.38]){ const pillow=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.16,0.42),new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.9})); pillow.position.set(px,0.8,-0.78); g.add(pillow); }
+  g.position.set(x,0.15,z); g.rotation.y=ry; scene.add(g);
+  const ext=Math.abs(Math.cos(ry))*1.6+Math.abs(Math.sin(ry))*2.2;
+  const extZ=Math.abs(Math.cos(ry))*2.2+Math.abs(Math.sin(ry))*1.6;
+  pushObstacle(x,0.5,z,ext,1.0,extZ);
+}
+
+function makeNightstand(x,z){
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({map:woodTex.clone(),roughness:0.6});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.55,0.45),wood); body.position.y=0.42; g.add(body);
+  const lampBase=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.1,0.3,10),new THREE.MeshStandardMaterial({color:0x555})); lampBase.position.y=0.85; g.add(lampBase);
+  const lampShade=new THREE.Mesh(new THREE.ConeGeometry(0.18,0.22,12,1,true),new THREE.MeshStandardMaterial({color:0xfff0cc,emissive:0xffdca0,emissiveIntensity:0.4,side:THREE.DoubleSide})); lampShade.position.y=1.05; g.add(lampShade);
+  g.position.set(x,0.15,z); scene.add(g);
+  pushObstacle(x,0.42,z,0.5,0.85,0.45);
+}
+
+function makeTVUnit(x,z,ry){
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({map:woodTex.clone(),roughness:0.5});
+  const unit=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.5,0.45),wood); unit.position.y=0.4; g.add(unit);
+  const tv=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.9,0.07),new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:0.3,metalness:0.4})); tv.position.set(0,1.25,0); g.add(tv);
+  const screen=new THREE.Mesh(new THREE.PlaneGeometry(1.5,0.8),new THREE.MeshStandardMaterial({color:0x101820,emissive:0x14304a,emissiveIntensity:0.5})); screen.position.set(0,1.25,0.04); g.add(screen);
+  const stand=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.35,0.2),new THREE.MeshStandardMaterial({color:0x111})); stand.position.set(0,0.78,0); g.add(stand);
+  g.position.set(x,0.15,z); g.rotation.y=ry; scene.add(g);
+  const ext=Math.abs(Math.cos(ry))*2.0+Math.abs(Math.sin(ry))*0.45;
+  const extZ=Math.abs(Math.cos(ry))*0.45+Math.abs(Math.sin(ry))*2.0;
+  pushObstacle(x,0.4,z,ext,0.8,extZ);
+}
+
+function makeDiningSet(x,z){
+  const g=new THREE.Group();
+  const wood=new THREE.MeshStandardMaterial({map:woodTex.clone(),roughness:0.5});
+  const top=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.1,1.0),wood); top.position.y=0.78; top.castShadow=true; g.add(top);
+  for(const [lx,lz] of [[0.7,0.42],[-0.7,0.42],[0.7,-0.42],[-0.7,-0.42]]){ const lg=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.78,0.09),wood); lg.position.set(lx,0.39,lz); g.add(lg); }
+  for(const [cx2,cz2,cry] of [[0,0.75,0],[0,-0.75,Math.PI],[0.95,0,Math.PI/2],[-0.95,0,-Math.PI/2]]){
+    const ch=new THREE.Group();
+    const seat=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.08,0.45),wood); seat.position.y=0.46; ch.add(seat);
+    const bk=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.5,0.07),wood); bk.position.set(0,0.72,-0.2); ch.add(bk);
+    for(const [sx,sz] of [[0.18,0.18],[-0.18,0.18],[0.18,-0.18],[-0.18,-0.18]]){ const lg=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.46,0.05),wood); lg.position.set(sx,0.23,sz); ch.add(lg); }
+    ch.position.set(cx2,0,cz2); ch.rotation.y=cry; g.add(ch);
+  }
+  g.position.set(x,0.15,z); scene.add(g);
+  pushObstacle(x,0.4,z,2.4,0.9,1.9);
+}
+
+function makePlantIndoor(x,z){
+  const g=new THREE.Group();
+  const pot=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.22,0.45,12),new THREE.MeshStandardMaterial({color:0xb5651d,roughness:0.8})); pot.position.y=0.37; g.add(pot);
+  const leafMat=new THREE.MeshStandardMaterial({color:0x2e6b2e,roughness:0.9});
+  for(let i=0;i<7;i++){ const leaf=new THREE.Mesh(new THREE.SphereGeometry(0.3,7,5),leafMat); leaf.position.set((Math.random()-0.5)*0.5,0.9+Math.random()*0.5,(Math.random()-0.5)*0.5); leaf.scale.set(0.6,1.4,0.6); g.add(leaf); }
+  g.position.set(x,0.15,z); scene.add(g);
+  pushObstacle(x,0.5,z,0.6,1.0,0.6);
+}
+
+function makeWallPicture(x,z,ry){
+  const g=new THREE.Group();
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(0.95,1.2,0.06),new THREE.MeshStandardMaterial({color:0x2a1d10,roughness:0.6})); g.add(frame);
+  const art=new THREE.Mesh(new THREE.PlaneGeometry(0.8,1.05),new THREE.MeshStandardMaterial({map:pictureTex(),roughness:0.7})); art.position.z=0.04; g.add(art);
+  g.position.set(x,1.9,z); g.rotation.y=ry; scene.add(g);
+}
+
+// Lay out a believable apartment given room footprint & which wall has the door.
+function furnishRoom(cx,cz,w,d,h,doorSide){
+  const m=1.2; // margin from walls
+  const x0=cx-w/2+m, x1=cx+w/2-m, z0=cz-d/2+m, z1=cz+d/2-m;
+
+  // Rug centered
+  const rug=new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w*0.55,5),Math.min(d*0.55,4)),
+            new THREE.MeshStandardMaterial({map:rugTex,roughness:1.0}));
+  rug.rotation.x=-Math.PI/2; rug.position.set(cx,0.24,cz); scene.add(rug);
+
+  // Living zone: sofa on the wall opposite the door, TV facing it.
+  if(doorSide==='south'){ makeSofa(cx, z0+0.3, 0, '#3a5168'); makeTVUnit(cx, z1-0.3, Math.PI); }
+  else if(doorSide==='north'){ makeSofa(cx, z1-0.3, Math.PI, '#3a5168'); makeTVUnit(cx, z0+0.3, 0); }
+  else if(doorSide==='east'){ makeSofa(x0+0.3, cz, Math.PI/2, '#3a5168'); makeTVUnit(x1-0.3, cz, -Math.PI/2); }
+  else { makeSofa(x1-0.3, cz, -Math.PI/2, '#3a5168'); makeTVUnit(x0+0.3, cz, Math.PI/2); }
+
+  makeCoffeeTable(cx, cz);
+
+  // Bedroom corner (back-left from door)
+  makeBed(x0+0.9, z0+1.3, 0);
+  makeNightstand(x0+0.1, z0+0.4);
+
+  // Bookshelf + dining + plants fill the rest
+  makeBookshelf(x1-0.3, z0+1.2, -Math.PI/2);
+  makeDiningSet(x1-1.5, z1-1.2);
+  makePlantIndoor(x0+0.4, z1-0.4);
+  makePlantIndoor(x1-0.4, z1-0.4);
+
+  // Wall pictures on a couple of interior faces
+  makeWallPicture(cx-1.5, cz-d/2+0.45, 0);
+  makeWallPicture(cx+1.5, cz-d/2+0.45, 0);
+}
+
+console.log("module parsed OK");
+
+// ════════════════════════════════════════════════════════════════════════════
+//  BUILDING PLACEMENTS
+//  • Short central buildings → enterableBuilding(...) with FRONT doors facing
+//    the plaza (door side chosen so it points toward the map center / street).
+//  • Tall towers (h ≥ 16) stay solid building(...) — no interiors.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── INNER RING: enterable, doors face the central plaza ──
+// Buildings north of center (z>0) get door on 'north' (faces -z, toward plaza).
+// South (z<0) → 'south'. East (x>0) → 'west'. West (x<0) → 'east'.
+enterableBuilding(12,8,12,-10, 30,'stucco','north');
+enterableBuilding(12,8,12, 10, 30,'office','north');
+enterableBuilding(12,8,12,-10,-30,'red',   'south');
+enterableBuilding(12,8,12, 10,-30,'brick', 'south');
+enterableBuilding(10,8,12, 30,-22,'brick', 'west');
+enterableBuilding(10,9,12, 30, -8,'office','west');
+enterableBuilding(10,8,12, 30,  8,'red',   'west');
+enterableBuilding(10,8,12, 30, 22,'stucco','west');
+enterableBuilding(10,8,12,-30,-22,'stucco','east');
+enterableBuilding(10,8,12,-30, -8,'brick', 'east');
+enterableBuilding(10,9,12,-30,  8,'office','east');
+enterableBuilding(10,8,12,-30, 22,'red',   'east');
+
+// ── SECOND RING (≈55): mostly enterable; tall corners stay solid ──
+building(14,18,14, 55, 55,'office');                         // tall, solid
+enterableBuilding(12,9,12, 73, 55,'brick','west');
+building(12,22,12, 54, 71,'red',true);                       // tall, solid
+building(14,16,14,-55, 55,'stucco',true);                    // tall, solid
+enterableBuilding(12,9,12,-71, 54,'red','east');
+building(12,24,12,-56, 73,'office');                         // tall, solid
+building(14,20,14, 55,-55,'red',true);                       // tall, solid
+enterableBuilding(12,9,12, 71,-54,'stucco','west');
+building(12,18,12, 56,-73,'brick',true);                     // tall, solid
+enterableBuilding(14,9,14,-55,-55,'brick','east');
+building(12,19,12,-73,-56,'office');                         // tall, solid
+building(12,21,12,-54,-72,'stucco',true);                    // tall, solid
+
+// ── THIRD RING (≈100) and beyond: all tall, solid ──
 building(16,28,14,-35,100,'office'); building(14,35,12,0,105,'sandstone',true); building(16,25,14,35,100,'brick',true);
 building(16,24,14,-35,-100,'red',true); building(14,38,12,0,-105,'tile',true); building(16,30,14,35,-100,'office');
 building(14,26,16,100,-35,'stucco',true); building(12,40,14,105,0,'darkconcrete',true); building(14,28,16,100,35,'red',true);
@@ -750,52 +1209,41 @@ building(18,12,18,-265,140,'darkconcrete'); building(18,14,18,-140,265,'grey');
 building(18,14,18,265,-140,'darkconcrete'); building(18,12,18,140,-265,'grey');
 building(18,12,18,-265,-140,'grey'); building(18,14,18,-140,-265,'darkconcrete');
 
-const ladders = [];
+// ── ADDITIONAL DENSITY: short ones near center enterable, rest solid ──
+enterableBuilding(10,8,10,-24,32,'brick','north'); enterableBuilding(10,8,10,21,32,'stucco','north');
+enterableBuilding(10,8,10,-21,-32,'office','south'); enterableBuilding(10,8,10,24,-32,'red','south');
+enterableBuilding(9,9,10,52,22,'red','west');   building(9,11,9,52,-22,'office');
+enterableBuilding(9,8,10,-52,25,'stucco','east'); enterableBuilding(9,9,10,-52,-19,'brick','east');
 
-// ── ADDITIONAL STRUCTURES (added density) ───────────────────────────────────
-// Fill empty quadrant blocks between the ring roads with extra buildings so the
-// city reads as denser and more continuous.
-building(10,9,8,-24,32,'brick',true);  building(10,11,8,21,32,'stucco',true);
-building(10,10,8,-21,-32,'office');    building(10,12,8,24,-32,'red',true);
-building(9,13,9,52,22,'red',true);     building(9,11,9,52,-22,'office');
-building(9,10,9,-52,25,'stucco',true); building(9,12,9,-52,-19,'brick',true);
-
-building(11,15,11,68,30,'office');     building(11,13,11,68,-30,'tile',true);
-building(11,14,11,-68,30,'red',true);  building(11,16,11,-68,-30,'sandstone',true);
-building(11,13,11,30,68,'stucco',true);building(11,15,11,-30,68,'office');
-building(11,14,11,30,-68,'brick',true);building(11,12,11,-30,-68,'tile',true);
-
-building(13,20,13,100,70,'office');    building(13,18,13,-100,70,'sandstone',true);
-building(13,22,13,100,-70,'glass');    building(13,19,13,-100,-70,'tile',true);
-building(13,21,13,70,100,'red',true);  building(13,17,13,-70,100,'office');
+building(11,15,11,68,30,'office'); building(11,13,11,68,-30,'tile',true);
+building(11,14,11,-68,30,'red',true); building(11,16,11,-68,-30,'sandstone',true);
+building(11,13,11,30,68,'stucco',true); building(11,15,11,-30,68,'office');
+building(11,14,11,30,-68,'brick',true); building(11,12,11,-30,-68,'tile',true);
+building(13,20,13,100,70,'office'); building(13,18,13,-100,70,'sandstone',true);
+building(13,22,13,100,-70,'glass'); building(13,19,13,-100,-70,'tile',true);
+building(13,21,13,70,100,'red',true); building(13,17,13,-70,100,'office');
 building(13,20,13,70,-100,'darkconcrete',true); building(13,18,13,-70,-100,'brick',true);
-
-building(15,26,15,146,85,'office');    building(15,30,15,-147,85,'glass');
-building(15,28,15,147,-85,'tile',true);building(15,24,15,-147,-85,'sandstone',true);
-building(15,27,15,85,147,'glass');     building(15,25,15,-85,146,'office');
+building(15,26,15,146,85,'office'); building(15,30,15,-147,85,'glass');
+building(15,28,15,147,-85,'tile',true); building(15,24,15,-147,-85,'sandstone',true);
+building(15,27,15,85,147,'glass'); building(15,25,15,-85,146,'office');
 building(15,29,15,85,-146,'darkconcrete',true); building(15,26,15,-85,-147,'tile',true);
-
-building(17,30,17,191,123,'office');   building(17,34,17,-190,120,'glass');
+building(17,30,17,191,123,'office'); building(17,34,17,-190,120,'glass');
 building(17,32,17,191,-115,'sandstone',true); building(17,28,17,-190,-120,'tile',true);
-building(17,31,17,115,191,'glass');    building(17,29,17,-122,190,'office');
+building(17,31,17,115,191,'glass'); building(17,29,17,-122,190,'office');
 building(17,33,17,123,-190,'darkconcrete',true); building(17,30,17,-116,-191,'sandstone',true);
-
-// Tall landmark towers near downtown core
-building(20,52,20,176,0,'glass');      building(20,48,20,-144,0,'glass');
-building(20,50,20,1,176,'glass');      building(20,46,20,3,-144,'glass');
-building(22,60,22,187,187,'glass');    building(22,56,22,-188,187,'glass');
-building(22,58,22,187,-187,'glass');   building(22,54,22,-186,-188,'glass');
-
-// Low-rise infill along the outer industrial ring
-building(20,11,14,229,93,'grey');      building(20,10,14,261,-90,'darkconcrete');
-building(14,11,20,86,229,'grey');      building(14,10,20,-94,229,'darkconcrete');
+building(20,52,20,176,0,'glass'); building(20,48,20,-144,0,'glass');
+building(20,50,20,1,176,'glass'); building(20,46,20,3,-144,'glass');
+building(22,60,22,187,187,'glass'); building(22,56,22,-188,187,'glass');
+building(22,58,22,187,-187,'glass'); building(22,54,22,-186,-188,'glass');
+building(20,11,14,229,93,'grey'); building(20,10,14,261,-90,'darkconcrete');
+building(14,11,20,86,229,'grey'); building(14,10,20,-94,229,'darkconcrete');
 building(20,11,14,-229,90,'darkconcrete'); building(20,10,14,-229,-90,'grey');
 building(14,11,20,93,-229,'darkconcrete'); building(14,10,20,-87,-229,'grey');
-
-// Parking-structure style blocks (wide, mid-height, open look via dark concrete)
 building(26,16,18,265,90,'darkconcrete'); building(26,16,18,-265,90,'darkconcrete');
 building(18,16,26,90,265,'darkconcrete'); building(18,16,26,-90,265,'darkconcrete');
 
+// Collect enterables for the loop hooks
+const enterables = interiorLights.map(il => ({x:il.cx, z:il.cz}));
 // ── TREES ──────────────────────────────────────────────────────────────────
 const _trunkMat = new THREE.MeshStandardMaterial({color:0x4a3220,roughness:.95});
 const _trunkMatDark = new THREE.MeshStandardMaterial({color:0x3a2818,roughness:.95});
@@ -1467,17 +1915,166 @@ function makeMP5(){
   return g;
 }
 
+function makeAWP(){
+  // Long bolt-action sniper, fully connected: receiver runs the full length and
+  // every part overlaps its neighbour so nothing floats. Barrel seats INTO the
+  // receiver, scope rings bridge tube-to-receiver, bipod tops touch the barrel.
+  const g=new THREE.Group();
+  const mm=new THREE.MeshStandardMaterial({color:0x1a1a1a,roughness:.35,metalness:.85});
+  const wm=new THREE.MeshStandardMaterial({color:0x2a2a2e,roughness:.55,metalness:.25}); // polymer stock
+
+  // Receiver — the spine. Everything else overlaps into this.
+  const recv=new THREE.Mesh(new THREE.BoxGeometry(.055,.08,.64),mm);
+  recv.position.set(0,0,0); g.add(recv);
+
+  // Barrel — starts INSIDE the receiver front (z=-.32) and runs forward.
+  // Centered at -.55 with length .55 → spans -.275 to -.825, overlapping receiver.
+  const brl=new THREE.Mesh(new THREE.BoxGeometry(.030,.030,.56),mm);
+  brl.position.set(0,.012,-.55); g.add(brl);
+
+  // Muzzle brake — overlaps the barrel tip.
+  const mz=new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.09),mm);
+  mz.position.set(0,.012,-.82); g.add(mz);
+
+  // Bipod — legs reach UP to touch the barrel underside, splayed down/out.
+  const bipL=new THREE.Mesh(new THREE.BoxGeometry(.012,.18,.012),mm);
+  bipL.position.set(.05,-.07,-.62); bipL.rotation.z=.4; g.add(bipL);
+  const bipR=new THREE.Mesh(new THREE.BoxGeometry(.012,.18,.012),mm);
+  bipR.position.set(-.05,-.07,-.62); bipR.rotation.z=-.4; g.add(bipR);
+  // Bipod mount block connecting legs to the barrel.
+  const bipMount=new THREE.Mesh(new THREE.BoxGeometry(.04,.04,.04),mm);
+  bipMount.position.set(0,-.01,-.62); g.add(bipMount);
+
+  // Scope — sits on the receiver. Tube centered above, bell at front, eye at back.
+  const scopeTube=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.34,12),mm);
+  scopeTube.rotation.x=Math.PI/2; scopeTube.position.set(0,.085,-.05); g.add(scopeTube);
+  const scopeBell=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.10,12),mm);
+  scopeBell.rotation.x=Math.PI/2; scopeBell.position.set(0,.085,-.24); g.add(scopeBell);
+  const scopeEye=new THREE.Mesh(new THREE.CylinderGeometry(.030,.030,.08,12),mm);
+  scopeEye.rotation.x=Math.PI/2; scopeEye.position.set(0,.085,.14); g.add(scopeEye);
+  // Scope rings — tall enough to bridge from receiver top (y≈.04) to tube (y≈.085).
+  const ring1=new THREE.Mesh(new THREE.BoxGeometry(.05,.07,.03),mm);
+  ring1.position.set(0,.055,-.15); g.add(ring1);
+  const ring2=new THREE.Mesh(new THREE.BoxGeometry(.05,.07,.03),mm);
+  ring2.position.set(0,.055,.05); g.add(ring2);
+
+  // Stock — overlaps the rear of the receiver (receiver ends at z=+.32).
+  const stk=new THREE.Mesh(new THREE.BoxGeometry(.05,.10,.30),wm);
+  stk.position.set(0,-.01,.42); g.add(stk);
+  // Cheek riser to blend stock into the receiver line.
+  const cheek=new THREE.Mesh(new THREE.BoxGeometry(.05,.04,.18),wm);
+  cheek.position.set(0,.045,.34); g.add(cheek);
+
+  // Pistol grip — top overlaps the receiver underside.
+  const grp=new THREE.Mesh(new THREE.BoxGeometry(.045,.13,.06),wm);
+  grp.position.set(0,-.08,.20); grp.rotation.x=.28; g.add(grp);
+
+  // Trigger guard connecting grip to receiver.
+  const guard=new THREE.Mesh(new THREE.BoxGeometry(.035,.05,.07),mm);
+  guard.position.set(0,-.05,.15); g.add(guard);
+
+  // Bolt handle — base sits on the receiver, knob sticks out the side.
+  const boltArm=new THREE.Mesh(new THREE.BoxGeometry(.06,.018,.018),mm);
+  boltArm.position.set(.045,.02,.12); g.add(boltArm);
+  const boltKnob=new THREE.Mesh(new THREE.SphereGeometry(.018,8,6),mm);
+  boltKnob.position.set(.075,.02,.12); g.add(boltKnob);
+
+  return g;
+}
+
+function makeGlock18(){
+  // Modern polymer pistol — chunkier than the starter, with an extended mag
+  // that sticks out below the grip (full-auto / 33-round vibe).
+  const g=new THREE.Group();
+  const polymer=new THREE.MeshStandardMaterial({color:0x202428,roughness:.6,metalness:.2});
+  const metal=new THREE.MeshStandardMaterial({color:0x36383c,roughness:.45,metalness:.7});
+  // Squared slide (taller and wider than the starter pistol)
+  const slide=new THREE.Mesh(new THREE.BoxGeometry(.07,.095,.40),metal); g.add(slide);
+  // Frame/dust cover with rail-style underside (squared off)
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(.058,.038,.30),polymer);
+  frame.position.set(0,-.065,.02); g.add(frame);
+  // Grip — vertical and chunky, polymer
+  const grip=new THREE.Mesh(new THREE.BoxGeometry(.06,.16,.10),polymer);
+  grip.position.set(0,-.16,.13); grip.rotation.x=.20; g.add(grip);
+  // Extended magazine sticking out below the grip
+  const exMag=new THREE.Mesh(new THREE.BoxGeometry(.058,.10,.09),metal);
+  exMag.position.set(0,-.30,.16); exMag.rotation.x=.20; g.add(exMag);
+  // Trigger guard
+  const guard=new THREE.Mesh(new THREE.BoxGeometry(.044,.06,.085),polymer);
+  guard.position.set(0,-.07,.04); g.add(guard);
+  // Rear sight block
+  const rsight=new THREE.Mesh(new THREE.BoxGeometry(.06,.018,.04),metal);
+  rsight.position.set(0,.057,.18); g.add(rsight);
+  // Front sight post
+  const fsight=new THREE.Mesh(new THREE.BoxGeometry(.014,.022,.014),metal);
+  fsight.position.set(0,.058,-.17); g.add(fsight);
+  return g;
+}
+
+function makeM4A1(){
+  // M4A1 carbine — looks deliberately UNLIKE the AK: straight black STANAG mag,
+  // carry handle on top, telescoping black polymer stock, vertical foregrip.
+  const g=new THREE.Group();
+  const mm=new THREE.MeshStandardMaterial({color:0x2c2c30,roughness:.4,metalness:.7});
+  const pm=new THREE.MeshStandardMaterial({color:0x1a1a1c,roughness:.6,metalness:.2}); // polymer black
+  // Upper receiver
+  const upper=new THREE.Mesh(new THREE.BoxGeometry(.05,.06,.42),mm);
+  upper.position.set(0,.01,0); g.add(upper);
+  // Lower receiver
+  const lower=new THREE.Mesh(new THREE.BoxGeometry(.05,.045,.18),pm);
+  lower.position.set(0,-.04,.04); g.add(lower);
+  // Barrel
+  const brl=new THREE.Mesh(new THREE.BoxGeometry(.025,.025,.30),mm);
+  brl.position.set(0,.018,-.34); g.add(brl);
+  // Flash hider (slightly larger than the barrel)
+  const fh=new THREE.Mesh(new THREE.BoxGeometry(.034,.034,.05),mm);
+  fh.position.set(0,.018,-.51); g.add(fh);
+  // Cylindrical handguard with rail texture (polymer)
+  const hand=new THREE.Mesh(new THREE.CylinderGeometry(.028,.028,.22,8),pm);
+  hand.rotation.x=Math.PI/2; hand.position.set(0,.012,-.20); g.add(hand);
+  // STRAIGHT mag (NATO 5.56 STANAG) — clearly distinct from the AK's curved banana
+  const mag=new THREE.Mesh(new THREE.BoxGeometry(.04,.13,.06),mm);
+  mag.position.set(0,-.11,.06); g.add(mag);
+  // Carrying handle on top (the iconic M4 silhouette)
+  const handle=new THREE.Mesh(new THREE.BoxGeometry(.025,.04,.15),mm);
+  handle.position.set(0,.075,-.02); g.add(handle);
+  // Carry handle uprights
+  const hup1=new THREE.Mesh(new THREE.BoxGeometry(.025,.02,.02),mm);
+  hup1.position.set(0,.05,-.08); g.add(hup1);
+  const hup2=new THREE.Mesh(new THREE.BoxGeometry(.025,.02,.02),mm);
+  hup2.position.set(0,.05,.04); g.add(hup2);
+  // Telescoping stock — flat sided, black polymer, distinctly NOT wooden
+  const stk=new THREE.Mesh(new THREE.BoxGeometry(.038,.07,.20),pm);
+  stk.position.set(0,-.01,.30); g.add(stk);
+  // Stock buffer tube
+  const tube=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.10,8),mm);
+  tube.rotation.x=Math.PI/2; tube.position.set(0,-.005,.18); g.add(tube);
+  // Pistol grip — black polymer
+  const grp=new THREE.Mesh(new THREE.BoxGeometry(.038,.10,.05),pm);
+  grp.position.set(0,-.085,.14); grp.rotation.x=.25; g.add(grp);
+  // Vertical foregrip — another visual departure from the AK
+  const vgrip=new THREE.Mesh(new THREE.BoxGeometry(.025,.07,.025),pm);
+  vgrip.position.set(0,-.06,-.18); g.add(vgrip);
+  return g;
+}
+
 const gunModels = {
   pistol: makePistol(),
   ak47:   makeRifle(0x2a2a2a),
   deagle: makeDeagle(),
   mp5:    makeMP5(),
+  awp:    makeAWP(),
+  glock18: makeGlock18(),
+  m4a1:    makeM4A1(),
 };
 const gunOffsets = {
   pistol: [.28,-.22,-.38],
   ak47:   [.28,-.22,-.44],
   deagle: [.28,-.22,-.40],
   mp5:    [.28,-.22,-.42],
+  awp:    [.28,-.22,-.50],
+  glock18:[.28,-.22,-.38],
+  m4a1:   [.28,-.22,-.44],
 };
 let playerGun = gunModels.pistol;
 playerGun.position.set(...gunOffsets.pistol);
@@ -1488,32 +2085,98 @@ const flashLight=new THREE.PointLight(0xff8800,0,1);flashLight.position.set(.28,
 // ── ENEMIES ────────────────────────────────────────────────────────────────
 function makeEnemy(){
   const g=new THREE.Group();
-  const bm=new THREE.MeshStandardMaterial({color:0x1a1f2e,roughness:.7});
-  const sm=new THREE.MeshStandardMaterial({color:0xddbb99,roughness:.8});
-  const torso=new THREE.Mesh(new THREE.BoxGeometry(.55,.75,.32),bm);torso.position.y=1.25;torso.castShadow=true;
-  const head=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,.26),sm);head.position.y=1.72;head.castShadow=true;
 
-  const armPivot=new THREE.Group();
-  armPivot.position.set(.30, 1.55, 0);
-  armPivot.rotation.x = 0;
+  // Materials
+  const skinMat  = new THREE.MeshStandardMaterial({color:0xc99a6b, roughness:.75});
+  const maskMat  = new THREE.MeshStandardMaterial({color:0x161616, roughness:.9});   // black balaclava
+  const shirtMat = new THREE.MeshStandardMaterial({color:0x3a3f33, roughness:.85});  // olive base layer
+  const vestMat  = new THREE.MeshStandardMaterial({color:0x1f2228, roughness:.7, metalness:.15}); // tac vest
+  const pantsMat = new THREE.MeshStandardMaterial({color:0x23262b, roughness:.9});
+  const bootMat  = new THREE.MeshStandardMaterial({color:0x0d0d0d, roughness:.7});
+  const strapMat = new THREE.MeshStandardMaterial({color:0x111111, roughness:.85});
 
-  const arm=new THREE.Mesh(new THREE.BoxGeometry(.18,.55,.18),bm);
-  arm.position.set(0,-.27,0);
-  arm.castShadow=true;
-  armPivot.add(arm);
+  function limb(len, rad, mat){
+    const grp = new THREE.Group();
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, len, 12), mat);
+    cyl.castShadow = true; grp.add(cyl);
+    const cap1 = new THREE.Mesh(new THREE.SphereGeometry(rad, 12, 8), mat); cap1.position.y =  len/2; grp.add(cap1);
+    const cap2 = new THREE.Mesh(new THREE.SphereGeometry(rad, 12, 8), mat); cap2.position.y = -len/2; grp.add(cap2);
+    return grp;
+  }
 
-  const egun=makePistol(0x080808);
-  egun.scale.set(1.4,1.4,1.4);
-  egun.position.set(0,-.55,.05);
-  armPivot.add(egun);
+  // ── TORSO + TACTICAL VEST ──
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(.20, .17, .62, 16), shirtMat);
+  torso.position.y = 1.28; torso.castShadow = true; g.add(torso);
+  // Bulky vest shell over the chest
+  const vest = new THREE.Mesh(new THREE.BoxGeometry(.46, .50, .32), vestMat);
+  vest.position.y = 1.34; vest.castShadow = true; g.add(vest);
+  // Vest pouches (front mag carriers)
+  for(const px of [-.12, 0, .12]){
+    const pouch = new THREE.Mesh(new THREE.BoxGeometry(.10, .14, .06), strapMat);
+    pouch.position.set(px, 1.22, .19); g.add(pouch);
+  }
+  // Shoulder straps
+  for(const sx of [-.14, .14]){
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(.06, .50, .34), strapMat);
+    strap.position.set(sx, 1.40, 0); g.add(strap);
+  }
+  // Hips/pelvis
+  const pelvis = new THREE.Mesh(new THREE.SphereGeometry(.19, 16, 12), pantsMat);
+  pelvis.position.y = .98; pelvis.scale.set(1, .65, .8); pelvis.castShadow = true; g.add(pelvis);
 
-  const legL=new THREE.Mesh(new THREE.BoxGeometry(.2,.75,.2),bm);legL.position.set(.13,.37,0);legL.castShadow=true;
-  const legR=legL.clone();legR.position.x=-.13;
+  // ── NECK + MASKED HEAD ──
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(.06, .07, .1, 10), maskMat);
+  neck.position.y = 1.63; g.add(neck);
+  // Head fully covered by balaclava (mask material)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.135, 20, 16), maskMat);
+  head.position.y = 1.76; head.scale.set(.92, 1.05, .98); head.castShadow = true; g.add(head);
+  // Jaw/chin of the mask
+  const jaw = new THREE.Mesh(new THREE.SphereGeometry(.11, 14, 10), maskMat);
+  jaw.position.set(0, 1.71, .02); jaw.scale.set(.9, .7, .95); g.add(jaw);
+  // Exposed skin strip around the eyes (the balaclava eye-slit)
+  const eyeStrip = new THREE.Mesh(new THREE.BoxGeometry(.20, .045, .04), skinMat);
+  eyeStrip.position.set(0, 1.785, .115); g.add(eyeStrip);
+  // Eyes (dark dots on the skin strip)
+  const eyeMat = new THREE.MeshStandardMaterial({color:0x080808, roughness:.4});
+  for(const ex of [.05, -.05]){
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(.020, 8, 6), eyeMat);
+    eye.position.set(ex, 1.785, .135); g.add(eye);
+  }
 
-  const armL=new THREE.Mesh(new THREE.BoxGeometry(.18,.55,.18),bm);
-  armL.position.set(-.30,1.27,0); armL.castShadow=true;
+  // ── ARMS ──  right arm holds gun
+  const armPivot = new THREE.Group();
+  armPivot.position.set(.245, 1.54, 0);
+  const upperArmR = limb(.30, .055, shirtMat); upperArmR.position.y = -.15; armPivot.add(upperArmR);
+  const forearmR  = limb(.28, .05, maskMat);   forearmR.position.y = -.43; armPivot.add(forearmR); // black gloves/sleeves
+  const handR = new THREE.Mesh(new THREE.SphereGeometry(.06,10,8), maskMat); handR.position.y=-.6; armPivot.add(handR);
+  const egun = makeGlock18(); egun.scale.set(1.5,1.5,1.5); egun.position.set(0,-.62,.08); armPivot.add(egun);
+  g.add(armPivot);
 
-  g.add(torso,head,armPivot,armL,legL,legR);
+  const armLPivot = new THREE.Group();
+  armLPivot.position.set(-.245, 1.54, 0);
+  armLPivot.rotation.x = .25;
+  const upperArmL = limb(.30, .055, shirtMat); upperArmL.position.y = -.15; armLPivot.add(upperArmL);
+  const forearmL  = limb(.28, .05, maskMat);   forearmL.position.y = -.43; armLPivot.add(forearmL);
+  const handL = new THREE.Mesh(new THREE.SphereGeometry(.06,10,8), maskMat); handL.position.y=-.6; armLPivot.add(handL);
+  g.add(armLPivot);
+
+  // ── LEGS ──  cargo pants + combat boots
+  function buildLeg(side){
+    const hip = new THREE.Group();
+    hip.position.set(.09*side, .92, 0);
+    const thigh = limb(.42, .078, pantsMat); thigh.position.y = -.21; hip.add(thigh);
+    const shin  = limb(.40, .062, pantsMat); shin.position.y  = -.62; hip.add(shin);
+    // thigh cargo pocket
+    const pocket = new THREE.Mesh(new THREE.BoxGeometry(.10,.12,.10), pantsMat);
+    pocket.position.set(.07*side, -.25, .04); hip.add(pocket);
+    const boot  = new THREE.Mesh(new THREE.BoxGeometry(.12,.10,.26), bootMat);
+    boot.position.set(0,-.86,.05); boot.castShadow = true; hip.add(boot);
+    g.add(hip);
+    return hip;
+  }
+  const legL = buildLeg(1);
+  const legR = buildLeg(-1);
+
   g.userData={legL,legR,armPivot,hp:100,walkPhase:Math.random()*10,lastAttack:0,aimT:0};
   return g;
 }
@@ -1561,7 +2224,8 @@ function _queryRegion(minx, minz, maxx, maxz, out){
   for(const b of _queryScratch) out.push(b);
   // Add the (few) active car obstacles — they move, so always check all.
   for(let i=0;i<obstacles.length;i++){
-    if(_carObstacleSet.has(obstacles[i])) out.push(obstacles[i]);
+    const o = obstacles[i];
+    if(_carObstacleSet.has(o)) out.push(o);
   }
   return out;
 }
@@ -1643,6 +2307,7 @@ function updateHUD(){
 function resetGame(){
   // Eject from car if dying mid-drive
   if(playerInCar) exitCar(true);
+  if(isScoped) setScoped(false);
   // Keep money and owned weapons across deaths; keep the equipped gun.
   gun={...GUNS[selectedGunKey]};
   health=100;ammo=gun.ammo;kills=0;verticalVelocity=0;yaw=0;pitch=0;
@@ -1713,9 +2378,37 @@ function playRifleShot() {
   bodySrc.start(t); bodySrc.stop(t + 0.08);
 }
 function playShootSound() {
-  if(selectedGunKey==='ak47' || selectedGunKey==='mp5') playRifleShot();
+  if(selectedGunKey==='ak47' || selectedGunKey==='mp5' || selectedGunKey==='m4a1') playRifleShot();
   else if(selectedGunKey==='deagle') playDeagleShot();
+  else if(selectedGunKey==='awp') playAWPShot();
   else playGunshot();
+}
+function playAWPShot() {
+  // Iconic AWP report: snappy supersonic crack, big mid-range body, deep boom,
+  // long ringing tail. Distinct from the deagle (sharper, higher-pitched ring).
+  const t = AC.currentTime;
+  const crackN = noiseBuffer(0.006, x => 1 - x);
+  const crackHP = biquad('highpass', 3200);
+  const crackG = AC.createGain(); crackG.gain.setValueAtTime(7.5, t); crackG.gain.exponentialRampToValueAtTime(0.001, t + 0.006);
+  const crackSrc = AC.createBufferSource(); crackSrc.buffer = crackN;
+  crackSrc.connect(crackHP); crackHP.connect(crackG); crackG.connect(AC.destination);
+  crackSrc.start(t); crackSrc.stop(t + 0.006);
+  const bodyN = noiseBuffer(0.18, x => Math.pow(1 - x, 1.0));
+  const bodyBP = biquad('bandpass', 1500); bodyBP.Q.value = 0.7;
+  const bodyG = AC.createGain(); bodyG.gain.setValueAtTime(4.5, t); bodyG.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  const bodySrc = AC.createBufferSource(); bodySrc.buffer = bodyN;
+  bodySrc.connect(bodyBP); bodyBP.connect(bodyG); bodyG.connect(AC.destination);
+  bodySrc.start(t); bodySrc.stop(t + 0.18);
+  const sub = AC.createOscillator(); sub.type = 'sine';
+  sub.frequency.setValueAtTime(120, t); sub.frequency.exponentialRampToValueAtTime(30, t + 0.20);
+  const subG = AC.createGain(); subG.gain.setValueAtTime(2.0, t); subG.gain.exponentialRampToValueAtTime(0.001, t + 0.20);
+  sub.connect(subG); subG.connect(AC.destination); sub.start(t); sub.stop(t + 0.20);
+  const ring = AC.createOscillator(); ring.type = 'triangle';
+  ring.frequency.setValueAtTime(3200, t); ring.frequency.exponentialRampToValueAtTime(1600, t + 0.6);
+  const ringG = AC.createGain();
+  ringG.gain.setValueAtTime(0.0, t); ringG.gain.linearRampToValueAtTime(0.35, t + 0.004);
+  ringG.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+  ring.connect(ringG); ringG.connect(AC.destination); ring.start(t); ring.stop(t + 0.6);
 }
 function playDeagleShot() {
   const t = AC.currentTime;
@@ -1863,6 +2556,7 @@ function findNearestCar(){
 }
 function enterCar(car){
   if(playerInCar) return;
+  if(isScoped) setScoped(false);
   mouseHeld = false;
   if(autoFireInterval){ clearInterval(autoFireInterval); autoFireInterval = null; }
 
@@ -1958,6 +2652,7 @@ function addMoney(amount){
 // Swap the equipped weapon (model + stats), preserving full mag on swap.
 function equipGun(key){
   if(!owned[key]) return;
+  if(isScoped) setScoped(false);
   selectedGunKey = key;
   gun = {...GUNS[key]};
   ammo = gun.ammo; maxAmmo = gun.maxAmmo;
@@ -1973,35 +2668,55 @@ const shopEl = document.getElementById('shop');
 function renderShop(){
   const list = document.getElementById('shop-list');
   list.innerHTML = '';
-  const keys = Object.keys(GUNS).sort((a,b)=>GUNS[a].order-GUNS[b].order);
-  for(const key of keys){
-    const g = GUNS[key];
-    const isOwned = !!owned[key];
-    const isEquipped = selectedGunKey === key;
-    const card = document.createElement('div');
-    card.className = 'shop-card' + (isEquipped ? ' equipped-card' : (isOwned ? ' owned' : ''));
-    const priceLabel = g.price === 0 ? 'FREE' : ('$' + g.price);
-    let btnHtml;
-    if(isEquipped){
-      btnHtml = '<button class="sc-btn equipped" disabled>EQUIPPED</button>';
-    } else if(isOwned){
-      btnHtml = `<button class="sc-btn equip" data-action="equip" data-gun="${key}">EQUIP</button>`;
-    } else {
-      const afford = money >= g.price;
-      btnHtml = `<button class="sc-btn buy${afford?'':' locked'}" data-action="buy" data-gun="${key}" ${afford?'':'disabled'}>BUY ${priceLabel}</button>`;
+  // Category display order and labels
+  const CATEGORIES = [
+    {key:'pistols', label:'PISTOLS'},
+    {key:'smgs',    label:'SMGs'},
+    {key:'rifles',  label:'RIFLES'},
+    {key:'snipers', label:'SNIPERS'},
+  ];
+  const allKeys = Object.keys(GUNS).sort((a,b)=>GUNS[a].order-GUNS[b].order);
+  for(const cat of CATEGORIES){
+    const gunKeys = allKeys.filter(k => GUNS[k].category === cat.key);
+    if(gunKeys.length === 0) continue;
+    // Section header
+    const header = document.createElement('div');
+    header.className = 'shop-section-header';
+    header.innerText = cat.label;
+    list.appendChild(header);
+    // Row of cards
+    const row = document.createElement('div');
+    row.className = 'shop-section-row';
+    list.appendChild(row);
+    for(const key of gunKeys){
+      const g = GUNS[key];
+      const isOwned = !!owned[key];
+      const isEquipped = selectedGunKey === key;
+      const card = document.createElement('div');
+      card.className = 'shop-card' + (isEquipped ? ' equipped-card' : (isOwned ? ' owned' : ''));
+      const priceLabel = g.price === 0 ? 'FREE' : ('$' + g.price);
+      let btnHtml;
+      if(isEquipped){
+        btnHtml = '<button class="sc-btn equipped" disabled>EQUIPPED</button>';
+      } else if(isOwned){
+        btnHtml = `<button class="sc-btn equip" data-action="equip" data-gun="${key}">EQUIP</button>`;
+      } else {
+        const afford = money >= g.price;
+        btnHtml = `<button class="sc-btn buy${afford?'':' locked'}" data-action="buy" data-gun="${key}" ${afford?'':'disabled'}>BUY ${priceLabel}</button>`;
+      }
+      card.innerHTML = `
+        <div class="sc-name">${g.name}</div>
+        <div class="sc-stats">
+          DMG: ${g.damage}<br>
+          AMMO: ${g.maxAmmo}<br>
+          FIRE: ${g.rpm}<br>
+          RANGE: ${g.range}<br>
+          ${isOwned ? '<span style="color:#3a7adf">OWNED</span>' : 'PRICE: ' + priceLabel}
+        </div>
+        ${btnHtml}
+      `;
+      row.appendChild(card);
     }
-    card.innerHTML = `
-      <div class="sc-name">${g.name}</div>
-      <div class="sc-stats">
-        DMG: ${g.damage}<br>
-        AMMO: ${g.maxAmmo}<br>
-        FIRE: ${g.rpm}<br>
-        RANGE: ${g.range}<br>
-        ${isOwned ? '<span style="color:#3a7adf">OWNED</span>' : 'PRICE: ' + priceLabel}
-      </div>
-      ${btnHtml}
-    `;
-    list.appendChild(card);
   }
   // Wire up buttons
   list.querySelectorAll('.sc-btn[data-action]').forEach(btn=>{
@@ -2040,6 +2755,7 @@ document.addEventListener('pointerlockchange',()=>{
   if(!shopOpen){
     document.getElementById('instructions').style.display = document.pointerLockElement ? 'none' : 'flex';
   }
+  if(!document.pointerLockElement) setScoped(false);
 });
 document.addEventListener('mousemove',e=>{
   if(!document.pointerLockElement) return;
@@ -2059,13 +2775,11 @@ window.addEventListener('keydown',e=>{
     if(!menuOpen){ shopOpen ? closeShop() : openShop(); }
     return;
   }
-  // E: enter/exit car
+  // E: toggle a door you're touching, else enter/exit car
   if(e.code==='KeyE'){
-    if(playerInCar) exitCar(false);
-    else {
-      const near = findNearestCar();
-      if(near) enterCar(near);
-    }
+    if(playerInCar){ exitCar(false); return; }
+    const near = findNearestCar();
+    if(near) enterCar(near);
     return;
   }
   if(playerInCar) return; // suppress other on-foot bindings while driving
@@ -2096,7 +2810,10 @@ function doShoot() {
     const muzzleOffset=new THREE.Vector3(0.28,-0.18,-0.6);
     muzzleOffset.applyQuaternion(camera.quaternion);
     bm.position.copy(camera.position).add(muzzleOffset);
-    const spread=gun.spread;
+    const spread = gun.spread + bloom * 0.05;
+    bloom = Math.min(BLOOM_MAX, bloom + (gun.pellets>1 ? 0.25 : 0.18));
+    camShake = Math.min(0.5, camShake + gun.recoilZ * 0.9 + 0.12);
+    gunKickPitch = Math.min(0.18, gunKickPitch + gun.recoilY + 0.04);
     const dir=new THREE.Vector3(
       (Math.random()-0.5)*spread,
       (Math.random()-0.5)*spread,
@@ -2117,18 +2834,28 @@ let mouseHeld=false, autoFireInterval=null;
 document.addEventListener('mousedown',e=>{
   if(!document.pointerLockElement) return;
   if(playerInCar) return; // no shooting from car
+  if(e.button===2){
+    // Right-click: toggle scope ON for guns with scopeFov
+    e.preventDefault();
+    setScoped(true);
+    return;
+  }
   if(e.button!==0) return;
   mouseHeld=true;
   doShoot();
-  if(selectedGunKey==='ak47' || selectedGunKey==='mp5'){
+  if(selectedGunKey==='ak47' || selectedGunKey==='mp5' || selectedGunKey==='m4a1' || selectedGunKey==='glock18'){
     autoFireInterval=setInterval(()=>{
       if(!mouseHeld||ammo<=0||isReloading){ clearInterval(autoFireInterval); autoFireInterval=null; return; }
       doShoot();
-    }, selectedGunKey==='mp5' ? 80 : 110);
+    }, selectedGunKey==='glock18' ? 90 : selectedGunKey==='mp5' ? 80 : selectedGunKey==='m4a1' ? 100 : 110);
   }
 });
 
 document.addEventListener('mouseup',e=>{
+  if(e.button===2){
+    setScoped(false);
+    return;
+  }
   if(e.button!==0) return;
   mouseHeld=false;
   if(autoFireInterval){ clearInterval(autoFireInterval); autoFireInterval=null; }
@@ -2196,7 +2923,20 @@ function animate(now){
   requestAnimationFrame(animate);
   if(!document.pointerLockElement){ renderer.render(scene, camera); return; }
 
+  // FOV smoothing for scope zoom
+  if(Math.abs(currentFov - targetFov) > 0.1){
+    currentFov += (targetFov - currentFov) * 0.25;
+    camera.fov = currentFov;
+    camera.updateProjectionMatrix();
+  }
+
   updateTrafficLights(now);
+  
+  for(const il of interiorLights){
+    const dx = camera.position.x - il.cx, dz = camera.position.z - il.cz;
+    const inside = dx*dx + dz*dz < (il.radius*0.95)*(il.radius*0.95);
+    il.light.intensity += ((inside ? 2.4 : 0) - il.light.intensity) * 0.18;
+  }
 
   // Enemy spawning
   if(now - lastSpawn > SPAWN_INTERVAL){
@@ -2358,7 +3098,7 @@ function animate(now){
     // Movement: WASD relative to yaw
     const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
     const right = new THREE.Vector3(-Math.sin(yaw - Math.PI/2), 0, -Math.cos(yaw - Math.PI/2));
-    const moveSpeed = playerSpeed;
+    const moveSpeed = isScoped ? playerSpeed * 0.45 : playerSpeed;
     let dx = 0, dz = 0;
     if(keys['KeyW']){ dx += fwd.x; dz += fwd.z; }
     if(keys['KeyS']){ dx -= fwd.x; dz -= fwd.z; }
@@ -2455,7 +3195,7 @@ function animate(now){
     const hitR = playerInCar ? 1.8 : 0.6;
     if(tdx*tdx + tdz*tdz + tdy*tdy < hitR*hitR){
       // Cars take less damage to player inside (armored-ish)
-      const dmg = playerInCar ? 4 : 8;
+      const dmg = playerInCar ? 4 : 12;
       health -= dmg; updateHUD();
       playPlayerHurt();
       document.getElementById('hit-flash').style.background = 'rgba(255,0,0,0.4)';
@@ -2533,7 +3273,79 @@ function animate(now){
 
 updateHUD();
 updateMoneyUI();
+(function fpsMeter(){
+  const d=document.createElement('div');
+  d.style.cssText='position:absolute;top:60px;left:30px;z-index:200;color:#0f0;font:bold 18px monospace;background:rgba(0,0,0,.6);padding:4px 10px;border-radius:5px;pointer-events:none';
+  document.body.appendChild(d);
+  let f=0,last=performance.now();
+  (function tick(){ f++; const n=performance.now(); if(n-last>=500){ d.textContent=Math.round(f*1000/(n-last))+' FPS'; f=0; last=n; } requestAnimationFrame(tick); })();
+})();
 animate(0);
+// ════════ ALL FPS FIXES IN ONE BLOCK (no visual / gameplay change) ════════
+(function optimizeFPS(){
+  // 1) Disable shadow casting on tiny props (micro-shadows are invisible)
+  scene.traverse(o=>{
+    if(o.isMesh && o.castShadow && o.geometry){
+      o.geometry.computeBoundingSphere();
+      const r = o.geometry.boundingSphere ? o.geometry.boundingSphere.radius : 1;
+      if(r < 0.45) o.castShadow = false;
+    }
+  });
+
+  // 2) Merge all static decorative meshes by material -> collapses thousands of
+  //    draw calls into a few. Collision/LOS/bullets use obstacles[] (Box3s),
+  //    independent of these meshes, so gameplay is untouched. Cars/lights/gun excluded.
+  const exclude = new Set([camera]);
+  for(const c of cars) exclude.add(c.group);
+  const byMat = new Map(), toRemove = [];
+  scene.traverse(o=>{
+    if(!o.isMesh || exclude.has(o)) return;
+    let p = o.parent, skip = false;
+    while(p){ if(exclude.has(p)){ skip = true; break; } p = p.parent; }
+    if(skip) return;
+    if(Array.isArray(o.material)) return;            // multi-material boxes: leave
+    if(!o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+    o.updateWorldMatrix(true, false);
+    const g = o.geometry.clone();
+    g.applyMatrix4(o.matrixWorld);
+    const keep = ['position','normal','uv'];
+    for(const name of Object.keys(g.attributes)){ if(!keep.includes(name)) g.deleteAttribute(name); }
+    if(!g.attributes.normal) g.computeVertexNormals();
+    if(!g.attributes.uv){
+      const n = g.attributes.position.count;
+      g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n*2), 2));
+    }
+    let rec = byMat.get(o.material);
+    if(!rec){ rec = { geos:[], cast:false, recv:false }; byMat.set(o.material, rec); }
+    rec.geos.push(g);
+    rec.cast = rec.cast || o.castShadow;
+    rec.recv = rec.recv || o.receiveShadow;
+    toRemove.push(o);
+  });
+  for(const o of toRemove){ if(o.parent) o.parent.remove(o); }
+  for(const [mat, rec] of byMat){
+    if(!rec.geos.length) continue;
+    let merged = null;
+    try { merged = mergeGeometries(rec.geos, false); } catch(e){}
+    if(!merged){
+      for(const g of rec.geos){ const m=new THREE.Mesh(g,mat); m.matrixAutoUpdate=false; m.updateMatrix(); scene.add(m); }
+      continue;
+    }
+    rec.geos.forEach(g=>g.dispose());
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = rec.cast; mesh.receiveShadow = rec.recv;
+    mesh.matrixAutoUpdate = false; mesh.updateMatrix();
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+  }
+})();
+
+// 3) Reuse scratch vectors so the bullet loops stop allocating every frame.
+//    These names shadow nothing; the loops below already declare prevPos/prev
+//    with `const`, so we instead expose globals the loops can copy into.
+window._pbPrev = window._pbPrev || new THREE.Vector3();
+window._ebPrev = window._ebPrev || new THREE.Vector3();
+// ═══════════════════════════════════════════════════════════════════════════
 </script>
 </body>
 </html>
