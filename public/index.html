@@ -3605,7 +3605,7 @@ animate(0);
     const mesh = new THREE.Mesh(merged, mat);
     mesh.castShadow = rec.cast; mesh.receiveShadow = rec.recv;
     mesh.matrixAutoUpdate = false; mesh.updateMatrix();
-    mesh.frustumCulled = false;
+    mesh.frustumCulled = true;
     scene.add(mesh);
   }
 })();
