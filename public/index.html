@@ -272,6 +272,8 @@ Object.assign(sun.shadow.camera,{near:1,far:400,left:-70,right:70,top:70,bottom:
 sun.shadow.camera.updateProjectionMatrix();
 sun.shadow.bias=-0.0003; scene.add(sun);
 scene.add(new THREE.HemisphereLight(0x7090c0,0x806050,0.4));
+const _interiorFill = new THREE.AmbientLight(0xffe4c0, 0);
+scene.add(_interiorFill);
 
 // ── TEXTURES ───────────────────────────────────────────────────────────────
 function noiseCanvas(s,base,amt,extra){
@@ -713,6 +715,7 @@ const windowDecalTex = (()=>{
   return t;
 })();
 
+const _windowDecals = [];
 function addWindowDecal(w, h, d, x, z){
   const decalOffset = 0.05;
   // Realistic architecture: one floor ≈ 3.2 m tall, one window bay ≈ 3.4 m wide.
@@ -746,7 +749,7 @@ function addWindowDecal(w, h, d, x, z){
     plane.position.set(x, yCenter, z + sign*(d/2 + decalOffset));
     if(sign === -1) plane.rotation.y = Math.PI;
     plane.matrixAutoUpdate = false; plane.updateMatrix();
-    scene.add(plane);
+    scene.add(plane); _windowDecals.push(plane);
   }
   // Side faces (span depth D)
   const baysD = Math.max(1, Math.round(d / BAY_W));
@@ -756,7 +759,7 @@ function addWindowDecal(w, h, d, x, z){
     plane.position.set(x + sign*(w/2 + decalOffset), yCenter, z);
     plane.rotation.y = sign === 1 ? Math.PI/2 : -Math.PI/2;
     plane.matrixAutoUpdate = false; plane.updateMatrix();
-    scene.add(plane);
+    scene.add(plane); _windowDecals.push(plane);
   }
 }
 
@@ -963,13 +966,12 @@ function enterableBuilding(w,h,d,x,z,style='brick',doorSide='south'){
   else if(doorSide==='east'){ solidEW(x-hw,1); solidNS(z-hd,1); solidNS(z+hd,-1); wallWithDoor(false, x+hw, 1); }
   else { solidEW(x+hw,-1); solidNS(z-hd,1); solidNS(z+hd,-1); wallWithDoor(false, x-hw, -1); }
 
-  // ── INTERIOR LIGHTING ──
-  const light=new THREE.PointLight(0xffe4b8, 0, Math.max(w,d)*1.5, 1.6);
-  light.position.set(x,h-1.4,z); scene.add(light);
+  // ── INTERIOR LIGHTING (faked — no real-time light, near-zero cost) ──
+  const light=new THREE.PointLight(0xffe4b8, 0, 1, 2);  // NOT added to scene — costs nothing
   const fxBody=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.5,8),new THREE.MeshStandardMaterial({color:0x222})); 
   fxBody.position.set(x,h-0.7,z); scene.add(fxBody);
   const shade=new THREE.Mesh(new THREE.ConeGeometry(0.45,0.4,16,1,true),
-              new THREE.MeshStandardMaterial({color:0xfff4d8,emissive:0xffd890,emissiveIntensity:0.6,side:THREE.DoubleSide}));
+              new THREE.MeshStandardMaterial({color:0xfff4d8,emissive:0xffd890,emissiveIntensity:1.6,side:THREE.DoubleSide}));
   shade.position.set(x,h-1.05,z); scene.add(shade);
   interiorLights.push({light,cx:x,cz:z,radius:Math.max(w,d)});
 
@@ -3200,10 +3202,45 @@ function animate(now){
 
   updateTrafficLights(now);
   
-  for(const il of interiorLights){
-    const dx = camera.position.x - il.cx, dz = camera.position.z - il.cz;
-    const inside = dx*dx + dz*dz < (il.radius*0.95)*(il.radius*0.95);
-    il.light.intensity += ((inside ? 2.4 : 0) - il.light.intensity) * 0.18;
+  // Only the single nearest interior light is ever active — you can only be in
+  // one building at a time, so lighting more than one just wastes shading.
+  {
+    let nearest = null, nearestD2 = Infinity;
+    for(const il of interiorLights){
+      const dx = camera.position.x - il.cx, dz = camera.position.z - il.cz;
+      const d2 = dx*dx + dz*dz;
+      if(d2 < nearestD2){ nearestD2 = d2; nearest = il; }
+    }
+    for(const il of interiorLights){
+      if(il === nearest){
+        const inside = nearestD2 < (il.radius*0.95)*(il.radius*0.95);
+        if(inside){
+          if(!il.light.visible) il.light.visible = true;
+          il.light.intensity += (2.4 - il.light.intensity) * 0.18;
+        } else {
+          il.light.intensity += (0 - il.light.intensity) * 0.18;
+          if(il.light.intensity < 0.02 && il.light.visible){ il.light.visible = false; il.light.intensity = 0; }
+        }
+      } else {
+        if(il.light.visible){ il.light.visible = false; il.light.intensity = 0; }
+      }
+    }
+  }
+
+  // Hide transparent window decals while inside a building — big fill-rate
+  // saving indoors. Only loops on the frame you cross the threshold.
+  {
+    let nD2 = Infinity, nR = 1;
+    for(const il of interiorLights){
+      const dx = camera.position.x - il.cx, dz = camera.position.z - il.cz;
+      const d2 = dx*dx + dz*dz;
+      if(d2 < nD2){ nD2 = d2; nR = il.radius; }
+    }
+    const insideB = nD2 < (nR*0.7)*(nR*0.7);
+    if(insideB !== window._wdHidden){
+      window._wdHidden = insideB;
+      for(const p of _windowDecals) p.visible = !insideB;
+    }
   }
 
   // Enemy spawning
@@ -3551,9 +3588,16 @@ updateMoneyUI();
   (function tick(){ f++; const n=performance.now(); if(n-last>=500){ d.textContent=Math.round(f*1000/(n-last))+' FPS'; f=0; last=n; } requestAnimationFrame(tick); })();
 })();
 animate(0);
-// ════════ ALL FPS FIXES IN ONE BLOCK (no visual / gameplay change) ════════
+// ════════ SPATIAL-GRID STATIC MERGE (no visual / gameplay change) ════════
+// Merges static opaque meshes into chunks bucketed BOTH by material look AND by
+// a coarse world-space grid cell. Result: each merged mesh covers only a small
+// region, so frustum culling still skips off-screen chunks (unlike a single
+// map-spanning merge). You get few draw calls AND culling. Collision/LOS/bullets
+// use obstacles[] (Box3s), untouched — gameplay identical.
 (function optimizeFPS(){
-  // 1) Disable shadow casting on tiny props (micro-shadows are invisible)
+  const CHUNK = 50;  // grid cell size in world units; smaller = better culling, more chunks
+
+  // Drop invisible micro-shadows from tiny props.
   scene.traverse(o=>{
     if(o.isMesh && o.castShadow && o.geometry){
       o.geometry.computeBoundingSphere();
@@ -3562,52 +3606,105 @@ animate(0);
     }
   });
 
-  // 2) Merge all static decorative meshes by material -> collapses thousands of
-  //    draw calls into a few. Collision/LOS/bullets use obstacles[] (Box3s),
-  //    independent of these meshes, so gameplay is untouched. Cars/lights/gun excluded.
   const exclude = new Set([camera]);
   for(const c of cars) exclude.add(c.group);
-  const byMat = new Map(), toRemove = [];
+  if(playerGun) exclude.add(playerGun);
+
+  function texKey(t){
+    if(!t) return 'none';
+    return (t.uuid||'t') + ':' + (t.repeat ? t.repeat.x+'x'+t.repeat.y : '');
+  }
+  function matKey(m){
+    if(!m) return 'null';
+    const col = m.color ? m.color.getHexString() : 'xxxxxx';
+    const emi = m.emissive ? m.emissive.getHexString() : 'xxxxxx';
+    return [
+      m.type||'std', col, emi, texKey(m.map),
+      m.roughness, m.metalness,
+      m.transparent?1:0, (m.opacity==null?1:m.opacity),
+      m.side||0, m.envMapIntensity==null?1:m.envMapIntensity,
+      m.emissiveIntensity==null?0:m.emissiveIntensity
+    ].join('|');
+  }
+
+  const _v = new THREE.Vector3();
+  const buckets = new Map();    // key -> { geos:[], cast, recv }
+  const matForKey = new Map();
+  const toRemove = [];
+
   scene.traverse(o=>{
-    if(!o.isMesh || exclude.has(o)) return;
+    if(!o.isMesh || o.isLight || o.isCamera) return;
+    if(exclude.has(o)) return;
     let p = o.parent, skip = false;
     while(p){ if(exclude.has(p)){ skip = true; break; } p = p.parent; }
     if(skip) return;
-    if(Array.isArray(o.material)) return;            // multi-material boxes: leave
     if(!o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    if(mats.some(m => m && m.transparent)) return;
+
     o.updateWorldMatrix(true, false);
-    const g = o.geometry.clone();
-    g.applyMatrix4(o.matrixWorld);
-    const keep = ['position','normal','uv'];
-    for(const name of Object.keys(g.attributes)){ if(!keep.includes(name)) g.deleteAttribute(name); }
-    if(!g.attributes.normal) g.computeVertexNormals();
-    if(!g.attributes.uv){
-      const n = g.attributes.position.count;
-      g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n*2), 2));
+    // World position of this mesh -> grid cell.
+    _v.setFromMatrixPosition(o.matrixWorld);
+    const cx = Math.floor(_v.x / CHUNK);
+    const cz = Math.floor(_v.z / CHUNK);
+    const cellPrefix = cx + ',' + cz + '|';
+
+    for(let gi = 0; gi < mats.length; gi++){
+      const mat = mats[gi];
+      if(!mat) continue;
+      const key = cellPrefix + matKey(mat);
+      let g = o.geometry.clone();
+      g.applyMatrix4(o.matrixWorld);
+      if(g.index !== null && g.toNonIndexed) g = g.toNonIndexed();
+      for(const name of Object.keys(g.attributes)){
+        if(name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+      }
+      if(!g.attributes.normal) g.computeVertexNormals();
+      if(!g.attributes.uv){
+        const n = g.attributes.position.count;
+        g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n*2), 2));
+      }
+      const clean = new THREE.BufferGeometry();
+      clean.setAttribute('position', g.attributes.position);
+      clean.setAttribute('normal',   g.attributes.normal);
+      clean.setAttribute('uv',       g.attributes.uv);
+
+      let rec = buckets.get(key);
+      if(!rec){ rec = { geos:[], cast:false, recv:false }; buckets.set(key, rec); matForKey.set(key, mat); }
+      rec.geos.push(clean);
+      rec.cast = rec.cast || o.castShadow;
+      rec.recv = rec.recv || o.receiveShadow;
     }
-    let rec = byMat.get(o.material);
-    if(!rec){ rec = { geos:[], cast:false, recv:false }; byMat.set(o.material, rec); }
-    rec.geos.push(g);
-    rec.cast = rec.cast || o.castShadow;
-    rec.recv = rec.recv || o.receiveShadow;
     toRemove.push(o);
   });
+
   for(const o of toRemove){ if(o.parent) o.parent.remove(o); }
-  for(const [mat, rec] of byMat){
+
+  let chunkCount = 0, fallbackCount = 0;
+  for(const [key, rec] of buckets){
     if(!rec.geos.length) continue;
+    const mat = matForKey.get(key);
     let merged = null;
     try { merged = mergeGeometries(rec.geos, false); } catch(e){}
     if(!merged){
-      for(const g of rec.geos){ const m=new THREE.Mesh(g,mat); m.matrixAutoUpdate=false; m.updateMatrix(); scene.add(m); }
+      fallbackCount++;
+      for(const g of rec.geos){
+        const m = new THREE.Mesh(g, mat);
+        m.matrixAutoUpdate = false; m.updateMatrix();
+        scene.add(m);
+      }
       continue;
     }
-    rec.geos.forEach(g=>g.dispose());
+    rec.geos.forEach(g => g.dispose());
     const mesh = new THREE.Mesh(merged, mat);
-    mesh.castShadow = rec.cast; mesh.receiveShadow = rec.recv;
+    mesh.castShadow = rec.cast;
+    mesh.receiveShadow = rec.recv;
     mesh.matrixAutoUpdate = false; mesh.updateMatrix();
-    mesh.frustumCulled = true;
+    mesh.frustumCulled = true;   // each chunk is small -> off-screen ones are skipped
     scene.add(mesh);
+    chunkCount++;
   }
+  console.log('SPATIAL MERGE → chunks:', chunkCount, '| fell back:', fallbackCount);
 })();
 
 // 3) Reuse scratch vectors so the bullet loops stop allocating every frame.
@@ -3616,6 +3713,46 @@ animate(0);
 window._pbPrev = window._pbPrev || new THREE.Vector3();
 window._ebPrev = window._ebPrev || new THREE.Vector3();
 // ═══════════════════════════════════════════════════════════════════════════
+setTimeout(() => {
+  let meshCount = 0, drawables = 0;
+  scene.traverse(o => { if(o.isMesh){ meshCount++; if(o.visible) drawables++; } });
+  console.log('TOTAL MESHES IN SCENE:', meshCount, '| visible:', drawables,
+              '| scene.children:', scene.children.length);
+}, 3000);
+setTimeout(() => {
+  let total=0, isMesh=0, hasGeo=0, transparent=0, inGroup=0, excluded=0, mergeable=0;
+  const exclude = new Set([camera]);
+  for(const c of cars) exclude.add(c.group);
+  if(playerGun) exclude.add(playerGun);
+  scene.traverse(o=>{
+    if(!o.isMesh) return;
+    total++;
+    if(o.isLight||o.isCamera) return;
+    if(exclude.has(o)){ excluded++; return; }
+    let p=o.parent, skip=false, nested=false;
+    while(p){ if(p!==scene) nested=true; if(exclude.has(p)){skip=true;break;} p=p.parent; }
+    if(skip){ excluded++; return; }
+    if(nested) inGroup++;
+    if(!o.geometry||!o.geometry.attributes||!o.geometry.attributes.position){ return; }
+    hasGeo++;
+    const mats = Array.isArray(o.material)?o.material:[o.material];
+    if(mats.some(m=>m&&m.transparent)){ transparent++; return; }
+    mergeable++;
+  });
+  console.log('total meshes:',total,'| has geometry:',hasGeo,'| nested in a group:',inGroup,
+              '| transparent (skipped):',transparent,'| excluded:',excluded,'| MERGEABLE:',mergeable);
+}, 3000);
+// BRUTE-FORCE DIAGNOSTIC — toggle these one at a time, reload, check FPS.
+window.addEventListener('keydown', e => {
+  if(e.code === 'Digit1'){ renderer.shadowMap.enabled = !renderer.shadowMap.enabled; scene.traverse(o=>{if(o.isMesh)o.material&&(o.material.needsUpdate=true);}); console.log('shadows:', renderer.shadowMap.enabled); }
+  if(e.code === 'Digit2'){ sun.visible = !sun.visible; console.log('sun light:', sun.visible); }
+  if(e.code === 'Digit3'){ scene.environment = scene.environment ? null : window._savedEnv; console.log('env map:', !!scene.environment); }
+  if(e.code === 'Digit4'){ renderer.setPixelRatio(renderer.getPixelRatio() > 0.6 ? 0.5 : 1); console.log('pixelRatio:', renderer.getPixelRatio()); }
+  if(e.code === 'Digit5'){ for(const il of interiorLights) il.light.visible = !il.light.visible; console.log('interior lights toggled'); }
+});
+window._savedEnv = scene.environment;
+
+
 </script>
 </body>
 </html>
