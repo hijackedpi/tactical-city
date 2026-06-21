@@ -1122,11 +1122,10 @@ function furnishRoom(cx,cz,w,d,h,doorSide){
   rug.rotation.x=-Math.PI/2; rug.position.set(cx,0.24,cz); scene.add(rug);
 
   // Living zone: sofa on the wall opposite the door, TV facing it.
-  if(doorSide==='south'){ makeSofa(cx, z0+0.3, 0, '#3a5168'); makeTVUnit(cx, z1-0.3, Math.PI); }
-  else if(doorSide==='north'){ makeSofa(cx, z1-0.3, Math.PI, '#3a5168'); makeTVUnit(cx, z0+0.3, 0); }
-  else if(doorSide==='east'){ makeSofa(x0+0.3, cz, Math.PI/2, '#3a5168'); makeTVUnit(x1-0.3, cz, -Math.PI/2); }
-  else { makeSofa(x1-0.3, cz, -Math.PI/2, '#3a5168'); makeTVUnit(x0+0.3, cz, Math.PI/2); }
-
+  if(doorSide==='south'){ makeSofa(cx, z0+0.3, 0, '#3a5168'); }
+  else if(doorSide==='north'){ makeSofa(cx, z1-0.3, Math.PI, '#3a5168'); }
+  else if(doorSide==='east'){ makeSofa(x0+0.3, cz, Math.PI/2, '#3a5168'); }
+  else { makeSofa(x1-0.3, cz, -Math.PI/2, '#3a5168'); }
   makeCoffeeTable(cx, cz);
 
   // Bedroom corner (back-left from door)
@@ -1739,110 +1738,124 @@ for(let i=0;i<6;i++){
   obstacles.push(new THREE.Box3().setFromObject(g));
 });
 
-// ── CARS (DRIVABLE) ────────────────────────────────────────────────────────
-// Each car is a proper vehicle: body, cabin, wheels, headlights, tail lights.
-// Stored in cars[] with all metadata needed for driving physics.
-const _wheelGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.28, 14);
-const _wheelMat = new THREE.MeshStandardMaterial({color:0x111111, roughness:0.85});
-const _hubMat = new THREE.MeshStandardMaterial({color:0x888888, roughness:0.4, metalness:0.85});
-const _headlightMat = new THREE.MeshStandardMaterial({color:0xffffcc, emissive:0xffffaa, emissiveIntensity:0.6});
-const _taillightMat = new THREE.MeshStandardMaterial({color:0x660000, emissive:0xff2222, emissiveIntensity:0.4});
-
 function makeCar(x, z, ry, hue){
   const g = new THREE.Group();
-  const carColor = new THREE.Color().setHSL(hue ?? Math.random(), 0.55, 0.42);
+  const carColor = new THREE.Color().setHSL(hue ?? 0.58, 0.05, 0.72); // light silver
+  const bodyMat  = new THREE.MeshStandardMaterial({color: carColor, roughness:0.3, metalness:0.65, envMapIntensity:1.2});
+  const darkMat  = new THREE.MeshStandardMaterial({color:0x15171a, roughness:0.6, metalness:0.4});
+  const chromeMat= new THREE.MeshStandardMaterial({color:0xcfd4da, roughness:0.18, metalness:0.95, envMapIntensity:1.5});
+  const glassMat = new THREE.MeshStandardMaterial({color:0x0e141a, roughness:0.1, metalness:0.5, transparent:true, opacity:0.6, envMapIntensity:1.4});
 
-  // Lower body (long flat box)
-  const bodyMat = new THREE.MeshStandardMaterial({color: carColor, roughness:0.35, metalness:0.55});
-  const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 4.4), bodyMat);
-  body.position.y = 0.65; body.castShadow = true;
-  g.add(body);
+  // Wheels: radius 0.36, axle at y=0.36 so the tire bottom sits exactly on the ground (y=0).
+  const WHEEL_R = 0.36, AXLE_Y = 0.36;
 
-  // Underbody chassis (darker)
-  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.25, 4.2),
-    new THREE.MeshStandardMaterial({color:0x222222, roughness:0.85}));
-  chassis.position.y = 0.3; g.add(chassis);
+  // ── BODY ── lower body sits low; its bottom (~0.46) overlaps the wheel tops so no gap.
+  const lower = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 4.2), bodyMat);
+  lower.position.y = 0.66; lower.castShadow = true; g.add(lower);
+  // Belt/door section slightly wider, fills the gap down to the wheels
+  const midBody = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.3, 3.9), bodyMat);
+  midBody.position.y = 0.5; g.add(midBody);
+  // Dark rocker sill at very bottom
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.16, 3.4), darkMat);
+  sill.position.y = 0.34; g.add(sill);
 
-  // Cabin (raised cube, slightly inset, with glass)
-  const cabinMat = new THREE.MeshStandardMaterial({
-    color:0x88aacc, roughness:0.1, metalness:0.3, transparent:true, opacity:0.55
-  });
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.85, 2.4), cabinMat);
-  cabin.position.set(0, 1.42, -0.1);
-  g.add(cabin);
-  // Cabin frame (slim dark borders along edges)
-  const frameMat = new THREE.MeshStandardMaterial({color:0x111111, roughness:0.5});
-  const roofFrame = new THREE.Mesh(new THREE.BoxGeometry(1.88, 0.06, 2.45), frameMat);
-  roofFrame.position.set(0, 1.83, -0.1); g.add(roofFrame);
+  // Sloped hood and rear deck
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.22, 1.2), bodyMat);
+  hood.position.set(0, 0.9, 1.45); hood.rotation.x = -0.07; hood.castShadow = true; g.add(hood);
+  const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.24, 0.95), bodyMat);
+  trunk.position.set(0, 0.92, -1.5); trunk.rotation.x = 0.05; g.add(trunk);
 
-  // Hood
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.08, 1.0), bodyMat);
-  hood.position.set(0, 1.04, 1.6); g.add(hood);
-  // Trunk
-  const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.08, 0.9), bodyMat);
-  trunk.position.set(0, 1.04, -1.65); g.add(trunk);
+  // ── CABIN ── roof narrower & shorter, glass tucked just under it
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 1.6), bodyMat);
+  roof.position.set(0, 1.5, -0.15); roof.castShadow = true; g.add(roof);
+  // glass box (fills the greenhouse so pillars read against it)
+  const greenhouse = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.5, 1.55), glassMat);
+  greenhouse.position.set(0, 1.22, -0.15); g.add(greenhouse);
+  // windshield + rear (sloped) caps
+  const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.44, 0.5, 0.06), glassMat);
+  windshield.position.set(0, 1.2, 0.66); windshield.rotation.x = -0.5; g.add(windshield);
+  const rearGlass = new THREE.Mesh(new THREE.BoxGeometry(1.44, 0.46, 0.06), glassMat);
+  rearGlass.position.set(0, 1.22, -0.9); rearGlass.rotation.x = 0.55; g.add(rearGlass);
+  // pillars at the 4 roof corners (body color)
+  for(const [px,pz,rot] of [[0.74,0.55,-0.5],[-0.74,0.55,-0.5],[0.74,-0.85,0.55],[-0.74,-0.85,0.55]]){
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.55,0.1), bodyMat);
+    pillar.position.set(px,1.24,pz); pillar.rotation.x = rot; g.add(pillar);
+  }
 
-  // Headlights (front, +Z direction)
-  const hl1 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.06), _headlightMat);
-  hl1.position.set(0.65, 0.72, 2.21); g.add(hl1);
-  const hl2 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.06), _headlightMat);
-  hl2.position.set(-0.65, 0.72, 2.21); g.add(hl2);
-  // Tail lights (back, -Z)
-  const tl1 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.06), _taillightMat);
-  tl1.position.set(0.65, 0.78, -2.21); g.add(tl1);
-  const tl2 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.06), _taillightMat);
-  tl2.position.set(-0.65, 0.78, -2.21); g.add(tl2);
+  // ── FASCIA ──
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(1.1,0.22,0.06), darkMat);
+  grille.position.set(0,0.74,2.06); g.add(grille);
+  const chromeBar = new THREE.Mesh(new THREE.BoxGeometry(1.14,0.05,0.05), chromeMat);
+  chromeBar.position.set(0,0.86,2.07); g.add(chromeBar);
+  const fbumper = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.3,0.26), darkMat);
+  fbumper.position.set(0,0.5,2.02); g.add(fbumper);
+  const rbumper = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.3,0.26), darkMat);
+  rbumper.position.set(0,0.5,-2.02); g.add(rbumper);
 
-  // Front grille / bumper
-  const bumper = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.22, 0.12), frameMat);
-  bumper.position.set(0, 0.55, 2.21); g.add(bumper);
-  const bumperR = bumper.clone(); bumperR.position.z = -2.21; g.add(bumperR);
+  // Headlights / tail lights (named meshes used by driving code)
+  const hlMat = new THREE.MeshStandardMaterial({color:0xdfeaff, emissive:0xfff2cc, emissiveIntensity:0.7, roughness:0.2});
+  const hl1 = new THREE.Mesh(new THREE.BoxGeometry(0.36,0.14,0.08), hlMat); hl1.position.set(0.6,0.82,2.04); g.add(hl1);
+  const hl2 = new THREE.Mesh(new THREE.BoxGeometry(0.36,0.14,0.08), hlMat); hl2.position.set(-0.6,0.82,2.04); g.add(hl2);
+  const tlMat = new THREE.MeshStandardMaterial({color:0x440000, emissive:0xff2222, emissiveIntensity:0.5});
+  const tl1 = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.18,0.08), tlMat); tl1.position.set(0.62,0.88,-2.04); g.add(tl1);
+  const tl2 = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.18,0.08), tlMat); tl2.position.set(-0.62,0.88,-2.04); g.add(tl2);
 
-  // Wheels — 4 corners. Each wheel is a small group so we can spin it.
-  // Local positions relative to car center (car faces +Z).
+  // Mirrors + handles
+  for(const sx of [1,-1]){
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.13,0.18), bodyMat);
+    cap.position.set(sx*0.98,1.08,0.78); g.add(cap);
+  }
+  for(const sx of [0.93,-0.93]) for(const pz of [0.4,-0.5]){
+    const h = new THREE.Mesh(new THREE.BoxGeometry(0.03,0.04,0.2), chromeMat);
+    h.position.set(sx,0.92,pz); g.add(h);
+  }
+
+  // ── WHEELS ── flat fender flares hug the tires (no floating black boxes)
+  const tireMat = new THREE.MeshStandardMaterial({color:0x0a0a0a, roughness:0.9});
+  const rimMat  = new THREE.MeshStandardMaterial({color:0xb8bcc2, roughness:0.3, metalness:0.9, envMapIntensity:1.4});
   const wheelPositions = [
-    {x: 0.95,  z: 1.45,  steer: true},   // front-right
-    {x:-0.95,  z: 1.45,  steer: true},   // front-left
-    {x: 0.95,  z:-1.45,  steer: false},  // rear-right
-    {x:-0.95,  z:-1.45,  steer: false},  // rear-left
+    {x: 0.9, z: 1.4,  steer:true}, {x:-0.9, z: 1.4,  steer:true},
+    {x: 0.9, z:-1.4,  steer:false},{x:-0.9, z:-1.4,  steer:false},
   ];
   const wheels = [];
   for(const wp of wheelPositions){
+    // subtle arch lip on the body, flush to the side (not a big box)
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.95), darkMat);
+    lip.position.set(wp.x*0.93, 0.55, wp.z); g.add(lip);
+
     const wgroup = new THREE.Group();
-    wgroup.position.set(wp.x, 0.32, wp.z);
-    const tire = new THREE.Mesh(_wheelGeo, _wheelMat);
-    tire.rotation.z = Math.PI/2;
-    tire.castShadow = true;
-    wgroup.add(tire);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.30, 8), _hubMat);
-    hub.rotation.z = Math.PI/2;
-    wgroup.add(hub);
+    wgroup.position.set(wp.x, AXLE_Y, wp.z);
+    const tire = new THREE.Mesh(new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, 0.24, 18), tireMat);
+    tire.rotation.z = Math.PI/2; tire.castShadow = true; wgroup.add(tire);
+    // rim face + spokes built flat on the outer side
+    const rimDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.26,16), rimMat);
+    rimDisc.rotation.z = Math.PI/2; wgroup.add(rimDisc);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.27,10), chromeMat);
+    hub.rotation.z = Math.PI/2; wgroup.add(hub);
+    for(let s=0;s<5;s++){
+      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.26,0.06,0.05), rimMat);
+      spoke.rotation.x = (s/5)*Math.PI*2;   // spin around the axle (X axis)
+      spoke.position.set(wp.x>0?0.13:-0.13, 0, 0);
+      // rotate the bar within the wheel plane:
+      const holder = new THREE.Group();
+      holder.position.x = wp.x>0 ? 0.13 : -0.13;
+      holder.rotation.x = (s/5)*Math.PI*2;
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.34,0.04), rimMat);
+      holder.add(bar);
+      wgroup.add(holder);
+    }
     g.add(wgroup);
-    wheels.push({group: wgroup, tire: tire, steer: wp.steer});
+    wheels.push({group: wgroup, tire, steer: wp.steer});
   }
 
-  g.position.set(x, 0, z);
-  g.rotation.y = ry;
-  scene.add(g);
+  g.position.set(x,0,z); g.rotation.y = ry; scene.add(g);
 
-  // Half-dimensions for collision (car is 2.0 × 4.4 footprint)
   const car = {
-    group: g,
-    x: x, z: z,
-    angle: ry,
-    speed: 0,
-    steer: 0,            // current steering angle (radians)
-    halfW: 1.05,         // a touch wider than 2.0/2 for forgiving collision
-    halfL: 2.25,
-    wheels: wheels,
-    bodyMat: bodyMat,
-    headlights: [hl1, hl2],
-    taillights: [tl1, tl2],
-    bbox: new THREE.Box3(),
+    group: g, x, z, angle: ry, speed: 0, steer: 0,
+    halfW: 1.05, halfL: 2.2, wheels,
+    bodyMat, headlights:[hl1,hl2], taillights:[tl1,tl2], bbox: new THREE.Box3(),
   };
-  // Build initial collision box
   updateCarBox(car);
-  // Cars are obstacles too (but we'll skip self-collision when this car is being driven)
   car.obstacle = car.bbox.clone();
   obstacles.push(car.obstacle);
   cars.push(car);
@@ -3489,6 +3502,8 @@ function animate(now){
     const b = enemyBullets[i];
     const prev = b.position.clone();
     b.position.add(b.userData.vel);
+    // Point the bullet nose along its actual velocity (so it never looks sideways)
+    b.quaternion.setFromUnitVectors(_BULLET_FWD, b.userData.vel.clone().normalize());
     b.userData.life++;
     if(b.userData.life > 100){ scene.remove(b); enemyBullets.splice(i, 1); continue; }
     if(isBlocked(prev.x, prev.y, prev.z, b.position.x, b.position.y, b.position.z)){
@@ -3743,15 +3758,14 @@ setTimeout(() => {
               '| transparent (skipped):',transparent,'| excluded:',excluded,'| MERGEABLE:',mergeable);
 }, 3000);
 // BRUTE-FORCE DIAGNOSTIC — toggle these one at a time, reload, check FPS.
-window.addEventListener('keydown', e => {
-  if(e.code === 'Digit1'){ renderer.shadowMap.enabled = !renderer.shadowMap.enabled; scene.traverse(o=>{if(o.isMesh)o.material&&(o.material.needsUpdate=true);}); console.log('shadows:', renderer.shadowMap.enabled); }
-  if(e.code === 'Digit2'){ sun.visible = !sun.visible; console.log('sun light:', sun.visible); }
-  if(e.code === 'Digit3'){ scene.environment = scene.environment ? null : window._savedEnv; console.log('env map:', !!scene.environment); }
-  if(e.code === 'Digit4'){ renderer.setPixelRatio(renderer.getPixelRatio() > 0.6 ? 0.5 : 1); console.log('pixelRatio:', renderer.getPixelRatio()); }
-  if(e.code === 'Digit5'){ for(const il of interiorLights) il.light.visible = !il.light.visible; console.log('interior lights toggled'); }
-});
-window._savedEnv = scene.environment;
-
+// window.addEventListener('keydown', e => {
+//   if(e.code === 'Digit1'){ renderer.shadowMap.enabled = !renderer.shadowMap.enabled; scene.traverse(o=>{if(o.isMesh)o.material&&(o.material.needsUpdate=true);}); console.log('shadows:', renderer.shadowMap.enabled); }
+//   if(e.code === 'Digit2'){ sun.visible = !sun.visible; console.log('sun light:', sun.visible); }
+//   if(e.code === 'Digit3'){ scene.environment = scene.environment ? null : window._savedEnv; console.log('env map:', !!scene.environment); }
+//   if(e.code === 'Digit4'){ renderer.setPixelRatio(renderer.getPixelRatio() > 0.6 ? 0.5 : 1); console.log('pixelRatio:', renderer.getPixelRatio()); }
+//   if(e.code === 'Digit5'){ for(const il of interiorLights) il.light.visible = !il.light.visible; console.log('interior lights toggled'); }
+// });
+// window._savedEnv = scene.environment;
 
 </script>
 </body>
