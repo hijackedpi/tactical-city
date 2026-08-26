@@ -54,6 +54,57 @@
     ].join('|');
   }
 
+  // Pull out just the triangles that belong to one material, remapped onto a
+  // compact vertex buffer.
+  //
+  // This is the fix for a 6x geometry bug. The old loop cloned the WHOLE
+  // geometry once per material slot, never slicing out the group that slot
+  // owns. Every box from addBox() carries a six-entry material array from
+  // sides(), so every wall, stair and merlon was merged as six coincident
+  // copies of itself — six times the triangles, six times the overdraw, and
+  // z-fighting wherever two copies landed on the same plane.
+  function sliceByMaterial(geo, matIndices, matrix){
+    const pos = geo.attributes.position;
+    if(!pos) return null;
+    const nor = geo.attributes.normal, uv = geo.attributes.uv, src = geo.index;
+    const want = new Set(matIndices);
+
+    const list = [];
+    if(geo.groups && geo.groups.length){
+      for(const gr of geo.groups){
+        if(!want.has(gr.materialIndex || 0)) continue;
+        for(let i = gr.start; i < gr.start + gr.count; i++) list.push(src ? src.getX(i) : i);
+      }
+    } else {
+      const n = src ? src.count : pos.count;
+      for(let i = 0; i < n; i++) list.push(src ? src.getX(i) : i);
+    }
+    if(!list.length) return null;
+
+    const seen = new Map(), P = [], N = [], U = [], I = [];
+    for(const vi of list){
+      let ni = seen.get(vi);
+      if(ni === undefined){
+        ni = seen.size; seen.set(vi, ni);
+        P.push(pos.getX(vi), pos.getY(vi), pos.getZ(vi));
+        if(nor) N.push(nor.getX(vi), nor.getY(vi), nor.getZ(vi));
+        if(uv)  U.push(uv.getX(vi),  uv.getY(vi));
+      }
+      I.push(ni);
+    }
+
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    if(nor) out.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+    if(uv)  out.setAttribute('uv',     new THREE.Float32BufferAttribute(U, 2));
+    out.setIndex(I);
+    out.applyMatrix4(matrix);
+    if(!nor) out.computeVertexNormals();
+    if(!uv)  out.setAttribute('uv',
+      new THREE.BufferAttribute(new Float32Array(out.attributes.position.count * 2), 2));
+    return out;
+  }
+
   const _v = new THREE.Vector3();
   const buckets = new Map();    // key -> { geos:[], cast, recv }
   const matForKey = new Map();
@@ -76,28 +127,22 @@
     const cz = Math.floor(_v.z / CHUNK);
     const cellPrefix = cx + ',' + cz + '|';
 
+    // sides() returns each material TWICE — [A,A,B,B,C,C] — so slots must be
+    // gathered by material identity first, or the same triangles would be
+    // emitted into the same bucket twice over.
+    const slotsByMat = new Map();
     for(let gi = 0; gi < mats.length; gi++){
       const mat = mats[gi];
       if(!mat) continue;
-      const key = cellPrefix + matKey(mat);
-      let g = o.geometry.clone();
-      g.applyMatrix4(o.matrixWorld);
-      // Index deliberately kept — see the merge below, which falls back to
-      // non-indexed only if a bucket turns out to be mixed.
-      for(const name of Object.keys(g.attributes)){
-        if(name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
-      }
-      if(!g.attributes.normal) g.computeVertexNormals();
-      if(!g.attributes.uv){
-        const n = g.attributes.position.count;
-        g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n*2), 2));
-      }
-      const clean = new THREE.BufferGeometry();
-      clean.setAttribute('position', g.attributes.position);
-      clean.setAttribute('normal',   g.attributes.normal);
-      clean.setAttribute('uv',       g.attributes.uv);
-      if(g.index) clean.setIndex(g.index);
+      let arr = slotsByMat.get(mat);
+      if(!arr){ arr = []; slotsByMat.set(mat, arr); }
+      arr.push(gi);
+    }
 
+    for(const [mat, slots] of slotsByMat){
+      const clean = sliceByMaterial(o.geometry, slots, o.matrixWorld);
+      if(!clean) continue;
+      const key = cellPrefix + matKey(mat);
       let rec = buckets.get(key);
       if(!rec){ rec = { geos:[], cast:false, recv:false }; buckets.set(key, rec); matForKey.set(key, mat); }
       rec.geos.push(clean);

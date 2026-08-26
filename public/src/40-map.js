@@ -357,7 +357,12 @@ const bagTex = (()=>{
 // ═══════════════════════════════════════════════════════════════════════════
 const platforms = [];                       // {x0,x1,z0,z1,top}
 
-const _PGRID = 16;
+// 4, not 16. solidFootprint() emits walkable cells 1.2 units across — up to
+// ~425 per building, so 3-4k rects across the map — and a 16-unit bucket meant
+// one groundHeightAt() call linearly scanned 200-400 of them. The player calls
+// it twice a frame and every other actor once. Quartering the cell size cuts
+// the rects tested per query by roughly 16x for the cost of a bigger Map.
+const _PGRID = 4;
 const _pgrid = new Map();
 let _pgridBuilt = false;
 function _buildPlatformGrid(){
@@ -793,6 +798,11 @@ function _scheduleCollisionRebuild(){
     _collisionDirty = false;
     if(typeof _buildGrid === 'function') _buildGrid();
     _pgridBuilt = false;                    // groundHeightAt rebuilds on demand
+    // Re-arm the shadow bake. sun.shadow.autoUpdate is false and the one-shot
+    // needsUpdate fires at boot — before any of this geometry has downloaded —
+    // so without this line the 19 buildings, the only things in the scene with
+    // real silhouettes, cast no shadow at all. One bake, not per frame.
+    if(typeof sun !== 'undefined' && sun.shadow) sun.shadow.needsUpdate = true;
     console.log('collision rebuilt from the loaded geometry');
   }, 400);
 }
@@ -1009,19 +1019,47 @@ const FADE_SECONDS = 0.22;         // how long a building takes to fade in or ou
 const _cA = new THREE.Vector3(), _cB = new THREE.Vector3(), _cD = new THREE.Vector3();
 
 // segment-vs-box, the same slab test the bullets use
+// Unrolled over x/y/z rather than looping `['x','y','z']`. That literal
+// allocated a fresh array on EVERY call, and the culling pass calls this about
+// 3,200 times a frame (19 structures squared, nine sample points) — pure GC
+// churn, plus three string-keyed property lookups per axis instead of .x/.y/.z.
 function _segHitsBox(from, to, b){
   _cD.subVectors(to, from);
   let tmin = 0, tmax = 1;
-  for(const ax of ['x','y','z']){
-    const d = _cD[ax];
-    if(Math.abs(d) < 1e-9){ if(from[ax] < b.min[ax] || from[ax] > b.max[ax]) return false; continue; }
+
+  let d = _cD.x;
+  if(Math.abs(d) < 1e-9){ if(from.x < b.min.x || from.x > b.max.x) return false; }
+  else {
     const inv = 1/d;
-    let t1 = (b.min[ax] - from[ax]) * inv, t2 = (b.max[ax] - from[ax]) * inv;
+    let t1 = (b.min.x - from.x) * inv, t2 = (b.max.x - from.x) * inv;
     if(t1 > t2){ const t = t1; t1 = t2; t2 = t; }
     if(t1 > tmin) tmin = t1;
     if(t2 < tmax) tmax = t2;
     if(tmin > tmax) return false;
   }
+
+  d = _cD.y;
+  if(Math.abs(d) < 1e-9){ if(from.y < b.min.y || from.y > b.max.y) return false; }
+  else {
+    const inv = 1/d;
+    let t1 = (b.min.y - from.y) * inv, t2 = (b.max.y - from.y) * inv;
+    if(t1 > t2){ const t = t1; t1 = t2; t2 = t; }
+    if(t1 > tmin) tmin = t1;
+    if(t2 < tmax) tmax = t2;
+    if(tmin > tmax) return false;
+  }
+
+  d = _cD.z;
+  if(Math.abs(d) < 1e-9){ if(from.z < b.min.z || from.z > b.max.z) return false; }
+  else {
+    const inv = 1/d;
+    let t1 = (b.min.z - from.z) * inv, t2 = (b.max.z - from.z) * inv;
+    if(t1 > t2){ const t = t1; t1 = t2; t2 = t; }
+    if(t1 > tmin) tmin = t1;
+    if(t2 < tmax) tmax = t2;
+    if(tmin > tmax) return false;
+  }
+
   return true;
 }
 
@@ -1098,7 +1136,13 @@ function updateStructureCulling(cam){
     rec.opacity += Math.sign(rec.target - rec.opacity) * step;
     if(Math.abs(rec.target - rec.opacity) < step) rec.opacity = rec.target;
     if(rec.opacity > 0 && !rec.mesh.visible) rec.mesh.visible = true;
-    for(const m of rec.mats) m.opacity = rec.opacity;
+    // Only pay for transparency while the fade is actually mid-flight. At rest
+    // the building is a plain opaque draw again.
+    const fading = rec.opacity < 1;
+    for(const m of rec.mats){
+      m.opacity = rec.opacity;
+      if(m.transparent !== fading) m.transparent = fading;
+    }
   }
 }
 window.updateStructureCulling = updateStructureCulling;
@@ -1164,9 +1208,21 @@ function glbStructure(key, x, z, w, h, d, opts){
       const src = Array.isArray(o.material) ? o.material : [o.material];
       const cl = src.map(mm => {
         const c = mm.clone();
-        c.transparent = true;      // needed for the fade; opacity 1 costs nothing
+        // Opaque until it actually starts fading. `transparent = true` is NOT
+        // free: it moves the mesh into three.js's transparent list, which is
+        // depth-sorted back-to-front every single frame, and it gives up the
+        // early-z rejection an opaque draw gets. With 19 buildings of many
+        // primitives each, that sort was running over hundreds of objects per
+        // frame for a fade that is idle almost all of the time. The flag is
+        // now toggled by the fade loop, and toggling it needs no shader
+        // recompile — three.js reads it at render time to pick the list.
+        c.transparent = false;
         c.opacity = 1;
         c.depthWrite = true;
+        // Meshy exports everything double-sided, which disables backface
+        // culling and doubles the fragments shaded on every wall in the map.
+        // You cannot see the inside of a building you cannot enter.
+        c.side = THREE.FrontSide;
         return c;
       });
       o.material = Array.isArray(o.material) ? cl : cl[0];

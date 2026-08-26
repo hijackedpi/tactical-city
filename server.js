@@ -22,7 +22,34 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, { pingInterval: 10000, pingTimeout: 20000 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// ── STATIC FILES, AND WHY THE CACHE RULES MATTER ────────────────────────────
+// express.static defaults to maxAge 0, and builds its ETag from file SIZE and
+// MTIME (see send/etag: '"' + size + '-' + mtime + '"'). Every deploy is a
+// fresh git checkout, which stamps every file with a new mtime — so every
+// ETag changes, every browser cache misses, and all ~270 MB of models download
+// again even though not one byte of them changed. That is why the game is
+// rough for a while after each deploy and fine afterwards.
+//
+// Assets are content-addressed by name (a Meshy export never changes under a
+// given filename), so they get a year and `immutable`: the browser serves them
+// from disk WITHOUT asking, and a redeploy cannot invalidate them.
+//
+// The catch: if you ever replace a .glb while keeping its filename, browsers
+// will keep the old one for a year. Change the filename when the content
+// changes — which is what WEAPON_FILES / STRUCTURE_FILES already do.
+//
+// Code and markup get `no-cache`, which does NOT mean "never cache" — it means
+// "revalidate before use". Those files are small, so a 304 is cheap, and it
+// keeps your edits deploying instantly.
+const IMMUTABLE = /\.(glb|gltf|bin|png|jpe?g|webp|ktx2|woff2?|mp3|ogg)$/i;
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true,
+  lastModified: true,
+  setHeaders(res, filePath){
+    if(IMMUTABLE.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    else                         res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 // ── RULES ───────────────────────────────────────────────────────────────────
 const MAX_PLAYERS   = 10;      // 5v5

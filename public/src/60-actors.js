@@ -225,7 +225,12 @@ let _perfT0 = 0, _perfLogic = 0, _perfDraw = 0, _perfFrame = 0, _perfLastFrame =
 const GRID_CELL = 12;
 const _carObstacleSet = new Set(cars.map(c => c.obstacle));
 const grid = new Map();
-function _cellKey(cx, cz){ return cx + ',' + cz; }
+// An integer key, not 'cx,cz'. The string version allocated a fresh string for
+// every cell probed, on every collision, line-of-sight and bullet query — which
+// is thousands of throwaway strings per frame. The platform grid four files
+// later already used this exact encoding; this just brings the two into line.
+// 4096 is comfortably wider than the map, which spans about 12 cells.
+function _cellKey(cx, cz){ return cx * 4096 + cz; }
 function _buildGrid(){
   grid.clear();
   for(const b of obstacles){
