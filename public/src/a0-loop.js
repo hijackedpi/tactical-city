@@ -1,4 +1,11 @@
 // ── MAIN GAME LOOP ─────────────────────────────────────────────────────────
+
+// Camera height. 1.67 is the head/visor centre in the operator rig's authored
+// units (_OPS in 60-actors.js), scaled by whatever _OP_SCALE is set to — so the
+// view follows the model instead of being pinned to a literal. Kept here, and
+// under its own name, so this file is the only one that has to change.
+const _CAM_EYE_H = 1.67 * ((typeof _OP_SCALE !== 'undefined') ? _OP_SCALE : 1);
+
 const _nearbyCar = [];
 const _carTmpBox = new THREE.Box3();
 let lastSpawn = 0;
@@ -338,7 +345,11 @@ function animate(now){
       if(camFwd < 0) camFwd = 0;
       camera.position.x = pp.x + sy * camFwd;
       camera.position.z = pp.z + cy2 * camFwd;
-      camera.position.y = pp.y - 0.12;
+      // Eye at the model's head, not its chest. pp.y still tracks at
+      // FEET_OFFSET (1.7) for physics, so collision, ground snapping, the body
+      // placement and what goes over the network are all untouched — this
+      // lifts nothing but the rendered camera.
+      camera.position.y = (pp.y - FEET_OFFSET) + _CAM_EYE_H;
     }
 
   }

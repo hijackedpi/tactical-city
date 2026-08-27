@@ -278,7 +278,7 @@ netUI.resume.addEventListener('click', () => {
   let p;
   try { p = document.body.requestPointerLock(); } catch(e){ p = null; }
   if(p && typeof p.catch === 'function'){
-    p.catch(() => { if(w) w.textContent = 'Browser blocked that — wait a second and click again.'; });
+    p.catch(() => { if(w) w.textContent = 'Browser blocked that - wait a second and click again.'; });
   }
 });
 
@@ -302,7 +302,7 @@ window.addEventListener('blur', netUpdateResume);
   s.src = '/socket.io/socket.io.js';
   s.onload = netInit;
   s.onerror = () => {
-    netErr('Server not reachable — solo play only.');
+    netErr('Server not reachable - solo play only.');
     const c = netUI.$('net-create'), j = netUI.$('net-join');
     if(c) c.disabled = true;
     if(j) j.disabled = true;

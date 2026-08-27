@@ -459,8 +459,16 @@ const _nearbyLOS = [];
 
 // ── PLAYER CONSTANTS ───────────────────────────────────────────────────────
 const playerSpeed = 0.14;
+
 const FEET_OFFSET = 1.7;
 const PLAYER_HALF = 0.35;
+
+// Camera height ONLY. Deliberately separate from FEET_OFFSET: the physics keep
+// tracking the player at 1.7 exactly as before — collision, ground snapping,
+// the body placement and what we send over the network are all untouched — and
+// this lifts nothing but the rendered eye to the model's head.
+// 1.67 is the head/visor centre in the rig's authored units (_OPS, 60-actors.js).
+const EYE_HEIGHT = 1.67 * ((typeof _OP_SCALE !== 'undefined') ? _OP_SCALE : 1);
 const _playerBox = new THREE.Box3();
 const STEP_UP_H = 0.55;   // anything this low is a step, not a wall
 function playerCollides(x, z, feetY){
