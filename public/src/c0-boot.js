@@ -240,4 +240,3 @@ setTimeout(() => {
 //   if(e.code === 'Digit5'){ for(const il of interiorLights) il.light.visible = !il.light.visible; console.log('interior lights toggled'); }
 // });
 // window._savedEnv = scene.environment;
-

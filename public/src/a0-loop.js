@@ -363,26 +363,20 @@ function animate(now){
     let hit = false;
     for(let j=enemies.length-1;j>=0;j--){
       const e = enemies[j];
-      const ex = e.position.x, ez = e.position.z;
-      // Swept check: closest distance from the enemy to the segment the bullet
-      // traveled this frame, so fast bullets can't skip over an enemy in one step.
-      const sx = prevPos.x, sz = prevPos.z;
-      const vx = b.position.x - sx, vz = b.position.z - sz;
-      const segLen2 = vx*vx + vz*vz;
-      let tHit = segLen2 > 0 ? (((ex - sx)*vx + (ez - sz)*vz) / segLen2) : 0;
-      tHit = Math.max(0, Math.min(1, tHit));
-      const cx = sx + vx*tHit, cz = sz + vz*tHit;
-      const ddx = cx - ex, ddz = cz - ez;
-      if(ddx*ddx + ddz*ddz < 0.5){
-        const by = b.position.y;
-        // Head: y ~ 1.6-1.85; torso: 0.9-1.6; legs: <0.9
-        let dmg = b.userData.damage;
-        if(by > 1.55 && b.userData.headshotDamage){ dmg = b.userData.headshotDamage; }
+      // Swept, and now in three dimensions: the bullet's path this frame is
+      // tested against four stacked cylinders sized off the body (see HITBOX in
+      // 60-actors.js). Fast rounds still cannot skip past anyone, and — unlike
+      // the flat radial test this replaces — a shot metres above someone's head
+      // now misses, which it did not before.
+      const hz = hitZone(e, prevPos.x, prevPos.y, prevPos.z,
+                            b.position.x, b.position.y, b.position.z);
+      if(hz){
+        const dmg = hitDamage(b.userData.damage, b.userData.headshotDamage, hz.zone, hz.mult);
         // NET HOOK 2 — the server owns health for networked players. Applying
         // damage locally as well would mean ten clients each running their own
         // private version of who is still alive.
         if(e.userData.isRemote){
-          netReportHit(e.userData.netId, dmg, by > 1.55);
+          netReportHit(e.userData.netId, dmg, hz.zone);
           playHit();
         } else {
           e.userData.hp -= dmg;

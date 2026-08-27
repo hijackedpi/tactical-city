@@ -393,7 +393,10 @@ io.on('connection', socket => {
     if(now - shooter.lastHitAt < 25) return;          // crude rate limit
     shooter.lastHitAt = now;
 
-    const dmg = Math.max(1, Math.min(120, Number(damage) || 0));
+    // 300, not 120. A headshot multiplier can legitimately exceed 100 — a
+    // Deagle head hit is 60 x 4 = 240 — and the old ceiling silently ate that,
+    // turning one-shot kills into survivable hits. Still a sanity bound.
+    const dmg = Math.max(1, Math.min(300, Number(damage) || 0));
     victim.hp -= dmg;
     io.to(victim.id).emit('you', { id: victim.id, team: victim.team, money: victim.money, hp: Math.max(0, victim.hp), alive: victim.hp > 0 });
     io.to(shooter.id).emit('hitConfirm', { head: !!head, lethal: victim.hp <= 0 });

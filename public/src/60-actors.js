@@ -86,13 +86,19 @@ const _enemyMixers = [];         // every active enemy's AnimationMixer
 //
 // Geometry and materials are built ONCE at module scope and shared by every
 // body; only the team-tinted parts are cloned per player.
+// Laid out so the FEET sit at y = 0 and the head tops out at 1.81, matching the
+// 1.8-unit player capsule. The first version had no shin: the thigh stopped at
+// 0.40 and the boot at 0.28, so the whole body hovered 0.28 above its own
+// origin and stood only 1.52 tall.
 const _OPS = {
   head:  new THREE.BoxGeometry(0.26, 0.28, 0.28),
   visor: new THREE.BoxGeometry(0.235, 0.09, 0.30),
   torso: new THREE.BoxGeometry(0.50, 0.52, 0.30),
   vest:  new THREE.BoxGeometry(0.54, 0.34, 0.34),
   hips:  new THREE.BoxGeometry(0.44, 0.18, 0.28),
-  limb:  new THREE.BoxGeometry(0.16, 0.44, 0.17),
+  limb:  new THREE.BoxGeometry(0.16, 0.44, 0.17),   // arms
+  thigh: new THREE.BoxGeometry(0.17, 0.46, 0.18),
+  shin:  new THREE.BoxGeometry(0.145, 0.44, 0.16),
   boot:  new THREE.BoxGeometry(0.18, 0.12, 0.26),
 };
 const _opGear = new THREE.MeshStandardMaterial({ color:0x2b2d31, roughness:0.85, metalness:0.05 });
@@ -104,6 +110,24 @@ const _opTeamMat = {
   t:  new THREE.MeshStandardMaterial({ color:0xc08a3e, roughness:0.8, metalness:0.05 }),  // desert tan
   ct: new THREE.MeshStandardMaterial({ color:0x3f6d9e, roughness:0.8, metalness:0.05 }),  // police blue
 };
+
+// ── HOW BIG A PLAYER IS ─────────────────────────────────────────────────────
+// The rig below is authored at 1.81 units, matching the 1.8 player capsule.
+// This multiplies it. Because the feet are at exactly y = 0, scaling from the
+// origin keeps them on the floor — no re-offsetting needed, whatever you set.
+//
+//   1.00  exactly capsule height, the "correct" value — 1.81 units
+//   1.08  a visibly solid operator — 1.95 units
+//   1.62  50% larger again — 2.93 units (current)
+//
+// NOTE the collision capsule is still 1.8 tall and does not scale with this.
+// Above ~1.20 the model's head passes through geometry the body is still
+// blocked by, and vice versa: a player can walk under an arch their head goes
+// straight through. That is cosmetic, not a crash, but it is why the "correct"
+// value is 1.00. Hitboxes DO scale with this — see HITBOX further down — so a
+// bigger model is correspondingly bigger to shoot.
+const _OP_SCALE = 1.62;
+const _OP_BASE_H = 1.81;                      // authored height, before scaling
 
 function buildPrimitiveOperator(team){
   const b = new THREE.Group();
@@ -118,11 +142,11 @@ function buildPrimitiveOperator(team){
     return m;
   };
 
-  put(_OPS.hips,  _opGear,  0, 0.94, 0);
-  put(_OPS.torso, teamMat,  0, 1.28, 0);
-  put(_OPS.vest,  _opGear,  0, 1.22, 0);
-  put(_OPS.head,  _opSkin,  0, 1.66, 0);
-  put(_OPS.visor, _opVisor, 0, 1.66, 0.02);
+  put(_OPS.hips,  _opGear,  0, 0.97, 0);   // 0.88 - 1.06
+  put(_OPS.torso, teamMat,  0, 1.32, 0);   // 1.06 - 1.58
+  put(_OPS.vest,  _opGear,  0, 1.26, 0);   // 1.09 - 1.43
+  put(_OPS.head,  _opSkin,  0, 1.67, 0);   // 1.53 - 1.81
+  put(_OPS.visor, _opVisor, 0, 1.67, 0.02);
 
   // Limbs hang from pivots at the joint, so rotating the pivot swings the limb
   // from the hip/shoulder rather than about its own centre.
@@ -132,14 +156,18 @@ function buildPrimitiveOperator(team){
     b.add(pivot);
     return pivot;
   };
-  const legL = jointed(-0.13, 0.86), legR = jointed(0.13, 0.86);
+  // Hip joint at 0.90, so the chain reaches the floor exactly:
+  //   thigh 0.44-0.90   shin 0.02-0.46   boot 0.00-0.12
+  const legL = jointed(-0.13, 0.90), legR = jointed(0.13, 0.90);
   for(const leg of [legL, legR]){
-    const thigh = new THREE.Mesh(_OPS.limb, _opGear);
-    thigh.position.y = -0.24; thigh.castShadow = false; leg.add(thigh);
+    const thigh = new THREE.Mesh(_OPS.thigh, teamMat);
+    thigh.position.y = -0.23; thigh.castShadow = false; leg.add(thigh);
+    const shin = new THREE.Mesh(_OPS.shin, _opGear);
+    shin.position.y = -0.66; shin.castShadow = false; leg.add(shin);
     const boot = new THREE.Mesh(_OPS.boot, _opGear);
-    boot.position.set(0, -0.52, 0.03); boot.castShadow = false; leg.add(boot);
+    boot.position.set(0, -0.84, 0.03); boot.castShadow = false; leg.add(boot);
   }
-  const armL = jointed(-0.33, 1.46), armR = jointed(0.33, 1.46);
+  const armL = jointed(-0.33, 1.50), armR = jointed(0.33, 1.50);
   for(const arm of [armL, armR]){
     const upper = new THREE.Mesh(_OPS.limb, teamMat);
     upper.position.y = -0.22; upper.castShadow = false; arm.add(upper);
@@ -148,7 +176,8 @@ function buildPrimitiveOperator(team){
   }
   armL.rotation.x = -0.25; armR.rotation.x = -0.25;
 
-  return { body:b, legL, legR, armL, armR };
+  b.scale.setScalar(_OP_SCALE);
+  return { body:b, legL, legR, armL, armR, height: _OP_BASE_H * _OP_SCALE };
 }
 
 // The health bar is identical for both body types, so it lives in one place.
@@ -190,7 +219,8 @@ function makeEnemy(team){
     g.add(healthBar);
 
     g.userData = { hp:100, maxHp:100, walkPhase:0, lastAttack:0, aimT:0,
-                   healthBar, barFill, barW, isModel:true, mixer, walkAction };
+                   healthBar, barFill, barW, isModel:true, mixer, walkAction,
+                   hitScale: OPERATOR_SCALE, height: 1.81 * OPERATOR_SCALE };
     return g;
   }
 
@@ -200,14 +230,103 @@ function makeEnemy(team){
   const rig = buildPrimitiveOperator(team || 't');
   g.add(rig.body);
   const { healthBar, barFill, barW } = buildHealthBar();
+  // Ride above whatever height the rig ended up, so changing _OP_SCALE never
+  // buries the bar in the model's head.
+  healthBar.position.y = rig.height + 0.34;
   g.add(healthBar);
 
   g.userData = { hp:100, maxHp:100, walkPhase:0, lastAttack:0, aimT:0,
                  healthBar, barFill, barW, isModel:false,
                  mixer:null, walkAction:null,
                  legL:rig.legL, legR:rig.legR, armL:rig.armL, armR:rig.armR,
-                 team: team || 't' };
+                 team: team || 't', height: rig.height, hitScale: _OP_SCALE };
   return g;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  HITBOXES
+//
+//  Four vertical cylinders stacked on the feet, measured off the rig above and
+//  expressed in AUTHORED units — they are multiplied by the body's own scale at
+//  test time, so changing _OP_SCALE moves the model and its hitboxes together
+//  and they can never drift apart.
+//
+//  This replaces a test that was horizontal only:
+//      if(ddx*ddx + ddz*ddz < 0.5)
+//  — no vertical bound at all, so a bullet passing metres over someone's head
+//  still registered, and the headshot line was the world-absolute constant
+//  1.55, which stopped meaning "head" the moment the model was scaled.
+//
+//  Multipliers follow the CS convention. A weapon with an explicit
+//  headshotDamage (the AWP) keeps its authored number instead.
+// ══════════════════════════════════════════════════════════════════════════
+const HITBOX = [
+  { zone:'head',    y0:1.54, y1:1.86, r:0.24, mult:4.00 },
+  { zone:'chest',   y0:1.04, y1:1.54, r:0.46, mult:1.00 },   // torso + arms
+  { zone:'stomach', y0:0.82, y1:1.04, r:0.32, mult:1.25 },
+  { zone:'legs',    y0:0.00, y1:0.82, r:0.30, mult:0.75 },
+];
+
+// Swept segment vs a vertical cylinder. Returns the entry parameter along the
+// segment (0..1), or -1 for a miss.
+//
+// Solving it properly matters: taking the horizontally-closest point and then
+// checking its height is wrong, because the closest approach in plan view can
+// sit far outside the cylinder's height band while the segment still passes
+// cleanly through it. So we intersect two intervals — the t range inside the
+// radius, and the t range inside the height band — and hit only if they overlap.
+function _sweptCylinder(sx, sy, sz, ex, ey, ez, cx, cz, y0, y1, r){
+  const vx = ex - sx, vy = ey - sy, vz = ez - sz;
+  const dx = sx - cx, dz = sz - cz;
+  let t0 = 0, t1 = 1;
+
+  const a = vx*vx + vz*vz;
+  const c = dx*dx + dz*dz - r*r;
+  if(a < 1e-12){
+    if(c > 0) return -1;                       // travelling straight up, outside
+  } else {
+    const b = 2*(dx*vx + dz*vz);
+    const disc = b*b - 4*a*c;
+    if(disc < 0) return -1;                    // never enters the radius
+    const sq = Math.sqrt(disc);
+    const ra = (-b - sq) / (2*a), rb = (-b + sq) / (2*a);
+    if(ra > t0) t0 = ra;
+    if(rb < t1) t1 = rb;
+    if(t0 > t1) return -1;
+  }
+
+  if(Math.abs(vy) < 1e-12){
+    if(sy < y0 || sy > y1) return -1;          // level flight, outside the band
+  } else {
+    let ta = (y0 - sy) / vy, tb = (y1 - sy) / vy;
+    if(ta > tb){ const t = ta; ta = tb; tb = t; }
+    if(ta > t0) t0 = ta;
+    if(tb < t1) t1 = tb;
+    if(t0 > t1) return -1;
+  }
+  return t0;
+}
+
+// Which zone a bullet's path through this frame struck, if any. When the path
+// crosses more than one, the one entered FIRST wins — a round rising into a
+// chest hits the chest, not the head above it.
+function hitZone(e, fx, fy, fz, tx, ty, tz){
+  const s  = e.userData.hitScale || 1;
+  const cx = e.position.x, cz = e.position.z, base = e.position.y;
+  let best = null, bestT = Infinity;
+  for(let i = 0; i < HITBOX.length; i++){
+    const h = HITBOX[i];
+    const t = _sweptCylinder(fx, fy, fz, tx, ty, tz,
+                             cx, cz, base + h.y0 * s, base + h.y1 * s, h.r * s);
+    if(t >= 0 && t < bestT){ bestT = t; best = h; }
+  }
+  return best ? { zone: best.zone, mult: best.mult, t: bestT } : null;
+}
+
+// Damage for a hit, honouring an authored headshotDamage where one exists.
+function hitDamage(baseDamage, headshotDamage, zone, mult){
+  if(zone === 'head' && headshotDamage) return headshotDamage;
+  return Math.max(1, Math.round(baseDamage * mult));
 }
 
 const _eBoxTmp = new THREE.Box3();

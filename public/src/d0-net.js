@@ -50,9 +50,9 @@ const netTracers = [];        // purely visual, never damages anyone
 function netCanShoot(){ return !netInMatch || (netPhase === 'LIVE' && netMyAlive); }
 function netCanBuy(){   return !netInMatch || (netPhase === 'BUY'  && netMyAlive); }
 
-function netReportHit(id, damage, head){
+function netReportHit(id, damage, zone){
   if(!netSocket || !netInMatch) return;
-  netSocket.emit('hit', { target: id, damage, head: !!head });
+  netSocket.emit('hit', { target: id, damage, zone, head: zone === 'head' });
 }
 function netReportShot(pos, dir){
   if(!netSocket || !netInMatch) return;
@@ -474,7 +474,9 @@ function netSpawnRemote(id){
   scene.add(obj);
   enemies.push(obj);            // reuse the existing bullet + health-bar path
   const r = { obj, buf: [], name: info ? info.name : '???', team, label: null, lastSeen: 0 };
-  r.label = netNameTag(r.name, team);
+  // Sit above the health bar, which itself sits above the body — so the whole
+  // stack follows _OP_SCALE without three separate numbers to keep in step.
+  r.label = netNameTag(r.name, team, (obj.userData.height || 1.81) + 0.61);
   obj.add(r.label);
   netRemote.set(id, r);
   return r;
@@ -501,7 +503,7 @@ function netSyncRemotes(){
   }
 }
 
-function netNameTag(name, team){
+function netNameTag(name, team, y){
   const cv = document.createElement('canvas');
   cv.width = 256; cv.height = 64;
   const c = cv.getContext('2d');
@@ -515,7 +517,7 @@ function netNameTag(name, team){
   tex.colorSpace = THREE.SRGBColorSpace;
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
   spr.scale.set(1.5, 0.375, 1);
-  spr.position.y = 2.42;
+  spr.position.y = y || 2.42;
   spr.renderOrder = 1000;
   return spr;
 }
@@ -661,8 +663,13 @@ let _netLastSend = 0;
       _netLastSend = now;
       if(netMyAlive){
         const p = _playerGroundPos;
+        // Send FEET height, not eye height. _playerGroundPos.y tracks the eye
+        // (it sits at 1.7 when you are stood on the ground), and a remote body's
+        // group origin is at its feet — so sending it raw floated every player
+        // a full 1.7 units off the floor. a0-loop already does this exact
+        // subtraction when it places the local body; this matches it.
         netSocket.emit('input', {
-          x: p.x, y: p.y, z: p.z, yaw, pitch,
+          x: p.x, y: p.y - FEET_OFFSET, z: p.z, yaw, pitch,
           moving: !!(keys['KeyW'] || keys['KeyA'] || keys['KeyS'] || keys['KeyD']),
           weapon: selectedGunKey,
         });
