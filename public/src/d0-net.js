@@ -124,6 +124,15 @@ function netReportBuy(weapon, price){
   #net-banner .big{font:700 46px/1 'Stratum2','Arial Narrow',sans-serif;letter-spacing:.06em;text-transform:uppercase}
   #net-banner .small{font-size:16px;letter-spacing:.2em;text-transform:uppercase;color:#c9ccd2;margin-top:8px}
 
+  #net-resume{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;
+    background:rgba(9,11,15,.72);backdrop-filter:blur(3px);cursor:pointer;
+    font-family:'Stratum2','Arial Narrow',sans-serif;color:#e8e4dc;text-align:center}
+  #net-resume .box{border:1px solid #2c3441;border-top:3px solid #c08a3e;background:#14181f;
+    padding:26px 40px;box-shadow:0 20px 60px rgba(0,0,0,.55)}
+  #net-resume .big{font-size:30px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  #net-resume .sub{font-size:14px;color:#8a93a3;letter-spacing:.1em;margin-top:8px;text-transform:uppercase}
+  #net-resume .warn{font-size:13px;color:#e4695c;letter-spacing:.04em;margin-top:12px;min-height:17px}
+
   #net-board{position:fixed;inset:0;z-index:195;display:flex;align-items:center;justify-content:center;
     background:rgba(9,11,15,.78);font-family:'Stratum2','Arial Narrow',sans-serif;pointer-events:none}
   #net-board table{border-collapse:collapse;background:#14181f;border:1px solid #2c3441;min-width:min(560px,92vw)}
@@ -201,6 +210,14 @@ const netUI = {};
   netUI.board  = mk('div', 'net-board', '<table><caption>Scoreboard</caption><tbody></tbody></table>');
   netUI.board.classList.add('net-hide');
 
+  netUI.resume = mk('div', 'net-resume', `
+    <div class="box">
+      <div class="big">Click to resume</div>
+      <div class="sub">The round is still running</div>
+      <div class="warn" id="net-resume-warn"></div>
+    </div>`);
+  netUI.resume.classList.add('net-hide');
+
   netUI.$ = id => document.getElementById(id);
 })();
 
@@ -219,14 +236,65 @@ function netBanner(big, small, ms){
 }
 function netHideBanner(){ clearTimeout(netBanner._t); netUI.banner.classList.add('net-hide'); }
 
-// The deploy screen fights us: 90-input reopens it whenever pointer lock drops.
-// Our listener is registered later, so it runs after and gets the last word.
+// ── POINTER LOCK ────────────────────────────────────────────────────────────
+// Tab away and the browser drops pointer lock. 90-input reacts by reopening the
+// deploy screen, and we have to suppress that — its START button runs
+// `money = Math.max(money, START_MONEY)`, so letting it appear mid-match would
+// hand out free money every time somebody alt-tabbed.
+//
+// But suppressing it with nothing in its place left the screen with nothing
+// clickable at all: the round kept running, the mouse did nothing, and there
+// was no way back in. Hence this overlay. A browser will only re-lock the
+// pointer from a real user gesture, so a click is genuinely required — it
+// cannot be done automatically on visibilitychange.
+function netShouldOfferResume(){
+  if(!netInMatch) return false;
+  if(document.pointerLockElement) return false;
+  if(netPhase === 'MATCH_END') return false;                  // scoreboard needs the cursor
+  if(!netUI.lobby.classList.contains('net-hide')) return false;
+  if(!netUI.room.classList.contains('net-hide')) return false;
+  const shop = document.getElementById('shop');
+  if(shop && shop.style.display === 'flex') return false;     // buying, cursor wanted
+  return true;
+}
+
+function netUpdateResume(){
+  const want = netShouldOfferResume();
+  netUI.resume.classList.toggle('net-hide', !want);
+  if(want){
+    const sub = netUI.resume.querySelector('.sub');
+    if(sub) sub.textContent = netMyAlive ? 'The round is still running' : 'Spectating';
+  } else {
+    const w = netUI.$('net-resume-warn');
+    if(w) w.textContent = '';
+  }
+}
+
+netUI.resume.addEventListener('click', () => {
+  const w = netUI.$('net-resume-warn');
+  if(w) w.textContent = '';
+  // Chrome refuses a re-lock for about a second after Escape released it, and
+  // rejects the promise rather than throwing. Say so instead of looking broken.
+  let p;
+  try { p = document.body.requestPointerLock(); } catch(e){ p = null; }
+  if(p && typeof p.catch === 'function'){
+    p.catch(() => { if(w) w.textContent = 'Browser blocked that — wait a second and click again.'; });
+  }
+});
+
 document.addEventListener('pointerlockchange', () => {
   if(netInMatch || !netUI.lobby.classList.contains('net-hide') || !netUI.room.classList.contains('net-hide')){
     const ins = document.getElementById('instructions');
     if(ins) ins.style.display = 'none';
   }
+  netUpdateResume();
 });
+
+// Coming back to the tab does not restore the lock by itself, but it is the
+// moment the overlay needs to be on screen and ready to be clicked.
+document.addEventListener('visibilitychange', netUpdateResume);
+window.addEventListener('focus', netUpdateResume);
+window.addEventListener('blur', netUpdateResume);
 
 // ── CONNECTION ──────────────────────────────────────────────────────────────
 (function loadSocketIO(){
@@ -370,6 +438,7 @@ function netApplyPhase(d){
     netBanner('Buy time', 'Press B to open the shop', 3000);
   }
   netUpdateFrozen();
+  netUpdateResume();
 }
 
 function netApplyYou(d){
@@ -390,9 +459,12 @@ function netApplyYou(d){
   if(wasAlive && !netMyAlive){
     playDeath();
     netBanner('Eliminated', 'Spectating until the round ends');
-    if(document.pointerLockElement) document.exitPointerLock();
+    // Deliberately KEEP pointer lock while dead. Releasing it used to pop the
+    // resume overlay on every single death, and you want to be able to look
+    // around while you spectate. Movement is already blocked by netFrozen.
   }
   netUpdateFrozen();
+  netUpdateResume();
 }
 
 function netUpdateFrozen(){
@@ -425,8 +497,13 @@ function netRoundReset(d){
   for(const t of netTracers) scene.remove(t.mesh); netTracers.length = 0;
 
   updateHUD(); updateMoneyUI();
-  if(!document.pointerLockElement) document.body.requestPointerLock();
+  // A respawn is not a user gesture, so this can be refused. The resume overlay
+  // is the fallback and will show itself if the lock did not take.
+  if(!document.pointerLockElement){
+    try { const p = document.body.requestPointerLock(); if(p && p.catch) p.catch(()=>{}); } catch(e){}
+  }
   netUpdateFrozen();
+  setTimeout(netUpdateResume, 60);
 }
 
 function netMatchEnd(d){

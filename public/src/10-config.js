@@ -1,7 +1,7 @@
 // ── GUN DEFINITIONS ────────────────────────────────────────────────────────
 // price: cost in the shop ($). order: display order in the shop.
 const GUNS = {
-  knife:   { name:'KNIFE',         ammo:0,  maxAmmo:0,  damage:55, pellets:0, spread:0, reloadTime:0,
+  knife:   { name:'KNIFE',         ammo:0,  maxAmmo:0,  damage:90, pellets:0, spread:0, reloadTime:0,
              bulletSpeed:0, recoilZ:0.10, recoilY:0.04, bulletSize:0, price:0,    order:0,
              rpm:'Melee', range:'Contact', category:'melee',   melee:true, fireInterval:420 },
   glock18: { name:'GLOCK 18',      ammo:15, maxAmmo:15, spareMags:2, damage:18, pellets:1, spread:0.018, reloadTime:1300,

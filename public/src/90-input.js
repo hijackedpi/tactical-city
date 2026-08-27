@@ -265,6 +265,7 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
 let _lastShotTime = 0;
+const _meleeDir = new THREE.Vector3();   // reused; a swing must not allocate
 function doShoot() {
   if(!document.pointerLockElement||playerInCar) return;
   // NET HOOK — no shooting while frozen in the buy phase, between rounds, or
@@ -276,20 +277,48 @@ function doShoot() {
     _lastShotTime = nowT;
     gunRecoilZ = gun.recoilZ; gunRecoilY = gun.recoilY;
     playGunshot();
-    // reach out along the view direction and hit anything close in front
-    const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-    for(let j=enemies.length-1;j>=0;j--){
+
+    // A forgiving cone rather than a ray — a knife swing that demands pixel
+    // aim feels broken. But it is now bounded VERTICALLY too: the old test was
+    // horizontal distance plus a facing dot, so you could stab someone standing
+    // on a roof three units over your head.
+    const MELEE_REACH = 2.2;
+    const MELEE_ARC   = 0.55;      // dot product; ~57 degrees either side
+    const dir = _meleeDir.set(0, 0, -1).applyQuaternion(camera.quaternion);
+
+    // Nearest valid target, not simply the first one in the array.
+    let best = null, bestD = Infinity;
+    for(let j = enemies.length - 1; j >= 0; j--){
       const e = enemies[j];
-      const dx = e.position.x - camera.position.x, dz = e.position.z - camera.position.z;
+      const dx = e.position.x - camera.position.x;
+      const dz = e.position.z - camera.position.z;
       const d = Math.hypot(dx, dz);
-      if(d > 2.2) continue;
-      if((dx/d)*dir.x + (dz/d)*dir.z < 0.55) continue;   // must be in front
-      e.userData.hp -= gun.damage; playHit();
-      if(e.userData.hp <= 0){
-        scene.remove(e); enemies.splice(j,1);
-        kills++; addMoney(KILL_REWARD); playKill(); updateHUD();
+      if(d > MELEE_REACH || d > bestD) continue;
+      if(d > 1e-4 && (dx/d)*dir.x + (dz/d)*dir.z < MELEE_ARC) continue;
+      // Vertical gate: your eye has to be somewhere alongside their body.
+      // Generous enough to stab up or down a step, not up onto a roof.
+      const h = e.userData.height || 1.81;
+      if(camera.position.y < e.position.y - 1.0)     continue;
+      if(camera.position.y > e.position.y + h + 0.6) continue;
+      best = e; bestD = d;
+    }
+
+    if(best){
+      // Melee ignores the zone multipliers on purpose — a knife is a knife
+      // wherever it lands, and 90 x 4 for a head hit would be absurd.
+      const dmg = gun.damage;
+      if(best.userData.isRemote){
+        netReportHit(best.userData.netId, dmg, 'melee');
+        playHit();
+      } else {
+        best.userData.hp -= dmg; playHit();
+        if(best.userData.hp <= 0){
+          scene.remove(best);
+          const k = enemies.indexOf(best);
+          if(k >= 0) enemies.splice(k, 1);
+          kills++; addMoney(KILL_REWARD); playKill(); updateHUD();
+        }
       }
-      break;
     }
     return;
   }
