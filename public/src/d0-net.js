@@ -42,6 +42,11 @@ let netRound    = 0;
 let netRoster   = [];
 let netIsHost   = false;
 let netRoomCode = '';
+let netIsPublic = false;
+
+let netRooms    = [];         // the public browse list, pushed by the server
+let netBrowsing = false;
+let netJoinCode = function(){};   // replaced once the socket exists
 
 const netRemote = new Map();  // id -> { obj, buf:[], name, team, label }
 const netTracers = [];        // purely visual, never damages anyone
@@ -98,6 +103,27 @@ function netReportBuy(weapon, price){
   .net-p.ct i{background:#3f6d9e}
   .net-p .nm{font-weight:600;letter-spacing:.05em}
   .net-p .tag{margin-left:auto;font-size:11px;color:#6e7482;letter-spacing:.14em;text-transform:uppercase}
+
+  .net-sec{display:flex;align-items:center;gap:10px;margin:14px 0 8px;
+    font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#7d7263}
+  .net-sec span{white-space:nowrap}
+  .net-sec::after{content:'';flex:1;height:1px;background:rgba(217,178,90,.16)}
+  .net-mini{background:none;border:1px solid #333c48;color:#8a93a3;cursor:pointer;
+    padding:4px 9px;font:700 9.5px/1 inherit;letter-spacing:.12em;text-transform:uppercase;order:3}
+  .net-mini:hover{color:#e8e4dc;border-color:#5a6577}
+  .net-games{max-height:168px;overflow-y:auto;border:1px solid #222a35;background:rgba(8,10,14,.45)}
+  .net-empty{padding:16px 12px;text-align:center;color:#6e7482;font-size:13px;letter-spacing:.03em}
+  .net-g{display:flex;align-items:center;gap:10px;padding:9px 11px;
+    border-bottom:1px solid #1c232c;font-size:13.5px}
+  .net-g:last-child{border-bottom:none}
+  .net-g .gn{font-weight:600;letter-spacing:.04em;color:#e4dcc9;flex:1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .net-g .gp{font-variant-numeric:tabular-nums;color:#c08a3e;font-weight:700;white-space:nowrap}
+  .net-g .gs{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#6e7482;white-space:nowrap}
+  .net-g button{background:#c08a3e;color:#12161c;border:none;cursor:pointer;padding:6px 12px;
+    font:700 10.5px/1 inherit;letter-spacing:.12em;text-transform:uppercase}
+  .net-g button:hover{filter:brightness(1.12)}
+  .net-g button:disabled{opacity:.35;cursor:not-allowed;filter:none}
 
   #net-bar{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:180;
     display:flex;align-items:center;gap:0;font-family:'Stratum2','Arial Narrow',sans-serif;
@@ -168,13 +194,27 @@ const netUI = {};
       <div class="net-row">
         <input class="net-in" id="net-name" maxlength="14" placeholder="Your name" autocomplete="off">
       </div>
-      <div class="net-row">
-        <button class="net-btn" id="net-create" style="flex:1">Create lobby</button>
+
+      <div class="net-sec">
+        <span>Public games</span>
+        <button class="net-mini" id="net-refresh" title="Refresh">Refresh</button>
       </div>
+      <div class="net-games" id="net-games">
+        <div class="net-empty">Looking for games...</div>
+      </div>
+
+      <div class="net-sec"><span>Start your own</span></div>
+      <div class="net-row">
+        <button class="net-btn" id="net-create-pub" style="flex:1">Create public</button>
+        <button class="net-btn ghost" id="net-create-priv" style="flex:1">Create private</button>
+      </div>
+
+      <div class="net-sec"><span>Have a code?</span></div>
       <div class="net-row">
         <input class="net-in" id="net-code" maxlength="4" placeholder="Code" autocomplete="off">
         <button class="net-btn" id="net-join">Join</button>
       </div>
+
       <p class="net-err" id="net-err"></p>
       <div class="net-row">
         <button class="net-btn ghost" id="net-solo" style="flex:1">Play solo instead</button>
@@ -248,13 +288,18 @@ function netHideBanner(){ clearTimeout(netBanner._t); netUI.banner.classList.add
 // pointer from a real user gesture, so a click is genuinely required — it
 // cannot be done automatically on visibilitychange.
 function netShouldOfferResume(){
-  if(!netInMatch) return false;
+  // Solo counts too. The old #instructions screen used to be the way back in
+  // after Esc; with it retired, this overlay is the only route.
+  const playing = netInMatch || (typeof window !== 'undefined' && window.ttSoloPlaying);
+  if(!playing) return false;
   if(document.pointerLockElement) return false;
-  if(netPhase === 'MATCH_END') return false;                  // scoreboard needs the cursor
+  if(netInMatch && netPhase === 'MATCH_END') return false;    // scoreboard needs the cursor
   if(!netUI.lobby.classList.contains('net-hide')) return false;
   if(!netUI.room.classList.contains('net-hide')) return false;
   const shop = document.getElementById('shop');
   if(shop && shop.style.display === 'flex') return false;     // buying, cursor wanted
+  const modal = document.getElementById('tt-modal');
+  if(modal && modal.classList.contains('on')) return false;   // reading the tutorial
   return true;
 }
 
@@ -311,6 +356,7 @@ window.addEventListener('blur', netUpdateResume);
 })();
 
 function netGoSolo(){
+  netBrowse(false);
   netUI.lobby.classList.add('net-hide');
   netUI.room.classList.add('net-hide');
   const ins = document.getElementById('instructions');
@@ -331,27 +377,46 @@ function netInit(){
 
   netUI.$('net-solo').addEventListener('click', netGoSolo);
 
-  netUI.$('net-create').addEventListener('click', () => {
+  function create(isPublic){
     netErr('');
-    netSocket.emit('createRoom', nameOf(), res => {
+    netSocket.emit('createRoom', { name: nameOf(), isPublic }, res => {
       if(!res || !res.ok) return netErr((res && res.error) || 'Could not create a lobby.');
       netEnterRoom(res);
     });
-  });
+  }
+  netUI.$('net-create-pub').addEventListener('click',  () => create(true));
+  netUI.$('net-create-priv').addEventListener('click', () => create(false));
 
   netUI.$('net-join').addEventListener('click', () => {
-    netErr('');
     const code = (netUI.$('net-code').value || '').trim().toUpperCase();
     if(code.length !== 4) return netErr('A lobby code is 4 characters.');
-    netSocket.emit('joinRoom', { code, name: nameOf() }, res => {
-      if(!res || !res.ok) return netErr((res && res.error) || 'Could not join.');
-      netEnterRoom(res);
-    });
+    netJoinCode(code);
+  });
+
+  netUI.$('net-refresh').addEventListener('click', () => {
+    netSocket.emit('listRooms', list => { netRooms = list || []; netRenderRooms(); });
   });
 
   netUI.$('net-code').addEventListener('keydown', e => { if(e.key === 'Enter') netUI.$('net-join').click(); });
   netUI.$('net-start').addEventListener('click', () => netSocket.emit('startMatch'));
   netUI.$('net-leave').addEventListener('click', () => location.reload());
+
+  // Used by the code box and by every Join button in the browse list.
+  netJoinCode = function(code){
+    netErr('');
+    netSocket.emit('joinRoom', { code, name: nameOf() }, res => {
+      if(!res || !res.ok){
+        netErr((res && res.error) || 'Could not join.');
+        // the list may be stale if that room just filled or closed
+        netSocket.emit('listRooms', l => { netRooms = l || []; netRenderRooms(); });
+        return;
+      }
+      netEnterRoom(res);
+    });
+  };
+
+  netSocket.on('rooms', list => { netRooms = list || []; netRenderRooms(); });
+  netBrowse(true);                       // the lobby is the first thing shown
 
   netSocket.on('disconnect', () => {
     netInMatch = false; netFrozen = true;
@@ -377,9 +442,15 @@ function netEnterRoom(res){
   netMyTeam = res.team;
   netIsHost = res.isHost;
   netRoomCode = res.code;
+  netIsPublic = !!res.isPublic;
+  netBrowsing = false;                   // the server drops us from 'browse'
   netUI.lobby.classList.add('net-hide');
   netUI.room.classList.remove('net-hide');
   netUI.$('net-roomcode').textContent = res.code;
+  const sub = netUI.room.querySelector('.sub');
+  if(sub) sub.textContent = netIsPublic
+    ? 'Public game. Anyone can find this in the browser, or join with the code.'
+    : 'Private game. Only people with this code can join.';
   netRenderRoom();
 }
 
@@ -396,6 +467,41 @@ function netRenderRoom(){
     start.disabled = netRoster.length < 2;
     start.textContent = netRoster.length < 2 ? 'Waiting for players…' : 'Start match (' + netRoster.length + '/10)';
   }
+}
+
+// ── PUBLIC GAME BROWSER ─────────────────────────────────────────────────────
+function netRenderRooms(){
+  const host = netUI.$('net-games');
+  if(!host) return;
+  if(!netRooms.length){
+    host.innerHTML = '<div class="net-empty">No public games right now.<br>' +
+      'Create one and it will show up here for everyone.</div>';
+    return;
+  }
+  host.innerHTML = netRooms.map(r => {
+    const state = r.phase === 'LOBBY' ? 'Waiting'
+                : r.phase === 'MATCH_END' ? 'Finished'
+                : 'Round ' + (r.round + 1) + '  ' + r.score.t + '-' + r.score.ct;
+    return '<div class="net-g">' +
+      '<span class="gn">' + netEsc(r.name) + '</span>' +
+      '<span class="gs">' + state + '</span>' +
+      '<span class="gp">' + r.players + '/' + r.max + '</span>' +
+      '<button data-code="' + r.code + '"' + (r.full ? ' disabled' : '') + '>' +
+      (r.full ? 'Full' : 'Join') + '</button></div>';
+  }).join('');
+  host.querySelectorAll('button[data-code]').forEach(b => {
+    b.addEventListener('click', () => netJoinCode(b.dataset.code));
+  });
+}
+
+// Subscribe only while the lobby is on screen. Playing a match should never
+// carry browse traffic.
+function netBrowse(on){
+  if(!netSocket || netBrowsing === on) return;
+  netBrowsing = on;
+  netSocket.emit('browse', on, list => {
+    if(list){ netRooms = list; netRenderRooms(); }
+  });
 }
 
 function netEsc(s){

@@ -41,11 +41,8 @@
       radial-gradient(ellipse 130% 90% at 50% 38%,
                       rgba(0,0,0,0) 42%, rgba(4,6,9,.70) 100%) !important;
   }
-  /* The lobby used to cover #instructions with an opaque panel. Now that it is
-     transparent, the old menu shows through underneath as a duplicate title —
-     so hide it whenever either lobby screen is up. */
-  body:has(#net-lobby:not(.net-hide)) #instructions,
-  body:has(#net-room:not(.net-hide)) #instructions{ display:none !important; }
+  /* #instructions is now an empty stub, permanently hidden by a rule in
+     index.html itself. Nothing here needs to hide it any more. */
 
   #net-lobby, #net-room{
     background:transparent !important;
@@ -106,6 +103,9 @@
     box-shadow:0 20px 60px rgba(0,0,0,.5) !important;
     width:min(430px,88vw) !important;
     padding:20px 22px 18px !important;
+    /* the browse list makes this panel much taller; never let it run off a
+       short window */
+    max-height:calc(100vh - 40px); overflow-y:auto;
     opacity:0; animation:tFade .6s .66s ease-out forwards;
   }
   /* the panel's own heading is redundant next to the big title */
@@ -247,11 +247,11 @@ const TITLE_CAM = {
 let _titleActive = false, _titleT0 = 0;
 let _fogWas = null, _fovWas = null, _expWas = null, _skyWas = null;
 
-function _titleShouldRun(){
+let _titleShouldRun = function(){
   if(document.pointerLockElement) return false;
   if(typeof netInMatch !== 'undefined' && netInMatch) return false;
   return true;
-}
+};
 
 function _titleEnter(){
   _titleActive = true;
@@ -264,6 +264,19 @@ function _titleEnter(){
     _skyWas = scene.background.getHex();
     scene.background = new THREE.Color(TITLE_CAM.sky);
   }
+  _titleHideViewmodel();
+}
+
+// The weapon is parented to the CAMERA, so it flies around with the title
+// shot -- a pistol floating over the palace. The body.title-mode CSS cannot
+// touch it: it is a 3D object, not an element.
+//
+// This runs every frame rather than once, because preloadWeapons() attaches
+// the glock only when its GLB finishes downloading, which is usually well
+// after the title screen has already appeared.
+function _titleHideViewmodel(){
+  if(typeof playerGun !== 'undefined' && playerGun && playerGun.visible) playerGun.visible = false;
+  if(typeof _fpBody !== 'undefined' && _fpBody && _fpBody.visible) _fpBody.visible = false;
 }
 
 function _titleExit(){
@@ -272,6 +285,13 @@ function _titleExit(){
   if(scene.fog && _fogWas !== null){ scene.fog.density = _fogWas; _fogWas = null; }
   if(_expWas !== null){ renderer.toneMappingExposure = _expWas; _expWas = null; }
   if(_skyWas !== null){ scene.background = new THREE.Color(_skyWas); _skyWas = null; }
+  // Give the weapon back. applyViewmodel() respects the VIEWMODEL setting, so
+  // someone who chose HIDDEN keeps it hidden.
+  if(typeof applyViewmodel === 'function') applyViewmodel();
+  else if(typeof playerGun !== 'undefined' && playerGun) playerGun.visible = true;
+  if(typeof _fpBody !== 'undefined' && _fpBody && typeof _fpBodyWanted !== 'undefined')
+    _fpBody.visible = _fpBodyWanted;
+
   if(_fovWas !== null){
     // Restore through currentFov, not the saved value: animate()'s FOV easing
     // only runs when currentFov and targetFov disagree, so it would never undo
@@ -289,6 +309,8 @@ const _titleTmp = new THREE.Vector3();
   if(want && !_titleActive) _titleEnter();
   else if(!want && _titleActive) _titleExit();
   if(!_titleActive) return;
+
+  _titleHideViewmodel();          // weapons can finish loading at any moment
 
   const t = (performance.now() - _titleT0) / 1000;
   const k = Math.min(1, t / TITLE_CAM.pushSecs);
@@ -572,8 +594,11 @@ console.log('title: live map backdrop (the 85 KB baked JPEG is no longer used)')
   }
   tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.p)));
 
-  function open(name){ modal.classList.add('on'); show(name || 'controls'); }
-  function close(){ modal.classList.remove('on'); }
+  function open(name){ modal.classList.add('on'); show(name || 'controls');
+    if(typeof netUpdateResume === 'function') netUpdateResume(); }
+  function close(){ modal.classList.remove('on');
+    // the resume overlay stands down while the modal is open, so re-evaluate
+    if(typeof netUpdateResume === 'function') netUpdateResume(); }
   modal.querySelector('#tt-close').addEventListener('click', close);
   modal.addEventListener('click', e => { if(e.target === modal) close(); });
   addEventListener('keydown', e => {
@@ -605,3 +630,95 @@ console.log('title: live map backdrop (the 85 KB baked JPEG is no longer used)')
   if(bt){ const c = bt.cloneNode(true); bt.replaceWith(c);
           c.addEventListener('click', () => open('controls')); }
 })();
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  RETIRING THE OLD #instructions SCREEN
+//
+//  It is hidden by CSS above, but it was doing three jobs that have to be
+//  rehomed or the game becomes unstartable:
+//
+//    1. START      its PLAY button granted money, equipped a gun and locked
+//                  the pointer. "Play solo" now does that directly, with no
+//                  screen in between.
+//    2. RESUME     90-input reopens it whenever pointer lock drops, which was
+//                  the only way back in after Esc. The resume overlay covers
+//                  that for a match; this extends it to solo play.
+//    3. RESPAWN    resetGame() shows it on death. Unreachable today (there are
+//                  no bots, so nothing damages you in solo) but it would strand
+//                  a player the moment bots come back — so it is handled too.
+//
+//  The body class is only added when the lobby actually exists. Delete
+//  d0-net.js and the old screen returns, rather than leaving no entry at all.
+// ════════════════════════════════════════════════════════════════════════════
+(function retireOldMenu(){
+  // The parts are loaded by the time this runs, so the loading state is over.
+  function bootDone(){
+    const b = document.getElementById('boot');
+    if(b){ b.classList.add('gone'); setTimeout(() => b.remove(), 700); }
+  }
+  bootDone();
+
+  const lobby = document.getElementById('net-lobby');
+  if(!lobby){
+    // d0-net.js is absent, and the old menu no longer exists to fall back on —
+    // so put a minimal way into the game on screen rather than nothing at all.
+    const fb = document.createElement('button');
+    fb.textContent = 'PLAY';
+    fb.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);' +
+      'z-index:450;padding:16px 46px;border:none;cursor:pointer;' +
+      "font:800 15px/1 'Stratum2','Arial Narrow',sans-serif;letter-spacing:.22em;" +
+      'color:#20160b;background:linear-gradient(#f0cf7c,#c99a3f)';
+    fb.addEventListener('click', () => { fb.remove(); startSolo(); });
+    document.body.appendChild(fb);
+    return;
+  }
+  document.body.classList.add('tt-has-lobby');
+
+  // Solo play, without the intermediate screen. Mirrors what #start-btn did.
+  // Declared with `function` so the fallback branch above can call it.
+  window.ttSoloPlaying = false;
+  function startSolo(){
+    window.ttSoloPlaying = true;
+    // Stop receiving the public game list; we are not shopping any more.
+    if(typeof netBrowse === 'function') netBrowse(false);
+    lobby.classList.add('net-hide');
+    const room = document.getElementById('net-room');
+    if(room) room.classList.add('net-hide');
+    if(typeof START_MONEY === 'number') money = Math.max(money, START_MONEY);
+    if(typeof equipGun === 'function') equipGun(selectedGunKey);
+    updateHUD(); updateMoneyUI(); updateSlotUI();
+    try { const p = document.body.requestPointerLock(); if(p && p.catch) p.catch(()=>{}); } catch(e){}
+  }
+
+  // Replace the node so d0-net's own handler (which reopened #instructions)
+  // does not also fire.
+  const solo = document.getElementById('net-solo');
+  if(solo){
+    const c = solo.cloneNode(true);
+    c.textContent = 'Play solo';
+    solo.replaceWith(c);
+    c.addEventListener('click', startSolo);
+  }
+
+  // Same for the old PLAY button, in case anything reaches it.
+  const start = document.getElementById('start-btn');
+  if(start){
+    const c = start.cloneNode(true);
+    start.replaceWith(c);
+    c.addEventListener('click', startSolo);
+  }
+
+  // No observer needed: index.html carries
+  //   #instructions{ display:none !important; }
+  // and a stylesheet !important outranks the plain inline display that
+  // resetGame() and the pointerlockchange handler set.
+})();
+
+// The cinematic camera must not fly around while a solo game is merely paused —
+// you want to see where you are standing, exactly as in a match.
+const _ttBaseShouldRun = _titleShouldRun;
+_titleShouldRun = function(){
+  if(window.ttSoloPlaying) return false;
+  return _ttBaseShouldRun();
+};

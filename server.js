@@ -93,10 +93,15 @@ function makeCode(){
   return code;
 }
 
-function createRoom(hostId){
+function createRoom(hostId, opts){
+  const o = opts || {};
   const room = {
     code: makeCode(),
     hostId,
+    // Public rooms appear in the browse list; private ones are reachable only
+    // by their code. Both work identically once you are inside.
+    isPublic: !!o.isPublic,
+    name: '',                       // filled from the host's name on join
     players: new Map(),
     phase: 'LOBBY',
     phaseEndsAt: 0,
@@ -117,6 +122,7 @@ function destroyRoom(room){
   clearTimeout(room.phaseTimer);
   clearInterval(room.tickTimer);
   rooms.delete(room.code);
+  broadcastRooms();
 }
 
 // Balance on join rather than letting players pick — with a 10 cap and drop-in
@@ -127,6 +133,35 @@ function pickTeam(room){
   if(t < ct) return 't';
   if(ct < t) return 'ct';
   return Math.random() < 0.5 ? 't' : 'ct';
+}
+
+// Rooms offered to the browser. Full and in-progress rooms are included
+// rather than hidden: a list that silently drops entries reads as broken, and
+// seeing "10/10" tells you more than an empty screen does.
+function publicRoomList(){
+  const out = [];
+  for(const r of rooms.values()){
+    if(!r.isPublic || r.players.size === 0) continue;
+    out.push({
+      code: r.code,
+      name: r.name || 'Open game',
+      players: r.players.size,
+      max: MAX_PLAYERS,
+      phase: r.phase,
+      round: r.round,
+      score: r.score,
+      full: r.players.size >= MAX_PLAYERS,
+    });
+  }
+  // Fullest first: a room with people in it is the one worth joining.
+  return out.sort((a, b) => b.players - a.players).slice(0, 40);
+}
+
+// Pushed rather than polled. Clients sitting on the lobby screen join the
+// 'browse' socket.io room and are told when anything changes, so the list is
+// live without every idle client hammering the server on a timer.
+function broadcastRooms(){
+  io.to('browse').emit('rooms', publicRoomList());
 }
 
 function makePlayer(id, name, team){
@@ -201,6 +236,7 @@ function setPhase(room, phase, ms, after){
   room.phase = phase;
   room.phaseEndsAt = ms ? Date.now() + ms : 0;
   broadcastPhase(room);
+  broadcastRooms();                 // the list shows phase and score
   if(ms) room.phaseTimer = setTimeout(() => after(room), ms);
 }
 
@@ -313,9 +349,14 @@ function cleanName(n){
 
 io.on('connection', socket => {
 
-  socket.on('createRoom', (name, cb) => {
-    const room = createRoom(socket.id);
-    joinRoom(socket, room, cleanName(name), cb);
+  // Accepts either a bare name (the original shape) or {name, isPublic}, so an
+  // older client keeps working and simply gets a private room.
+  socket.on('createRoom', (arg, cb) => {
+    const isObj = arg && typeof arg === 'object';
+    const name  = cleanName(isObj ? arg.name : arg);
+    const room  = createRoom(socket.id, { isPublic: isObj && !!arg.isPublic });
+    room.name   = name + "'S GAME";
+    joinRoom(socket, room, name, cb);
   });
 
   socket.on('joinRoom', ({ code, name }, cb) => {
@@ -325,6 +366,15 @@ io.on('connection', socket => {
     joinRoom(socket, room, cleanName(name), cb);
   });
 
+  // Browsing. A client on the lobby screen subscribes and gets pushed updates;
+  // it is dropped from the subscription the moment it is inside a room, so a
+  // player never receives list traffic while actually playing.
+  socket.on('browse', (on, cb) => {
+    if(on){ socket.join('browse'); if(cb) cb(publicRoomList()); }
+    else socket.leave('browse');
+  });
+  socket.on('listRooms', cb => { if(cb) cb(publicRoomList()); });
+
   function joinRoom(socket, room, name, cb){
     const team = pickTeam(room);
     const p = makePlayer(socket.id, name, team);
@@ -333,10 +383,14 @@ io.on('connection', socket => {
     if(room.phase === 'BUY'){ p.alive = true; p.hp = 100; }
     room.players.set(socket.id, p);
     socket.join(room.code);
+    socket.leave('browse');            // you are in a game now, not shopping
     socket.data.room = room.code;
-    cb && cb({ ok: true, code: room.code, id: socket.id, team, isHost: room.hostId === socket.id, max: MAX_PLAYERS });
+    cb && cb({ ok: true, code: room.code, id: socket.id, team,
+               isHost: room.hostId === socket.id, max: MAX_PLAYERS,
+               isPublic: room.isPublic, roomName: room.name });
     io.to(room.code).emit('chatSys', name + ' joined');
     broadcastPhase(room);
+    broadcastRooms();
   }
 
   socket.on('startMatch', () => {
@@ -451,6 +505,7 @@ io.on('connection', socket => {
     if(p) io.to(room.code).emit('chatSys', p.name + ' left');
 
     if(room.players.size === 0) return destroyRoom(room);
+    broadcastRooms();
     // Host migration, so one person leaving does not strand the lobby.
     if(room.hostId === socket.id){
       room.hostId = room.players.keys().next().value;
