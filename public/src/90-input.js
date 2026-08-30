@@ -264,8 +264,65 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
+
+// ── WHERE THE CROSSHAIR IS ACTUALLY POINTING ────────────────────────────────
+// A bullet that starts at the barrel but travels parallel to the view lands
+// beside the crosshair forever -- measured at 0.28 units right and 0.18 down,
+// at every range. That is most of a head's radius, so "I was aiming right at
+// him" genuinely did not connect.
+//
+// The fix is convergence: find what the crosshair ray hits, then aim the round
+// from the muzzle AT THAT POINT. The two lines meet exactly on target, and the
+// bullet still visibly leaves the gun.
+//
+// Cost is one ray query per shot, not per frame, so testing every obstacle in
+// the region is fine.
+const _nearbyAim = [];
+function aimDistance(ox, oy, oz, dx, dy, dz, maxD){
+  let best = maxD;
+
+  // obstacles: the standard slab test, nearest entry wins
+  const ex = ox + dx * maxD, ey = oy + dy * maxD, ez = oz + dz * maxD;
+  _queryRegion(Math.min(ox,ex), Math.min(oz,ez), Math.max(ox,ex), Math.max(oz,ez), _nearbyAim);
+  const idx = dx === 0 ? Infinity : 1/dx;
+  const idy = dy === 0 ? Infinity : 1/dy;
+  const idz = dz === 0 ? Infinity : 1/dz;
+  for(let i = 0; i < _nearbyAim.length; i++){
+    const b = _nearbyAim[i];
+    let t1 = (b.min.x - ox) * idx, t2 = (b.max.x - ox) * idx;
+    if(t1 > t2){ const t = t1; t1 = t2; t2 = t; }
+    let tmin = t1, tmax = t2;
+    t1 = (b.min.y - oy) * idy; t2 = (b.max.y - oy) * idy;
+    if(t1 > t2){ const t = t1; t1 = t2; t2 = t; }
+    if(t1 > tmin) tmin = t1;
+    if(t2 < tmax) tmax = t2;
+    if(tmin > tmax) continue;
+    t1 = (b.min.z - oz) * idz; t2 = (b.max.z - oz) * idz;
+    if(t1 > t2){ const t = t1; t1 = t2; t2 = t; }
+    if(t1 > tmin) tmin = t1;
+    if(t2 < tmax) tmax = t2;
+    if(tmin > tmax || tmax < 0) continue;
+    const d = tmin * maxD;
+    if(d > 0.5 && d < best) best = d;
+  }
+
+  // players, so aiming at someone in open ground converges on THEM rather than
+  // on a wall 100 units behind them
+  if(typeof hitZone === 'function'){
+    for(let i = 0; i < enemies.length; i++){
+      const hz = hitZone(enemies[i], ox, oy, oz, ex, ey, ez);
+      if(hz){ const d = hz.t * maxD; if(d > 0.5 && d < best) best = d; }
+    }
+  }
+  return best;
+}
+
 let _lastShotTime = 0;
-const _meleeDir = new THREE.Vector3();   // reused; a swing must not allocate
+const _meleeDir  = new THREE.Vector3();   // reused; a swing must not allocate
+const _muzzleOff = new THREE.Vector3();
+const _aimFwd    = new THREE.Vector3();
+const _aimPt     = new THREE.Vector3();
+const _spreadV   = new THREE.Vector3();
 function doShoot() {
   if(!document.pointerLockElement||playerInCar) return;
   // NET HOOK — no shooting while frozen in the buy phase, between rounds, or
@@ -354,18 +411,33 @@ function doShoot() {
     } else {
       bm = new THREE.Mesh(gun._geo, gun._mat);
     }
-    const muzzleOffset=new THREE.Vector3(0.28,-0.18,-0.6);
-    muzzleOffset.applyQuaternion(camera.quaternion);
-    bm.position.copy(camera.position).add(muzzleOffset);
+    // Leave from the barrel of the weapon actually being held. gunOffsets is
+    // the model's CENTRE, so push forward by half its length to reach the tip;
+    // viewSide mirrors it for a left-handed viewmodel.
+    const _go = gunOffsets[selectedGunKey] || [0.26, -0.22, -0.6];
+    const _len = (typeof WEAPON_LEN !== 'undefined' && WEAPON_LEN[selectedGunKey]) || 0.5;
+    _muzzleOff.set(Math.abs(_go[0]) * viewSide, _go[1], _go[2] - _len / 2);
+    _muzzleOff.applyQuaternion(camera.quaternion);
+    bm.position.copy(camera.position).add(_muzzleOff);
+
     const spread = gun.spread + bloom * 0.05;
     bloom = Math.min(BLOOM_MAX, bloom + (gun.pellets>1 ? 0.25 : 0.18));
     camShake = Math.min(0.5, camShake + gun.recoilZ * 0.9 + 0.12);
     gunKickPitch = Math.min(0.18, gunKickPitch + gun.recoilY + 0.04);
-    const dir=new THREE.Vector3(
-      (Math.random()-0.5)*spread,
-      (Math.random()-0.5)*spread,
-      -1
-    ).normalize().applyQuaternion(camera.quaternion).normalize();
+
+    // Converge on whatever the crosshair is over, then apply spread around
+    // that. Without this the round runs parallel to the view and lands beside
+    // the target no matter how well you aimed.
+    _aimFwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    const _aimD = aimDistance(camera.position.x, camera.position.y, camera.position.z,
+                              _aimFwd.x, _aimFwd.y, _aimFwd.z, 240);
+    _aimPt.copy(camera.position).addScaledVector(_aimFwd, Math.max(2, _aimD));
+    const dir = _aimPt.clone().sub(bm.position).normalize();
+    if(spread > 0){
+      _spreadV.set((Math.random()-0.5)*spread, (Math.random()-0.5)*spread, 0)
+              .applyQuaternion(camera.quaternion);
+      dir.add(_spreadV).normalize();
+    }
     bm.userData={vel:dir.multiplyScalar(gun.bulletSpeed), life:0, damage:gun.damage, headshotDamage:gun.headshotDamage||0};
     scene.add(bm); playerBullets.push(bm);
     // NET HOOK — cosmetic only. Everyone else gets a tracer and a gunshot from
