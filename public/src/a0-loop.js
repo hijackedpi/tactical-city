@@ -286,17 +286,38 @@ function animate(now){
     pp.x = Math.max(-BW + 3, Math.min(BW - 3, pp.x));
     pp.z = Math.max(-BW + 3, Math.min(BW - 3, pp.z));
 
-    // In third-person, position the camera behind & slightly above the player
-    // for an over-the-shoulder chase view.
+    // V is an INSPECT view: the camera stands in front of the player and turns
+    // back on them, so you see your own face, kit and weapon. It used to sit
+    // behind, which is a chase camera — the one view of yourself that shows you
+    // nothing you were not already looking at.
+    //
+    // Mouse left/right still turns the player, and the camera orbits with them,
+    // so you can walk about and watch yourself from the front the whole time.
+    // Movement is unaffected either way: a0-loop derives it from `yaw` directly,
+    // never from where the camera happens to be.
     if(thirdPerson){
-      const camBack = 5.5, camUp = 1.2;
-      camera.position.set(
-        pp.x + Math.sin(yaw) * camBack,
-        pp.y + camUp,
-        pp.z + Math.cos(yaw) * camBack
-      );
-      // Look slightly downward by limiting how high the over-the-shoulder sits;
-      // pitch still works via the mouse for looking up/down.
+      const camDist = 3.7;
+      // Swung well off dead-centre on purpose, and 0.45 was not far enough.
+      // Your character aims where you are looking, and this camera stands where
+      // you are looking — so head-on, the muzzle points straight down the lens
+      // and the whole weapon foreshortens into a stub behind it. Rotating the
+      // WEAPON to avoid that would be the wrong fix: it points forward because
+      // that is where you are aiming, and everyone else sees it from the front.
+      // Moving the CAMERA off the firing line costs nothing and shows the gun
+      // in profile with your visor still in view.
+      const FRONT_SWING = 1.25;
+      const feet  = pp.y - FEET_OFFSET;
+      const bodyH = _OP_BASE_H * _OP_SCALE;          // the rig you are looking at
+      const az = yaw + FRONT_SWING;
+      const fx = -Math.sin(az), fz = -Math.cos(az);
+      // Pitch is not wasted: looking up walks the camera down so it looks up at
+      // you, and vice versa. Clamped so it can never go under the floor or sail
+      // over your head.
+      const camY = feet + Math.max(0.40, Math.min(bodyH + 0.7, bodyH * 0.66 - pitch * 1.6));
+      camera.position.set(pp.x + fx * camDist, camY, pp.z + fz * camDist);
+      // MUST come after the camera.rotation assignment further up, or it is
+      // overwritten before the frame is drawn and you face the wrong way.
+      camera.lookAt(pp.x, feet + bodyH * 0.50, pp.z);
     }
 
     // Show "Press E" prompt when near a car
@@ -372,14 +393,27 @@ function animate(now){
     }
     // Enemy hits
     let hit = false;
+    // First step sweeps from the EYE, not from the muzzle a metre ahead of it,
+    // so nothing can hide in that gap. Obstacles are deliberately still tested
+    // from the muzzle: starting those at the eye would newly block shots taken
+    // while hugging cover, which is a separate change from this one.
+    let sx = prevPos.x, sy = prevPos.y, sz = prevPos.z;
+    if(b.userData.life === 1 && b.userData.fx !== undefined){
+      sx = b.userData.fx; sy = b.userData.fy; sz = b.userData.fz;
+    }
     for(let j=enemies.length-1;j>=0;j--){
       const e = enemies[j];
+      // Dead players stay in `enemies` until the round resets (see d0-net).
+      // Without this the first thing a round meets is an invisible corpse: the
+      // bullet is consumed, a hit is claimed on someone already dead, and the
+      // server drops it — you fire, and nothing happens.
+      if(e.userData.netDead) continue;
       // Swept, and now in three dimensions: the bullet's path this frame is
       // tested against four stacked cylinders sized off the body (see HITBOX in
       // 60-actors.js). Fast rounds still cannot skip past anyone, and — unlike
       // the flat radial test this replaces — a shot metres above someone's head
       // now misses, which it did not before.
-      const hz = hitZone(e, prevPos.x, prevPos.y, prevPos.z,
+      const hz = hitZone(e, sx, sy, sz,
                             b.position.x, b.position.y, b.position.z);
       if(hz){
         const dmg = hitDamage(b.userData.damage, b.userData.headshotDamage, hz.zone, hz.mult);
@@ -455,7 +489,10 @@ function animate(now){
 
     // NET HOOK 3 — a remote player faces wherever their own mouse is pointing,
     // not at us. Bots face the player; people face where they are looking.
-    const dirAngle = Math.atan2(dx, dz);
+    // Negated: the rig's front is local -Z (see the visor in 60-actors), so a
+    // bot facing you needs -Z pointed at you, not +Z. Unnegated, bots would
+    // walk at you backwards.
+    const dirAngle = Math.atan2(-dx, -dz);
     e.rotation.y = e.userData.isRemote ? e.userData.netYaw : dirAngle;
 
     // Draw and animate only what the camera can actually see. Skinned meshes

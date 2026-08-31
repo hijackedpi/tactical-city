@@ -65,6 +65,12 @@ const LIVE_MS      = envMs('LIVE_MS', 115000);      // 1:55, same as CS
 const ROUND_END_MS = envMs('ROUND_END_MS', 5000);   // beat before the next buy
 const TICK_MS      = envMs('TICK_MS', 50);          // 20 Hz snapshot rate
 
+// Hit-claim throttle. HIT_BURST is how many rounds may land at once — a client
+// frame can legitimately deliver several — and HIT_REFILL_PER_MS caps the
+// sustained rate at 25/sec, comfortably above the 14/sec of the fastest weapon.
+const HIT_BURST         = envMs('HIT_BURST', 8);
+const HIT_REFILL_PER_MS = envMs('HIT_RATE', 25) / 1000;
+
 // CS-style economy. The loss bonus is what creates eco rounds: lose repeatedly
 // and you accumulate enough to force-buy, so a losing team is never dead money.
 const START_MONEY  = 800;
@@ -174,6 +180,7 @@ function makePlayer(id, name, team){
     x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0,
     moving: false,
     lastHitAt: 0,
+    hitTokens: HIT_BURST,
   };
 }
 
@@ -443,9 +450,25 @@ io.on('connection', socket => {
     if(shooter.id === victim.id) return;
     if(shooter.team === victim.team) return;          // no friendly fire
 
+    // A TOKEN BUCKET, not a minimum gap. The old rule refused any hit within
+    // 25 ms of the last one, and two rounds that land on the same client frame
+    // arrive with NO gap at all — a frame hitch delivers several at once, and
+    // a burst at close range does too. Every extra was silently discarded,
+    // which in game reads as "I shot them and nothing happened".
+    //
+    // Measured: two back-to-back hits used to apply 20 damage instead of 40,
+    // and a five-round burst applied 5 instead of 25.
+    //
+    // This still bounds abuse, and more tightly than before on sustained rate:
+    // 25 hits/sec against the old 40, with a small burst allowance on top. The
+    // fastest weapon in the game cycles at 70 ms (about 14 hits/sec).
     const now = Date.now();
-    if(now - shooter.lastHitAt < 25) return;          // crude rate limit
+    const since = now - (shooter.lastHitAt || now);
+    shooter.hitTokens = Math.min(HIT_BURST,
+      (shooter.hitTokens == null ? HIT_BURST : shooter.hitTokens) + since * HIT_REFILL_PER_MS);
     shooter.lastHitAt = now;
+    if(shooter.hitTokens < 1) return;
+    shooter.hitTokens -= 1;
 
     // 300, not 120. A headshot multiplier can legitimately exceed 100 — a
     // Deagle head hit is 60 x 4 = 240 — and the old ceiling silently ate that,

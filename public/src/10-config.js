@@ -76,8 +76,33 @@ const WEAPON_LEN = {
 
 // Per-weapon corrections, filled in with F6 in game (see the adjust mode).
 // flip:true turns a model that ended up pointing back at the camera.
+//
+// EVERY weapon needs it. fitWeaponModel lays the longest axis along Z but has
+// no way to tell which end is the muzzle, and all ten Meshy exports came out
+// with the muzzle at +Z — the opposite of what the rest of the code assumes
+// (butt at +len/2, muzzle at -len/2). Checked one by one by loading each GLB
+// through the real fitWeaponModel and rendering it with its ends marked; all
+// ten agreed, so this is the export convention rather than ten coincidences.
+//
+// Left uncorrected it meant:
+//   · the viewmodel was held backwards — muzzle nearest your face, stock out
+//   · bullets spawned from the stock end (aim still converged on the crosshair
+//     after the earlier fix, so shots landed, but they came out of the wrong end)
+//   · third-person hands gripped the barrel, because every "fraction along the
+//     weapon from the butt" was measuring from the muzzle
+//
+// If you ever re-export a model the right way round, just delete its line.
 const WEAPON_FIX = {
-  // example: ak47: { flip:true, rot:[0, 0, 0], pos:[0, 0, 0], scale:1 },
+  knife:   { flip:true },
+  glock18: { flip:true },
+  deagle:  { flip:true },
+  mac10:   { flip:true },
+  mp7:     { flip:true },
+  mp5:     { flip:true },
+  ump45:   { flip:true },
+  m4a1:    { flip:true },
+  ak47:    { flip:true },
+  awp:     { flip:true },
 };
 
 let selectedGunKey = 'glock18';

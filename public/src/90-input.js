@@ -310,6 +310,10 @@ function aimDistance(ox, oy, oz, dx, dy, dz, maxD){
   // on a wall 100 units behind them
   if(typeof hitZone === 'function'){
     for(let i = 0; i < enemies.length; i++){
+      // A dead player's body stays in `enemies` until the round resets. Left in
+      // here it hijacks the convergence point, bending live rounds toward a
+      // corpse that is not even drawn any more.
+      if(enemies[i].userData && enemies[i].userData.netDead) continue;
       const hz = hitZone(enemies[i], ox, oy, oz, ex, ey, ez);
       if(hz){ const d = hz.t * maxD; if(d > 0.5 && d < best) best = d; }
     }
@@ -325,6 +329,12 @@ const _aimPt     = new THREE.Vector3();
 const _spreadV   = new THREE.Vector3();
 function doShoot() {
   if(!document.pointerLockElement||playerInCar) return;
+  // V is an inspect view, not a firing position. Every shot below is aimed with
+  // camera.quaternion and spawned at camera.position, and in third person the
+  // camera stands in FRONT of the player looking back — so firing from it would
+  // send rounds backwards through your own body. Guarded here rather than at the
+  // mousedown handler so the auto-fire interval cannot slip through it either.
+  if(typeof thirdPerson !== 'undefined' && thirdPerson) return;
   // NET HOOK — no shooting while frozen in the buy phase, between rounds, or
   // once you are dead and spectating.
   if(typeof netCanShoot === 'function' && !netCanShoot()) return;
@@ -438,7 +448,13 @@ function doShoot() {
               .applyQuaternion(camera.quaternion);
       dir.add(_spreadV).normalize();
     }
-    bm.userData={vel:dir.multiplyScalar(gun.bulletSpeed), life:0, damage:gun.damage, headshotDamage:gun.headshotDamage||0};
+    // fx/fy/fz is the EYE, not the muzzle. The round is spawned about a metre
+    // down the barrel so it looks right, which leaves that metre in front of
+    // your face untested — a0-loop sweeps from here on the first step so a
+    // point-blank target cannot sit inside the blind spot.
+    bm.userData={vel:dir.multiplyScalar(gun.bulletSpeed), life:0,
+                 damage:gun.damage, headshotDamage:gun.headshotDamage||0,
+                 fx:camera.position.x, fy:camera.position.y, fz:camera.position.z};
     scene.add(bm); playerBullets.push(bm);
     // NET HOOK — cosmetic only. Everyone else gets a tracer and a gunshot from
     // our position; the damage travels separately, as a claimed hit.

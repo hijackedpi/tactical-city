@@ -93,13 +93,21 @@ const _enemyMixers = [];         // every active enemy's AnimationMixer
 const _OPS = {
   head:  new THREE.BoxGeometry(0.26, 0.28, 0.28),
   visor: new THREE.BoxGeometry(0.235, 0.09, 0.30),
+  neck:  new THREE.BoxGeometry(0.17, 0.14, 0.17),
   torso: new THREE.BoxGeometry(0.50, 0.52, 0.30),
   vest:  new THREE.BoxGeometry(0.54, 0.34, 0.34),
-  hips:  new THREE.BoxGeometry(0.44, 0.18, 0.28),
-  limb:  new THREE.BoxGeometry(0.16, 0.44, 0.17),   // arms
+  yoke:  new THREE.BoxGeometry(0.62, 0.15, 0.30),   // shoulder line
+  hips:  new THREE.BoxGeometry(0.46, 0.20, 0.28),
+  upper: new THREE.BoxGeometry(0.16, 0.44, 0.17),
+  fore:  new THREE.BoxGeometry(0.14, 0.28, 0.15),
+  hand:  new THREE.BoxGeometry(0.10, 0.12, 0.13),
   thigh: new THREE.BoxGeometry(0.17, 0.46, 0.18),
   shin:  new THREE.BoxGeometry(0.145, 0.44, 0.16),
   boot:  new THREE.BoxGeometry(0.18, 0.12, 0.26),
+  // ONE unit cylinder lying along X, scaled per joint. Every limb here swings
+  // about X, and a cylinder centred on the axis of rotation is invariant under
+  // it — so it can never uncover the joint. See `cap` in buildPrimitiveOperator.
+  joint: new THREE.CylinderGeometry(1, 1, 1, 12).rotateZ(Math.PI / 2),
 };
 const _opGear = new THREE.MeshStandardMaterial({ color:0x2b2d31, roughness:0.85, metalness:0.05 });
 const _opSkin = new THREE.MeshStandardMaterial({ color:0x8d6a4d, roughness:0.9,  metalness:0.0  });
@@ -129,6 +137,13 @@ const _opTeamMat = {
 const _OP_SCALE = 1.62;
 const _OP_BASE_H = 1.81;                      // authored height, before scaling
 
+// Arm metrics, published because posing this rig from outside needs them and
+// re-deriving them by hand is how they drift out of step with the geometry.
+// Shoulder sockets, then the two bone lengths: pivot -> elbow -> hand.
+const ARM_SHOULDER = [0.31, 1.50, 0.00];
+const ARM_UPPER_LEN = 0.44;
+const ARM_FORE_LEN  = 0.32;
+
 function buildPrimitiveOperator(team){
   const b = new THREE.Group();
   const teamMat = _opTeamMat[team] || _opTeamMat.t;
@@ -142,11 +157,22 @@ function buildPrimitiveOperator(team){
     return m;
   };
 
-  put(_OPS.hips,  _opGear,  0, 0.97, 0);   // 0.88 - 1.06
+  put(_OPS.hips,  _opGear,  0, 0.96, 0);   // 0.86 - 1.06
   put(_OPS.torso, teamMat,  0, 1.32, 0);   // 1.06 - 1.58
   put(_OPS.vest,  _opGear,  0, 1.26, 0);   // 1.09 - 1.43
+  // The yoke is what turns two sticks beside a box into shoulders. It reaches
+  // out to exactly the arm pivots, so the arms grow out of the body instead of
+  // sitting flush against its side — flush faces read as a seam, not a joint.
+  put(_OPS.yoke,  teamMat,  0, 1.50, 0);   // 1.425 - 1.575, x +/-0.31
+  put(_OPS.neck,  _opSkin,  0, 1.53, 0);   // bridges torso top and head bottom
   put(_OPS.head,  _opSkin,  0, 1.67, 0);   // 1.53 - 1.81
-  put(_OPS.visor, _opVisor, 0, 1.67, 0.02);
+  // Visor and boot toes point down -Z, because -Z is forward: a0-loop sets a
+  // remote's rotation.y from netYaw, and the camera's own look vector at that
+  // yaw is (-sin, 0, -cos) — local -Z. These used to face +Z, which matched the
+  // BOTS' convention (atan2(dx,dz) makes local +Z point at you) but was exactly
+  // backwards for people. With bots disabled, that meant every remote player in
+  // the game was rendered facing away from wherever they were actually looking.
+  put(_OPS.visor, _opVisor, 0, 1.67, -0.02);
 
   // Limbs hang from pivots at the joint, so rotating the pivot swings the limb
   // from the hip/shoulder rather than about its own centre.
@@ -156,28 +182,85 @@ function buildPrimitiveOperator(team){
     b.add(pivot);
     return pivot;
   };
+
+  // A cap on the two joints that actually rotate. Radius only has to clear the
+  // limb's half DEPTH, because a swing about X moves the top face within a
+  // circle of exactly that radius — so the cap covers the sweep at every angle
+  // and the seam cannot reopen however the walk cycle is retuned later.
+  //
+  // This is what used to tear open: the thigh overlapped the hips by 0.02, but
+  // a 0.42 rad swing drops its front corner 0.18/2 * sin(0.42) = 0.037. Every
+  // stride opened a 0.017 wedge at the hip. The shoulders never even touched —
+  // the arms were flush against the torso's side face, which is a seam, not a
+  // joint.
+  //
+  // The knee and elbow get no cap on purpose: thigh/shin and upper/forearm are
+  // both children of the SAME pivot and never rotate relative to one another,
+  // so their overlap is rigid. A cap there would only be a shape to z-fight
+  // with, which is exactly what a sphere did on the first attempt.
+  const cap = (parent, y, r, len, mat) => {
+    const m = new THREE.Mesh(_OPS.joint, mat);
+    m.position.y = y; m.scale.set(len, r, r);
+    m.castShadow = false; m.receiveShadow = false;
+    parent.add(m);
+    return m;
+  };
+
   // Hip joint at 0.90, so the chain reaches the floor exactly:
   //   thigh 0.44-0.90   shin 0.02-0.46   boot 0.00-0.12
   const legL = jointed(-0.13, 0.90), legR = jointed(0.13, 0.90);
   for(const leg of [legL, legR]){
+    // len 0.175, not 0.18: at 0.18 the cap's end face landed exactly on the
+    // hip block's side face and the two z-fought into a moire ring.
+    cap(leg, 0, 0.097, 0.175, teamMat);                 // hip   (thigh depth 0.18)
     const thigh = new THREE.Mesh(_OPS.thigh, teamMat);
     thigh.position.y = -0.23; thigh.castShadow = false; leg.add(thigh);
     const shin = new THREE.Mesh(_OPS.shin, _opGear);
     shin.position.y = -0.66; shin.castShadow = false; leg.add(shin);
     const boot = new THREE.Mesh(_OPS.boot, _opGear);
-    boot.position.set(0, -0.84, 0.03); boot.castShadow = false; leg.add(boot);
+    boot.position.set(0, -0.84, -0.03); boot.castShadow = false; leg.add(boot);
   }
-  const armL = jointed(-0.33, 1.50), armR = jointed(0.33, 1.50);
+
+  // Arms pulled in from 0.33 to 0.31 so the upper arm OVERLAPS the torso by
+  // 0.02 instead of being exactly coplanar with it.
+  // The elbow BENDS. A straight arm cannot hold a rifle: the hand is stuck on
+  // a 0.78 sphere around the shoulder, and a weapon at the ready needs it much
+  // closer to the chest than that. So the forearm hangs off its own pivot —
+  // which makes the elbow a rotating joint, and therefore one that needs a cap
+  // like the other two.
+  const armL = jointed(-0.31, 1.50), armR = jointed(0.31, 1.50);
+  const hands = [], fores = [];
   for(const arm of [armL, armR]){
-    const upper = new THREE.Mesh(_OPS.limb, teamMat);
+    cap(arm, 0, 0.092, 0.17, teamMat);                  // shoulder (arm depth 0.17)
+    const upper = new THREE.Mesh(_OPS.upper, teamMat);
     upper.position.y = -0.22; upper.castShadow = false; arm.add(upper);
-    const fore = new THREE.Mesh(_OPS.limb, _opSkin);
-    fore.position.y = -0.5; fore.scale.set(0.85, 0.6, 0.85); fore.castShadow = false; arm.add(fore);
+
+    const fore = new THREE.Group();                      // elbow pivot
+    fore.position.y = -0.44;
+    arm.add(fore);
+    cap(fore, 0, 0.080, 0.152, _opSkin);                // elbow (forearm depth 0.15)
+    const fm = new THREE.Mesh(_OPS.fore, _opSkin);
+    fm.position.y = -0.14; fm.castShadow = false; fore.add(fm);
+
+    // A real hand, not a stub: it gives the arm somewhere to end and gives the
+    // weapon somewhere to hang. Named so third-person kit can find it.
+    const hand = new THREE.Group();
+    hand.position.y = -0.32;
+    fore.add(hand);
+    const hm = new THREE.Mesh(_OPS.hand, _opSkin);
+    hm.castShadow = false; hand.add(hm);
+    hands.push(hand); fores.push(fore);
   }
   armL.rotation.x = -0.25; armR.rotation.x = -0.25;
 
   b.scale.setScalar(_OP_SCALE);
-  return { body:b, legL, legR, armL, armR, height: _OP_BASE_H * _OP_SCALE };
+  // ARM_* are published because anything posing this rig needs the two bone
+  // lengths and the shoulder sockets, and re-deriving them by hand is how they
+  // silently drift apart from the geometry above.
+  return { body:b, legL, legR, armL, armR,
+           foreL: fores[0], foreR: fores[1],
+           handL: hands[0], handR: hands[1],
+           height: _OP_BASE_H * _OP_SCALE };
 }
 
 // The health bar is identical for both body types, so it lives in one place.
@@ -239,6 +322,8 @@ function makeEnemy(team){
                  healthBar, barFill, barW, isModel:false,
                  mixer:null, walkAction:null,
                  legL:rig.legL, legR:rig.legR, armL:rig.armL, armR:rig.armR,
+                 rigBody:rig.body, foreL:rig.foreL, foreR:rig.foreR,
+                 handL:rig.handL, handR:rig.handR,
                  team: team || 't', height: rig.height, hitScale: _OP_SCALE };
   return g;
 }

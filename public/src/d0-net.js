@@ -641,8 +641,17 @@ function netApplySnapshot(d){
   }
   // Anyone absent from the snapshot is dead or gone — hide rather than destroy,
   // because they will be back next round.
+  //
+  // netDead is NOT the same thing as `visible`, and that distinction matters:
+  // a0-loop also drives `visible` for frustum culling, so an ALIVE player who
+  // walks off screen goes invisible too. Bullets must still be able to reach
+  // them, and must NOT be able to reach a corpse — so the two need separate
+  // flags. A body left in `enemies` with no way to tell it is dead is what let
+  // an invisible corpse swallow rounds meant for the living.
   for(const [id, r] of netRemote){
-    if(!seen.has(id) && r.obj.visible) r.obj.visible = false;
+    const alive = seen.has(id);
+    r.obj.userData.netDead = !alive;
+    if(!alive && r.obj.visible) r.obj.visible = false;
   }
 }
 

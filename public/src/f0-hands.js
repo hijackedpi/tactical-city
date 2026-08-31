@@ -171,13 +171,14 @@ function attachHands(holder, key){
   const rig = new THREE.Group();
   rig.name = 'viewHands';
 
-  // fitWeaponModel puts the LONG axis down Z but cannot know which end is the
-  // muzzle, so WEAPON_FIX.flip exists to spin a backwards model 180 degrees.
-  // That spin happens inside the holder, so without this the hands would stay
-  // put and end up gripping the barrel. Rotating the whole rig instead of
-  // negating coordinates keeps the poses (and the handedness) intact.
-  const fix = (typeof WEAPON_FIX !== 'undefined' && WEAPON_FIX[key]) || {};
-  if(fix.flip) rig.rotation.y = Math.PI;
+  // NOTE there is deliberately no WEAPON_FIX.flip handling here, and an earlier
+  // version of this file was wrong to have it. `flip` does not change the
+  // convention the grips are written against — it EXISTS to make a backwards
+  // model obey that convention, by spinning it 180 degrees so its muzzle ends
+  // up at -Z where everything already assumes it is. Once flipped, butt is at
+  // +len/2 and `at` measures from it exactly as documented. Rotating the hands
+  // as well would put them straight back on the barrel. (Latent until now:
+  // WEAPON_FIX was empty, so the branch had never run.)
 
   const sc = style.scale || 1;
   const main = buildHand(side < 0);
@@ -192,7 +193,7 @@ function attachHands(holder, key){
 
   holder.add(rig);
   holder.userData._hands = rig;
-  holder.userData._handsKey = key + ':' + side + ':' + (fix.flip ? 1 : 0);
+  holder.userData._handsKey = key + ':' + side;
   return rig;
 }
 
@@ -204,8 +205,7 @@ function attachHands(holder, key){
   if(typeof playerGun === 'undefined' || !playerGun) return;
   if(typeof selectedGunKey === 'undefined' || !selectedGunKey) return;
   const side = (typeof viewSide !== 'undefined' ? viewSide : 1);
-  const fix  = (typeof WEAPON_FIX !== 'undefined' && WEAPON_FIX[selectedGunKey]) || {};
-  const want = selectedGunKey + ':' + side + ':' + (fix.flip ? 1 : 0);
+  const want = selectedGunKey + ':' + side;
   if(playerGun.userData._handsKey !== want) attachHands(playerGun, selectedGunKey);
 })();
 
