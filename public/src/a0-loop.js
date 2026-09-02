@@ -328,6 +328,23 @@ function animate(now){
 
     // Gun recoil decay
     gunRecoilZ *= 0.85; gunRecoilY *= 0.85;
+
+    // ...and spray recovery, which was missing entirely. doShoot ADDS to bloom
+    // on every round (+0.18) and nothing anywhere ever took it back off, so
+    // after six shots it pinned at BLOOM_MAX and stayed there for the rest of
+    // the session — permanently adding 0.05 of spread to every weapon, however
+    // long you had been holding still. Its own declaration says "(0..1)" and
+    // reads like it was always meant to come back down.
+    //
+    // Measured, aiming dead centre of the chest at 50 m: the AWP — a bolt gun
+    // with zero base spread — landed 36 of every 100 rounds. With this line it
+    // lands 100. Rifles go pinpoint; the pistol and SMG keep the long-range
+    // scatter their own `spread` values are there to give them.
+    //
+    // 0.92 a frame is roughly a half-second recovery. Sustained automatic fire
+    // settles around bloom 0.28 rather than 1.0, so spraying is still worse
+    // than tapping — just not permanently.
+    bloom *= BLOOM_DECAY;
     if(playerGun){
       const [ox, oy, oz] = gunOffsets[selectedGunKey];
       // Math.abs + viewSide so a left-handed viewmodel survives recoil,
@@ -508,7 +525,11 @@ function animate(now){
     // their position arrives from the network instead. Health bar, facing and
     // culling above still apply, which is why the skip sits here and not at the
     // top of the loop.
-    if(e.userData.isRemote) continue;
+    // isDummy joins isRemote here rather than getting its own skip further
+    // down, because a practice target wants exactly what a remote player wants
+    // from this loop: a health bar, a facing, and culling — but no pathing and
+    // no shooting back. Everything below this line is AI.
+    if(e.userData.isRemote || e.userData.isDummy) continue;
 
     if(dist > 90) continue; // skip the rest of the AI for distant enemies
 

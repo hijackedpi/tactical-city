@@ -374,6 +374,9 @@ function doShoot() {
       // Melee ignores the zone multipliers on purpose — a knife is a knife
       // wherever it lands, and 90 x 4 for a head hit would be absurd.
       const dmg = gun.damage;
+      // A swing never touches hitZone or hitDamage, so the floating-damage
+      // wrappers in k0-damage have nothing to catch. This is that hook.
+      if(typeof onMeleeHit === 'function') onMeleeHit(best, dmg);
       if(best.userData.isRemote){
         netReportHit(best.userData.netId, dmg, 'melee');
         playHit();
@@ -430,8 +433,13 @@ function doShoot() {
     _muzzleOff.applyQuaternion(camera.quaternion);
     bm.position.copy(camera.position).add(_muzzleOff);
 
-    const spread = gun.spread + bloom * 0.05;
-    bloom = Math.min(BLOOM_MAX, bloom + (gun.pellets>1 ? 0.25 : 0.18));
+    // A noSpread weapon is exempt from BOTH halves of the spray model: it
+    // takes none of the accumulated inaccuracy, and it adds none for whatever
+    // you fire next. Exempting it from only the first half would still leave
+    // the AWP punishing your follow-up shot for a round that was, by
+    // definition, perfectly placed.
+    const spread = gun.noSpread ? 0 : gun.spread + bloom * 0.05;
+    if(!gun.noSpread) bloom = Math.min(BLOOM_MAX, bloom + (gun.pellets>1 ? 0.25 : 0.18));
     camShake = Math.min(0.5, camShake + gun.recoilZ * 0.9 + 0.12);
     gunKickPitch = Math.min(0.18, gunKickPitch + gun.recoilY + 0.04);
 

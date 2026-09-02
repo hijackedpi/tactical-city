@@ -28,9 +28,14 @@ const GUNS = {
   m4a1:    { name:'M4A1',          ammo:20, maxAmmo:20, spareMags:4, damage:18, pellets:1, spread:0.004, reloadTime:1700,
              bulletSpeed:7.50, recoilZ:0.07, recoilY:0.02, bulletSize:0.05, price:3100, order:8,
              rpm:'Auto', range:'Long',   category:'rifles' },
-  awp:     { name:'AWP',           ammo:5,  maxAmmo:5,  spareMags:2,  damage:80, pellets:1, spread:0, reloadTime:2400,
+  // noSpread: the round goes exactly where the crosshair is pointing, at any
+  // range, always. `spread: 0` alone was not enough — doShoot adds `bloom *
+  // 0.05` on top of it, so the AWP inherited the scatter of whatever you had
+  // been spraying a moment earlier and could miss a target it was dead on.
+  awp:     { name:'AWP',           ammo:5,  maxAmmo:5,  spareMags:2,  damage:90, pellets:1, spread:0, reloadTime:2400,
              bulletSpeed:12.60, recoilZ:0.55, recoilY:0.22, bulletSize:0.07, price:4750, order:9,
-             rpm:'Bolt', range:'Extreme', category:'snipers', fireInterval:1100, headshotDamage:100, scopeFov:12 },
+             rpm:'Bolt', range:'Extreme', category:'snipers', fireInterval:1100, headshotDamage:100, scopeFov:12,
+             noSpread:true },
 };
 
 // Muzzle velocity multiplier. Applied here, immediately after the table and
@@ -77,32 +82,19 @@ const WEAPON_LEN = {
 // Per-weapon corrections, filled in with F6 in game (see the adjust mode).
 // flip:true turns a model that ended up pointing back at the camera.
 //
-// EVERY weapon needs it. fitWeaponModel lays the longest axis along Z but has
-// no way to tell which end is the muzzle, and all ten Meshy exports came out
-// with the muzzle at +Z — the opposite of what the rest of the code assumes
-// (butt at +len/2, muzzle at -len/2). Checked one by one by loading each GLB
-// through the real fitWeaponModel and rendering it with its ends marked; all
-// ten agreed, so this is the export convention rather than ten coincidences.
+// DELIBERATELY EMPTY, and it must stay that way unless a single weapon is out
+// of step with the rest. All ten Meshy exports do come out of fitWeaponModel
+// with the muzzle at +Z, which is backwards — but that is ALREADY corrected,
+// once, for the whole batch by VIEWMODEL_YAW_DEG in 50-weapons.js, which puts
+// 180 degrees on each holder's `spin` group immediately after the fit.
 //
-// Left uncorrected it meant:
-//   · the viewmodel was held backwards — muzzle nearest your face, stock out
-//   · bullets spawned from the stock end (aim still converged on the crosshair
-//     after the earlier fix, so shots landed, but they came out of the wrong end)
-//   · third-person hands gripped the barrel, because every "fraction along the
-//     weapon from the butt" was measuring from the muzzle
-//
-// If you ever re-export a model the right way round, just delete its line.
+// Adding flip:true here as well cost a second 180 degrees. Two half turns is a
+// full turn: the muzzle came back round to face the player, in first person and
+// on every third-person body. If you ever need to correct the batch again,
+// change VIEWMODEL_YAW_DEG — this table is for the odd model that disagrees
+// with its batch, not for the batch.
 const WEAPON_FIX = {
-  knife:   { flip:true },
-  glock18: { flip:true },
-  deagle:  { flip:true },
-  mac10:   { flip:true },
-  mp7:     { flip:true },
-  mp5:     { flip:true },
-  ump45:   { flip:true },
-  m4a1:    { flip:true },
-  ak47:    { flip:true },
-  awp:     { flip:true },
+  // example: ak47: { flip:true, rot:[0, 0, 0], pos:[0, 0, 0], scale:1 },
 };
 
 let selectedGunKey = 'glock18';
@@ -141,26 +133,68 @@ let DEFAULT_FOV = 75;
 let currentFov = DEFAULT_FOV;
 let targetFov = DEFAULT_FOV;
 function buildScopeSVG(){
-  // CS-style scope: smaller true-circle lens, centered, thin crosshair.
   const svg = document.getElementById('scope-svg');
   if(!svg) return;
-  svg.setAttribute('preserveAspectRatio','xMidYMid slice');
-  svg.innerHTML = `
-    <defs>
-      <mask id="scopeHole">
-        <rect width="100" height="100" fill="white"/>
-        <circle cx="50" cy="50" r="30" fill="black"/>
-      </mask>
-    </defs>
-    <rect width="100" height="100" fill="#000" mask="url(#scopeHole)"/>
-    <circle cx="50" cy="50" r="30" fill="none" stroke="#000" stroke-width="1"/>
-    <circle cx="50" cy="50" r="29.6" fill="none" stroke="#1a1a1a" stroke-width="0.25"/>
-    <line x1="50" y1="20" x2="50" y2="48" stroke="#000" stroke-width="0.3"/>
-    <line x1="50" y1="52" x2="50" y2="80" stroke="#000" stroke-width="0.3"/>
-    <line x1="20" y1="50" x2="48" y2="50" stroke="#000" stroke-width="0.3"/>
-    <line x1="52" y1="50" x2="80" y2="50" stroke="#000" stroke-width="0.3"/>
-  `;
+
+  // WHY THE VIEWBOX IS IN PIXELS
+  // This used to be a fixed 100x100 viewBox stretched over the whole screen,
+  // which on a 1920-wide display scales every unit by 19.2. A 0.3 stroke came
+  // out nearly 6 px wide, landed on fractional pixel boundaries, and was
+  // anti-aliased into a grey smear — that is the "blurry" part. Matching the
+  // viewBox to the actual pixel size makes one user unit exactly one CSS
+  // pixel, so a stroke-width of 1 IS one pixel; centring the lines on a .5
+  // coordinate puts that pixel squarely inside one column or row instead of
+  // straddling two, which is what makes them come out properly crisp.
+  const W = Math.max(1, window.innerWidth | 0);
+  const H = Math.max(1, window.innerHeight | 0);
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  const cx = Math.round(W / 2) + 0.5;
+  const cy = Math.round(H / 2) + 0.5;
+  const R  = Math.round(Math.min(W, H) * 0.335);   // lens radius
+
+  // Mil-dot ticks up and down the vertical, and out along the horizontal, for
+  // holding over at range. Spaced off the lens radius so they sit the same
+  // way at any resolution.
+  const step = R / 5;
+  let ticks = '';
+  for(let i = 1; i <= 4; i++){
+    const d = Math.round(step * i) + 0.5;
+    const len = i % 2 ? 5 : 9;                     // every other one longer
+    ticks += '<line x1="' + (cx - len) + '" y1="' + (cy + d) + '" x2="' + (cx + len) + '" y2="' + (cy + d) + '"/>';
+    ticks += '<line x1="' + (cx - len) + '" y1="' + (cy - d) + '" x2="' + (cx + len) + '" y2="' + (cy - d) + '"/>';
+    ticks += '<line x1="' + (cx + d) + '" y1="' + (cy - len) + '" x2="' + (cx + d) + '" y2="' + (cy + len) + '"/>';
+    ticks += '<line x1="' + (cx - d) + '" y1="' + (cy - len) + '" x2="' + (cx - d) + '" y2="' + (cy + len) + '"/>';
+  }
+
+  // The crosshair is ONE unbroken vertical and ONE unbroken horizontal line
+  // that meet in the middle. The old reticle stopped both 2 units short of
+  // centre, leaving a hole exactly where the shot goes.
+  svg.innerHTML =
+    '<defs><mask id="scopeHole">' +
+      '<rect width="' + W + '" height="' + H + '" fill="#fff"/>' +
+      '<circle cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="#000"/>' +
+    '</mask></defs>' +
+    '<rect width="' + W + '" height="' + H + '" fill="#000" mask="url(#scopeHole)"/>' +
+    '<circle cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="none" stroke="#000" stroke-width="3"/>' +
+    '<circle cx="' + cx + '" cy="' + cy + '" r="' + (R - 2) + '" fill="none" stroke="#2a2a2a" stroke-width="1"/>' +
+    // shape-rendering="crispEdges" turns anti-aliasing off for this group. On
+    // axis-aligned lines that is exactly what you want and is the other half
+    // of the sharpness fix; it is deliberately NOT on the circles above, where
+    // it would turn a smooth ring into a staircase.
+    '<g stroke="#000" stroke-width="1" shape-rendering="crispEdges">' +
+      '<line x1="' + cx + '" y1="' + (cy - R) + '" x2="' + cx + '" y2="' + (cy + R) + '"/>' +
+      '<line x1="' + (cx - R) + '" y1="' + cy + '" x2="' + (cx + R) + '" y2="' + cy + '"/>' +
+      ticks +
+    '</g>';
 }
+
+// The reticle is built for one specific pixel size, so it has to be rebuilt
+// when that changes or it stops being pixel-aligned — which is the blur it
+// exists to avoid.
+window.addEventListener('resize', () => { if(isScoped) buildScopeSVG(); });
+
 function setScoped(on){
   if(isScoped === on) return;
   if(playerInCar) return;          // no scoping while driving
@@ -244,6 +278,10 @@ let bloom = 0;                    // accumulated spray inaccuracy (0..1)
 let swayTime = 0;                 // drives idle/walk weapon sway
 let gunKickPitch = 0;             // visual muzzle climb that recovers
 const BLOOM_MAX = 1;
+// How much of the accumulated spray inaccuracy survives each frame. Applied in
+// a0-loop next to the recoil decay. 0.92 recovers in about half a second; 1
+// would mean it never recovers, which is what the game did before this existed.
+const BLOOM_DECAY = 0.92;
 const keys={}, enemies=[], obstacles=[], enemyBullets=[], playerBullets=[];
 const _BULLET_FWD = new THREE.Vector3(0, 0, -1);  // bullet model's nose axis
 const _scratchPrev = new THREE.Vector3();          // reused each frame, never allocated
