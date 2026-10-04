@@ -56,6 +56,10 @@ const SETTINGS = [
   { key:'viewmodel', label:'VIEWMODEL',     opts:['HIDDEN','LEFT','RIGHT'],                i:2 },
   { key:'crosshair', label:'CROSSHAIR',     opts:['RED','GREEN','CYAN','WHITE','AMBER'],   i:0 },
   { key:'stats',     label:'STATS OVERLAY', opts:['OFF','ON'],                             i:0 },
+  // Trims the render scale when a frame misses its vsync slot. See l0-perf.js
+  // — the ceiling is always RENDER SCALE above, so this only ever takes away.
+  { key:'adaptive',  label:'ADAPTIVE RES',  opts:['OFF','ON'],                             i:1 },
+  { key:'fpstarget', label:'FPS TARGET',    opts:['30','60','120','144'],                  i:1 },
 ];
 const SET = {};
 for(const s of SETTINGS) SET[s.key] = s;
@@ -108,6 +112,10 @@ function applySetting(key){
       document.documentElement.style.setProperty('--xhair', XHAIR[v] || '#ff2b2b');
       break;
     case 'stats':     _statsDetail = (v === 'ON'); break;
+    // l0-perf reads the setting live and puts the scale back itself when it is
+    // switched off, so there is nothing to do here beyond existing.
+    case 'adaptive':  break;
+    case 'fpstarget': break;    // read live by l0-perf, same as 'adaptive'
     case 'quality': {
       const p = QUALITY_PRESETS[v];
       if(!p) break;                       // CUSTOM: leave the others alone
@@ -237,6 +245,7 @@ renderSettings();
           '  quality    ' + setVal('quality') + '  [F4]\n' +
           '  render     ' + Math.round(innerWidth*renderer.getPixelRatio()) + 'x'
                           + Math.round(innerHeight*renderer.getPixelRatio()) + '\n' +
+          (typeof _apStatus === 'string' ? _apStatus : '') +
           '  logic      ' + aLogic.toFixed(2) + 'ms\n' +
           '  draw submit' + aDraw.toFixed(2) + 'ms\n' +
           '  gpu / vsync' + gpuGap.toFixed(2) + 'ms\n' +

@@ -433,7 +433,7 @@ function animate(now){
       const hz = hitZone(e, sx, sy, sz,
                             b.position.x, b.position.y, b.position.z);
       if(hz){
-        const dmg = hitDamage(b.userData.damage, b.userData.headshotDamage, hz.zone, hz.mult);
+        const dmg = hitDamage(b.userData.damage, b.userData.headshotDamage, hz.zone, hz.mult, b.userData.zoneDamage);
         // NET HOOK 2 — the server owns health for networked players. Applying
         // damage locally as well would mean ten clients each running their own
         // private version of who is still alive.
@@ -580,7 +580,9 @@ function animate(now){
             tdz/tlen + (Math.random()-0.5)*err
           ).normalize().multiplyScalar(2.7);
           bm.userData = { vel, life: 0 };
+          bm.visible = false;               // tracer only, no bullet model
           scene.add(bm); enemyBullets.push(bm);
+          if(typeof spawnTracer === 'function') spawnTracer(bm.position, vel);   // bots' shots trace too
           playEnemyShot();
           // Arm aim animation
           if(e.userData.armPivot){

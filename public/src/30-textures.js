@@ -155,10 +155,10 @@ function addBox(w,h,d,x,y,z,mats,collide=true){
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   DE_ALCAZAR — one royal palace complex, built as a CS-style two-sided map.
+   TACTICAL CITY — one royal palace complex, built as a CS-style two-sided map.
 
    The walls ARE the buildings. Lane dividers are 6-thick two-storey palace
-   wings pierced by vaulted passages; spawns are gate courts; the sites are the
+   wings pierced by vaulted passages; spawns are gate courts; the two open courts are the
    Great Court and the Bazaar Court.
 
    FOUR ENTERABLE STRUCTURES, each a real route rather than decoration:

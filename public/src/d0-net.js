@@ -119,6 +119,7 @@ function netReportBuy(weapon, price){
   .net-g .gn{font-weight:600;letter-spacing:.04em;color:#e4dcc9;flex:1;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .net-g .gp{font-variant-numeric:tabular-nums;color:#c08a3e;font-weight:700;white-space:nowrap}
+  .net-g .gm{font-style:normal;margin-left:8px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#7fa36a}
   .net-g .gs{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#6e7482;white-space:nowrap}
   .net-g button{background:#c08a3e;color:#12161c;border:none;cursor:pointer;padding:6px 12px;
     font:700 10.5px/1 inherit;letter-spacing:.12em;text-transform:uppercase}
@@ -171,6 +172,49 @@ function netReportBuy(weapon, price){
   #net-board tr.dead td{opacity:.42}
   #net-board caption{caption-side:top;padding:12px 14px;font:700 17px/1 'Stratum2','Arial Narrow',sans-serif;
     letter-spacing:.14em;text-transform:uppercase;color:#e8e4dc;background:#0e1219;text-align:left}
+
+  /* ── end-of-match win screen ── */
+  #net-win{position:fixed;inset:0;z-index:205;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:18px;padding:24px 16px;overflow-y:auto;
+    background:radial-gradient(ellipse at 50% 0%,rgba(30,36,48,.9),rgba(6,8,11,.97) 70%);
+    font-family:'Stratum2','Arial Narrow','Segoe UI',sans-serif;color:#e8e4dc;animation:netWinIn .5s ease-out}
+  @keyframes netWinIn{from{opacity:0;transform:scale(1.02)}to{opacity:1;transform:none}}
+  #net-win .res{font:800 clamp(44px,8vw,86px)/1 'Stratum2','Arial Narrow',sans-serif;letter-spacing:.12em;
+    text-transform:uppercase;text-shadow:0 4px 30px rgba(0,0,0,.6)}
+  #net-win .res.win{color:#f0c46a} #net-win .res.lose{color:#c9cdd4}
+  #net-win .sub{font-size:15px;letter-spacing:.22em;text-transform:uppercase;color:#8a93a3;margin-top:-6px}
+  #net-win .score{display:flex;align-items:center;gap:22px;font:800 46px/1 'Stratum2','Arial Narrow',sans-serif}
+  #net-win .score .t{color:#c08a3e} #net-win .score .ct{color:#6f9fd4} #net-win .score .dash{color:#4a5262;font-size:30px}
+  #net-win .score small{display:block;font-size:11px;letter-spacing:.2em;color:#6e7482;text-align:center;margin-top:6px}
+  #net-win .mvp{display:flex;align-items:center;gap:12px;padding:10px 18px;border:1px solid rgba(240,196,106,.35);
+    background:linear-gradient(90deg,rgba(240,196,106,.12),rgba(240,196,106,.02));border-radius:3px}
+  #net-win .mvp .star{font-size:26px;color:#f0c46a}
+  #net-win .mvp .lbl{font-size:11px;letter-spacing:.22em;color:#c9a65c;text-transform:uppercase}
+  #net-win .mvp .nm{font-size:22px;font-weight:700;letter-spacing:.05em}
+  #net-win .mvp .ln{font-size:13px;color:#9aa3b0;letter-spacing:.06em}
+  #net-win .teams{display:flex;flex-direction:column;gap:14px;width:min(900px,100%)}
+  #net-win table{width:100%;border-collapse:collapse;background:rgba(16,20,27,.92);border:1px solid #2c3441}
+  #net-win caption{caption-side:top;text-align:left;padding:10px 14px;font:700 14px/1 'Stratum2','Arial Narrow',sans-serif;
+    letter-spacing:.18em;text-transform:uppercase;background:#0e1219;border:1px solid #2c3441;border-bottom:0}
+  #net-win caption.t{color:#c08a3e;box-shadow:inset 4px 0 0 #c08a3e}
+  #net-win caption.ct{color:#6f9fd4;box-shadow:inset 4px 0 0 #3f6d9e}
+  #net-win caption em{font-style:normal;color:#6e7482;margin-left:10px;font-size:11px}
+  #net-win th{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#6e7482;padding:8px 10px;
+    text-align:right;background:#0e1219;white-space:nowrap}
+  #net-win th:first-child,#net-win td:first-child{text-align:left}
+  #net-win td{padding:8px 10px;font-size:15px;text-align:right;border-top:1px solid #1c232c;color:#d6d2ca;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  #net-win td:first-child{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+  #net-win tr.me td{color:#fff;font-weight:700;background:rgba(255,255,255,.04)}
+  #net-win td.hi{color:#f0c46a}
+  #net-win .tag{display:inline-block;margin-left:8px;padding:2px 6px;font-size:10px;letter-spacing:.14em;
+    color:#14181f;background:#f0c46a;border-radius:2px;vertical-align:2px}
+  #net-win .btns{display:flex;gap:10px}
+  #net-win button{font:700 14px/1 'Stratum2','Arial Narrow',sans-serif;letter-spacing:.14em;text-transform:uppercase;
+    padding:13px 26px;border:1px solid #c08a3e;background:#c08a3e;color:#14181f;cursor:pointer;border-radius:2px}
+  #net-win button.ghost{background:transparent;color:#d6d2ca;border-color:#3a4352}
+  #net-win button:hover{filter:brightness(1.12)}
+  @media (max-width:640px){ #net-win .hide-sm{display:none} #net-win td,#net-win th{padding:7px 6px;font-size:13px} }
   `;
   const s = document.createElement('style');
   s.textContent = css;
@@ -189,7 +233,7 @@ const netUI = {};
 
   netUI.lobby = mk('div', 'net-lobby', `
     <div id="net-panel">
-      <h2>de_alcazar</h2>
+      <h2>Tactical City</h2>
       <p class="sub">Play with up to 10. First to 8 rounds, sides swap at 7.</p>
       <div class="net-row">
         <input class="net-in" id="net-name" maxlength="14" placeholder="Your name" autocomplete="off">
@@ -225,6 +269,7 @@ const netUI = {};
     <div id="net-panel">
       <h2>Lobby</h2>
       <p class="sub">Share this code. The match starts when the host says so.</p>
+      <p class="sub" style="margin-top:-8px">Map: <strong>${(typeof MAPS === 'object' && MAPS[MAP_ID]) ? MAPS[MAP_ID].name : ''}</strong></p>
       <div class="net-code" id="net-roomcode">----</div>
       <div class="net-list" id="net-roster"></div>
       <div class="net-row">
@@ -249,6 +294,8 @@ const netUI = {};
   netUI.banner.classList.add('net-hide');
   netUI.board  = mk('div', 'net-board', '<table><caption>Scoreboard</caption><tbody></tbody></table>');
   netUI.board.classList.add('net-hide');
+  netUI.win = mk('div', 'net-win');
+  netUI.win.classList.add('net-hide');
 
   netUI.resume = mk('div', 'net-resume', `
     <div class="box">
@@ -379,7 +426,7 @@ function netInit(){
 
   function create(isPublic){
     netErr('');
-    netSocket.emit('createRoom', { name: nameOf(), isPublic }, res => {
+    netSocket.emit('createRoom', { name: nameOf(), isPublic, map: MAP_ID }, res => {
       if(!res || !res.ok) return netErr((res && res.error) || 'Could not create a lobby.');
       netEnterRoom(res);
     });
@@ -411,9 +458,27 @@ function netInit(){
         netSocket.emit('listRooms', l => { netRooms = l || []; netRenderRooms(); });
         return;
       }
+      // The room is on another map: this page can only play the map it
+      // built at load, so reload onto that map and rejoin from there.
+      if(res.map && res.map !== MAP_ID && typeof MAPS === 'object' && MAPS[res.map]){
+        netSwitchMap(res.map, res.code || code);
+        return;
+      }
       netEnterRoom(res);
     });
   };
+
+  // Arrived here from a map switch with a room to join: join it now.
+  // socket.io buffers the emit until the connection is up.
+  try {
+    const u = new URL(location.href);
+    const pj = u.searchParams.get('join');
+    if(pj){
+      u.searchParams.delete('join');
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+      netJoinCode(String(pj).toUpperCase().slice(0, 4));
+    }
+  } catch(e){}
 
   netSocket.on('rooms', list => { netRooms = list || []; netRenderRooms(); });
   netBrowse(true);                       // the lobby is the first thing shown
@@ -482,15 +547,21 @@ function netRenderRooms(){
     const state = r.phase === 'LOBBY' ? 'Waiting'
                 : r.phase === 'MATCH_END' ? 'Finished'
                 : 'Round ' + (r.round + 1) + '  ' + r.score.t + '-' + r.score.ct;
+    const mapName = (r.map && typeof MAPS === 'object' && MAPS[r.map]) ? MAPS[r.map].name : '';
     return '<div class="net-g">' +
-      '<span class="gn">' + netEsc(r.name) + '</span>' +
+      '<span class="gn">' + netEsc(r.name) +
+        (mapName ? '<em class="gm">' + netEsc(mapName) + '</em>' : '') + '</span>' +
       '<span class="gs">' + state + '</span>' +
       '<span class="gp">' + r.players + '/' + r.max + '</span>' +
-      '<button data-code="' + r.code + '"' + (r.full ? ' disabled' : '') + '>' +
+      '<button data-code="' + r.code + '" data-map="' + netEsc(r.map || '') + '"' + (r.full ? ' disabled' : '') + '>' +
       (r.full ? 'Full' : 'Join') + '</button></div>';
   }).join('');
   host.querySelectorAll('button[data-code]').forEach(b => {
-    b.addEventListener('click', () => netJoinCode(b.dataset.code));
+    b.addEventListener('click', () => {
+      const m = b.dataset.map;
+      if(m && m !== MAP_ID && typeof MAPS === 'object' && MAPS[m]) netSwitchMap(m, b.dataset.code);
+      else netJoinCode(b.dataset.code);
+    });
   });
 }
 
@@ -503,6 +574,27 @@ function netBrowse(on){
     if(list){ netRooms = list; netRenderRooms(); }
   });
 }
+
+// Maps are built once at load, so changing map is a reload. The choice is
+// remembered; a pending room code rides along in the URL and is joined on
+// arrival.
+function netSwitchMap(map, joinCode){
+  try { localStorage.setItem('tc.map', map); } catch(e){}
+  // keep whatever name was typed, or the reload would drop it
+  try { const n = document.getElementById('net-name'); if(n && n.value.trim()) localStorage.setItem('alcazar.name', n.value.trim()); } catch(e){}
+  const u = new URL(location.href);
+  u.searchParams.set('map', map);      // works even where localStorage is blocked
+  if(joinCode) u.searchParams.set('join', joinCode); else u.searchParams.delete('join');
+  // cover the page while the reload happens, so the click visibly did something
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;' +
+    "background:#06090f;color:#dca24c;font:800 15px/1 'Saira Condensed','Arial Narrow',sans-serif;" +
+    'letter-spacing:.4em;text-transform:uppercase';
+  ov.textContent = 'Loading ' + ((typeof MAPS === 'object' && MAPS[map]) ? MAPS[map].name : 'map');
+  document.body.appendChild(ov);
+  location.href = u.pathname + u.search + u.hash;
+}
+window.netSwitchMap = netSwitchMap;
 
 function netEsc(s){
   return String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
@@ -540,9 +632,15 @@ function netApplyPhase(d){
               d.result.reason === 'time' ? 'Time expired' : 'Team eliminated', 4200);
   }
   if(d.phase === 'BUY'){
+    // a new round or a rematch: the lobby panel and scoreboard go away
+    netUI.room.classList.add('net-hide');
+    netUI.board.classList.add('net-hide');
+    if(netUI.win) netUI.win.classList.add('net-hide');
     netHideBanner();
     netBanner('Buy time', 'Press B to open the shop', 3000);
   }
+  // buy time is over: a shop left open must not keep selling
+  if(d.phase !== 'BUY' && netInMatch){ const sh = document.getElementById('shop'); if(sh && sh.style.display === 'flex' && typeof closeShop === 'function') closeShop(); }
   netUpdateFrozen();
   netUpdateResume();
 }
@@ -553,16 +651,20 @@ function netApplyYou(d){
   netMyAlive = d.alive;
   if(typeof d.money === 'number'){ money = d.money; updateMoneyUI(); }
   if(typeof d.hp === 'number'){
+    const prevHp = health;
     health = d.hp;
     updateHUD();
-    if(d.hp < 100 && d.hp > 0){
+    // only when hp actually dropped (this message also arrives on phase
+    // changes, joins and your own kills)
+    if(d.hp < prevHp && d.hp > 0){
       const f = document.getElementById('hit-flash');
       if(f){ f.style.background = 'rgba(255,0,0,0.4)';
              setTimeout(() => { f.style.background = 'rgba(255,0,0,0)'; }, 80); }
       playPlayerHurt();
     }
   }
-  if(wasAlive && !netMyAlive){
+  // the round ending also marks everyone not-alive; that is not a death
+  if(wasAlive && !netMyAlive && netPhase === 'LIVE'){
     playDeath();
     netBanner('Eliminated', 'Spectating until the round ends');
     // Deliberately KEEP pointer lock while dead. Releasing it used to pop the
@@ -580,11 +682,19 @@ function netUpdateFrozen(){
 // A new round: back to spawn, back to a pistol. Losing the rifle you bought is
 // the entire reason the economy has any weight.
 function netRoundReset(d){
+  // The reset carries everyone's team. Take ours from it before choosing a
+  // spawn, so the round after the halftime swap starts on the NEW side.
+  if(d && d.teams && netMyId && d.teams[netMyId]) netMyTeam = d.teams[netMyId];
   netMyAlive = true;
   health = 100;
   verticalVelocity = 0;
   netHideBanner();
 
+  // bullet holes from last round are wiped
+  if(typeof clearBulletHoles === 'function') clearBulletHoles();
+
+  // guns dropped last round are gone (they could be picked up free)
+  if(typeof droppedGuns !== 'undefined'){ for(const dg of droppedGuns) scene.remove(dg.mesh); droppedGuns.length = 0; }
   slots[1] = 'knife'; slots[2] = 'glock18'; slots[3] = null;
   for(const k in GUNS) owned[k] = (GUNS[k].price === 0);
   activeSlot = 2;
@@ -615,10 +725,75 @@ function netRoundReset(d){
 function netMatchEnd(d){
   netInMatch = true;
   netFrozen = true;
-  const won = d.winner === netMyTeam;
-  netBanner(won ? 'Victory' : 'Defeat', d.score.t + ' — ' + d.score.ct);
-  netUI.board.classList.remove('net-hide');
+  netHideBanner();
+  netUI.board.classList.add('net-hide');
+  netShowWinScreen(d);
   if(document.pointerLockElement) document.exitPointerLock();
+}
+
+// ── WIN SCREEN ──────────────────────────────────────────────────────────────
+// Everyone's match stats once a side reaches the winning score. Stats come
+// from the server (it is the record of every hit and kill):
+//   K / D / A        kills, deaths, assists (40+ damage to a player someone else killed)
+//   HS%              share of your kills that were headshots
+//   ADR              average damage per round
+//   ACC              share of your shots that hit
+//   MVP              rounds where you were the winning side's best player
+function netShowWinScreen(d){
+  const stats = (d.stats && d.stats.length) ? d.stats :
+    (d.roster || []).map(p => ({ ...p, assists: 0, hsKills: 0, damage: 0, shots: 0, hits: 0, mvps: 0, rounds: d.rounds || 1 }));
+  const rounds = Math.max(1, d.rounds || (d.score.t + d.score.ct));
+  const won = d.winner === netMyTeam;
+  const side = t => t === 't' ? 'Attack' : 'Defence';
+  const pct = (a, b) => b > 0 ? Math.round(a / b * 100) + '%' : '—';
+  const adr = p => Math.round((p.damage || 0) / Math.max(1, p.rounds || rounds));
+  const kd  = p => (p.kills / Math.max(1, p.deaths)).toFixed(2);
+  const rank = (a, b) => (b.kills - a.kills) || (adr(b) - adr(a)) || (a.deaths - b.deaths);
+  const mvp = [...stats].sort(rank)[0];
+
+  // best value in each column gets highlighted
+  const best = {};
+  const cols = { kills: p => p.kills, hs: p => p.kills ? p.hsKills / p.kills : -1, adr: p => adr(p),
+                 acc: p => p.shots ? p.hits / p.shots : -1, mvps: p => p.mvps, assists: p => p.assists };
+  for(const k in cols) best[k] = Math.max(...stats.map(cols[k]));
+  const hi = (k, p) => (cols[k](p) > 0 && cols[k](p) === best[k]) ? ' class="hi"' : '';
+
+  const table = team => {
+    const rows = stats.filter(p => p.team === team).sort(rank);
+    if(!rows.length) return '';
+    const wonSide = d.winner === team;
+    return '<table><caption class="' + team + '">' + side(team) + '<em>' + (wonSide ? 'Winner' : '') +
+      '</em></caption><tr><th>Player</th><th>K</th><th>D</th><th>A</th><th class="hide-sm">K/D</th>' +
+      '<th>HS%</th><th>ADR</th><th class="hide-sm">ACC</th><th>MVP</th></tr>' +
+      rows.map(p => '<tr class="' + (p.id === netMyId ? 'me' : '') + '"><td>' + netEsc(p.name) +
+        (p === mvp ? '<span class="tag">MVP</span>' : '') + '</td>' +
+        '<td' + hi('kills', p) + '>' + p.kills + '</td><td>' + p.deaths + '</td>' +
+        '<td' + hi('assists', p) + '>' + (p.assists || 0) + '</td>' +
+        '<td class="hide-sm">' + kd(p) + '</td>' +
+        '<td' + hi('hs', p) + '>' + pct(p.hsKills || 0, p.kills) + '</td>' +
+        '<td' + hi('adr', p) + '>' + adr(p) + '</td>' +
+        '<td class="hide-sm' + (hi('acc', p) ? ' hi' : '') + '">' + pct(p.hits || 0, p.shots || 0) + '</td>' +
+        '<td' + hi('mvps', p) + '>' + (p.mvps ? '★ ' + p.mvps : '0') + '</td></tr>').join('') +
+      '</table>';
+  };
+  const order = d.winner === 'ct' ? ['ct', 't'] : ['t', 'ct'];
+  const mapName = (typeof MAPS !== 'undefined' && MAPS[MAP_ID]) ? MAPS[MAP_ID].name : '';
+
+  netUI.win.innerHTML =
+    '<div class="res ' + (won ? 'win' : 'lose') + '">' + (won ? 'Victory' : 'Defeat') + '</div>' +
+    '<div class="sub">' + side(d.winner) + ' wins the match' + (mapName ? ' · ' + netEsc(mapName) : '') + ' · ' + rounds + ' rounds</div>' +
+    '<div class="score"><div class="t">' + d.score.t + '<small>Attack</small></div><div class="dash">—</div>' +
+      '<div class="ct">' + d.score.ct + '<small>Defence</small></div></div>' +
+    (mvp ? '<div class="mvp"><div class="star">★</div><div><div class="lbl">Match MVP</div><div class="nm">' + netEsc(mvp.name) +
+      '</div><div class="ln">' + mvp.kills + ' kills · ' + pct(mvp.hsKills || 0, mvp.kills) + ' HS · ' + adr(mvp) + ' ADR</div></div></div>' : '') +
+    '<div class="teams">' + order.map(table).join('') + '</div>' +
+    '<div class="btns"><button id="net-win-go">Continue</button></div>';
+  netUI.win.classList.remove('net-hide');
+  netUI.$('net-win-go').addEventListener('click', () => {
+    netUI.win.classList.add('net-hide');
+    // back to the lobby panel: the host can start a rematch, anyone can leave
+    netUI.room.classList.remove('net-hide'); netRenderRoom();
+  });
 }
 
 // ── SNAPSHOTS AND INTERPOLATION ─────────────────────────────────────────────
@@ -668,7 +843,8 @@ function netSpawnRemote(id){
   const r = { obj, buf: [], name: info ? info.name : '???', team, label: null, lastSeen: 0 };
   // Sit above the health bar, which itself sits above the body — so the whole
   // stack follows _OP_SCALE without three separate numbers to keep in step.
-  r.label = netNameTag(r.name, team, (obj.userData.height || 1.81) + 0.61);
+  // where the (now hidden) health bar used to be, just above the head
+  r.label = netNameTag(r.name, team, obj.userData.healthBar ? obj.userData.healthBar.position.y : (obj.userData.height || 1.81) + 0.34);
   obj.add(r.label);
   netRemote.set(id, r);
   return r;
@@ -707,7 +883,8 @@ function netNameTag(name, team, y){
   c.fillText(name, 128, 34);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  // depthTest on: walls and buildings hide the name, so it never shows through them
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false, transparent: true }));
   spr.scale.set(1.5, 0.375, 1);
   spr.position.y = y || 2.42;
   spr.renderOrder = 1000;
@@ -767,15 +944,11 @@ _netTracerGeo.rotateX(-Math.PI / 2);
 const _netTracerMat = new THREE.MeshBasicMaterial({ color: 0xffd08a, transparent: true, opacity: 0.85 });
 
 function netRemoteShot(d){
-  const m = new THREE.Mesh(_netTracerGeo, _netTracerMat);
-  m.position.set(d.x, d.y, d.z);
-  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1),
-    new THREE.Vector3(d.dx, d.dy, d.dz).normalize());
-  m.scale.z = 6;
-  m.frustumCulled = false;
-  scene.add(m);
-  netTracers.push({ mesh: m, life: 0, vel: new THREE.Vector3(d.dx, d.dy, d.dz).multiplyScalar(2.4) });
-  if(typeof playEnemyShot === 'function') playEnemyShot();
+  // the same muzzle-to-impact streak the shooter sees on their own screen
+  if(typeof spawnTracer === 'function' && isFinite(d.x) && isFinite(d.dx))
+    spawnTracer(new THREE.Vector3(d.x, d.y, d.z), new THREE.Vector3(d.dx, d.dy, d.dz),
+                d.weapon === 'awp' ? 360 : undefined);
+  if(typeof playEnemyShot === 'function') playEnemyShot(d.weapon);
 }
 
 function netStepTracers(){

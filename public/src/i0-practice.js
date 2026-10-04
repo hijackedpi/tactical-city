@@ -115,24 +115,261 @@ for(const s of RANGE_SET) _rsBy[s.key] = s;
 const rsVal = k => _rsBy[k].opts[_rsBy[k].i];
 const rsIdx = k => _rsBy[k].i;
 
+// ── TEXTURES ────────────────────────────────────────────────────────────────
+// Drawn here rather than pulled from 30-textures because none of what that
+// file makes is right for an indoor facility — it is all street, brick and
+// sandstone for the city. These are the surfaces a range actually has, and
+// keeping them local also keeps the promise at the top of this file: delete
+// i0-practice and nothing else notices.
+//
+// All of them are procedural canvases, so they cost no download and no memory
+// beyond one 512 bitmap each. Every one sets `__u`: how many WORLD METRES one
+// tile of it should cover. rngMat divides by that instead of guessing, which
+// is what stops a 120 m floor from showing its joint pattern once and a 2 m
+// crate from showing it forty times.
+function rngCanvas(size, draw, metres){
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  draw(cv.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  t.__u = metres || 4;
+  return t;
+}
+
+// Speckle helper — every one of these surfaces wants some, and doing it by
+// pixel is far cheaper than a few thousand fillRects.
+function rngGrain(c, size, amount){
+  const id = c.getImageData(0, 0, size, size);
+  const d = id.data;
+  for(let i = 0; i < d.length; i += 4){
+    const n = (Math.random() - 0.5) * amount;
+    d[i] += n; d[i+1] += n; d[i+2] += n;
+  }
+  c.putImageData(id, 0, 0);
+}
+
+const RNG_TEX = {
+  // Sealed concrete with saw-cut expansion joints, the way a real range floor
+  // is finished. 4 m per tile so the joints land on a believable grid.
+  floor: rngCanvas(512, (c, s) => {
+    c.fillStyle = '#6e7278'; c.fillRect(0, 0, s, s);
+    rngGrain(c, s, 26);
+    // pour variation
+    for(let i = 0; i < 14; i++){
+      c.fillStyle = 'rgba(255,255,255,' + (Math.random()*0.035).toFixed(3) + ')';
+      c.beginPath();
+      c.ellipse(Math.random()*s, Math.random()*s, Math.random()*90+30, Math.random()*70+25,
+                Math.random()*Math.PI, 0, Math.PI*2);
+      c.fill();
+    }
+    // saw-cut joints on the tile edges
+    c.strokeStyle = 'rgba(28,30,34,0.62)'; c.lineWidth = 3;
+    c.strokeRect(0, 0, s, s);
+    c.strokeStyle = 'rgba(28,30,34,0.34)'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(s/2, 0); c.lineTo(s/2, s);
+    c.moveTo(0, s/2); c.lineTo(s, s/2); c.stroke();
+    // scuffs
+    for(let i = 0; i < 26; i++){
+      c.strokeStyle = 'rgba(35,38,42,' + (Math.random()*0.09 + 0.02).toFixed(3) + ')';
+      c.lineWidth = Math.random()*1.6 + 0.3;
+      c.beginPath(); c.moveTo(Math.random()*s, Math.random()*s);
+      for(let j = 0; j < 3; j++) c.lineTo(Math.random()*s, Math.random()*s);
+      c.stroke();
+    }
+  }, 4),
+
+  // Painted cinder block. Courses are what make a wall read as a wall at a
+  // distance rather than as a grey plane.
+  wall: rngCanvas(512, (c, s) => {
+    c.fillStyle = '#3f444c'; c.fillRect(0, 0, s, s);
+    const bh = s / 8, bw = s / 4;
+    for(let r = 0; r < 8; r++){
+      const off = (r % 2) ? bw / 2 : 0;
+      for(let col = -1; col <= 4; col++){
+        const x = col * bw + off, y = r * bh;
+        const v = 68 + Math.random() * 16 | 0;
+        c.fillStyle = 'rgb(' + v + ',' + (v + 4) + ',' + (v + 10) + ')';
+        c.fillRect(x + 2, y + 2, bw - 4, bh - 4);
+        c.fillStyle = 'rgba(255,255,255,0.05)';
+        c.fillRect(x + 2, y + 2, bw - 4, 2);
+        c.fillStyle = 'rgba(0,0,0,0.20)';
+        c.fillRect(x + 2, y + bh - 4, bw - 4, 2);
+      }
+    }
+    rngGrain(c, s, 14);
+  }, 4),
+
+  // The backstop: shredded rubber, which is what actually stops rounds.
+  backstop: rngCanvas(512, (c, s) => {
+    c.fillStyle = '#211d1c'; c.fillRect(0, 0, s, s);
+    for(let i = 0; i < 1400; i++){
+      const v = 24 + Math.random() * 40 | 0;
+      c.fillStyle = 'rgba(' + v + ',' + (v - 3) + ',' + (v - 5) + ',0.85)';
+      c.save();
+      c.translate(Math.random()*s, Math.random()*s);
+      c.rotate(Math.random()*Math.PI);
+      c.fillRect(0, 0, Math.random()*14 + 4, Math.random()*4 + 1.5);
+      c.restore();
+    }
+    // the odd flake of yellow shred, as in the real thing
+    for(let i = 0; i < 40; i++){
+      c.fillStyle = 'rgba(150,130,60,0.28)';
+      c.save(); c.translate(Math.random()*s, Math.random()*s); c.rotate(Math.random()*Math.PI);
+      c.fillRect(0, 0, Math.random()*9 + 3, 2); c.restore();
+    }
+  }, 3),
+
+  // Steel chequer plate for anything you stand on.
+  plate: rngCanvas(512, (c, s) => {
+    c.fillStyle = '#4c525a'; c.fillRect(0, 0, s, s);
+    rngGrain(c, s, 18);
+    const step = s / 8;
+    for(let r = 0; r < 8; r++){
+      for(let col = 0; col < 8; col++){
+        const x = col*step + step/2, y = r*step + step/2;
+        const a = ((r + col) % 2) ? Math.PI/4 : -Math.PI/4;
+        c.save(); c.translate(x, y); c.rotate(a);
+        c.fillStyle = 'rgba(190,200,212,0.30)'; c.fillRect(-14, -3.5, 28, 7);
+        c.fillStyle = 'rgba(10,12,15,0.45)';   c.fillRect(-14, 3.5, 28, 3);
+        c.restore();
+      }
+    }
+  }, 2),
+
+  // Diagonal hazard stripes, for edges you should notice.
+  hazard: rngCanvas(256, (c, s) => {
+    c.fillStyle = '#e0a12a'; c.fillRect(0, 0, s, s);
+    c.fillStyle = '#1b1c1f';
+    c.save(); c.translate(0, 0); c.rotate(-Math.PI/4);
+    for(let i = -s; i < s*2; i += 48) c.fillRect(i, -s, 24, s*3);
+    c.restore();
+    rngGrain(c, s, 12);
+  }, 1.2),
+
+  // Perforated acoustic ceiling panel.
+  ceiling: rngCanvas(512, (c, s) => {
+    c.fillStyle = '#565c66'; c.fillRect(0, 0, s, s);
+    rngGrain(c, s, 12);
+    c.fillStyle = 'rgba(18,20,24,0.55)';
+    for(let y = 8; y < s; y += 16)
+      for(let x = 8; x < s; x += 16){
+        c.beginPath(); c.arc(x, y, 2.4, 0, Math.PI*2); c.fill();
+      }
+    c.strokeStyle = 'rgba(20,22,26,0.5)'; c.lineWidth = 4;
+    c.strokeRect(0, 0, s, s);
+  }, 4),
+
+  // Ribbed rubber matting for the firing line.
+  rubber: rngCanvas(256, (c, s) => {
+    c.fillStyle = '#26292e'; c.fillRect(0, 0, s, s);
+    rngGrain(c, s, 14);
+    for(let x = 0; x < s; x += 10){
+      c.fillStyle = 'rgba(255,255,255,0.045)'; c.fillRect(x, 0, 4, s);
+      c.fillStyle = 'rgba(0,0,0,0.30)';        c.fillRect(x + 4, 0, 3, s);
+    }
+  }, 1.5),
+
+  // Foam padding — the knife pit and the duel bay's soft edges.
+  padding: rngCanvas(256, (c, s) => {
+    c.fillStyle = '#2f3a45'; c.fillRect(0, 0, s, s);
+    rngGrain(c, s, 14);
+    const n = 4, k = s / n;
+    for(let r = 0; r < n; r++) for(let col = 0; col < n; col++){
+      const x = col*k, y = r*k;
+      c.fillStyle = 'rgba(255,255,255,0.05)'; c.fillRect(x+3, y+3, k-6, k-6);
+      c.strokeStyle = 'rgba(10,14,18,0.55)'; c.lineWidth = 3;
+      c.strokeRect(x+3, y+3, k-6, k-6);
+    }
+  }, 2),
+
+  // Painted floor for a bay: the same concrete under a strong colour wash, so
+  // the five bays read apart at a glance from the far end of the hall.
+  painted: rngCanvas(512, (c, s) => {
+    c.fillStyle = '#8a9099'; c.fillRect(0, 0, s, s);
+    rngGrain(c, s, 20);
+    for(let i = 0; i < 20; i++){
+      c.strokeStyle = 'rgba(40,44,50,' + (Math.random()*0.07 + 0.02).toFixed(3) + ')';
+      c.lineWidth = Math.random()*2 + 0.4;
+      c.beginPath(); c.moveTo(Math.random()*s, Math.random()*s);
+      c.lineTo(Math.random()*s, Math.random()*s); c.stroke();
+    }
+    c.strokeStyle = 'rgba(30,34,38,0.35)'; c.lineWidth = 3; c.strokeRect(0, 0, s, s);
+  }, 6),
+};
+
 // ── MATERIALS ───────────────────────────────────────────────────────────────
+// Cached by texture + repeat + tint, because a hall built from ~200 boxes that
+// each made their own material would be ~200 shader programs and 200 draw
+// calls that could not be batched.
+const _rngMatCache = new Map();
+function rngMat(tex, rx, ry, opt){
+  opt = opt || {};
+  const key = [tex.__u, rx, ry, opt.color || 0, opt.rough || 0.9, opt.metal || 0,
+               opt.emissive || 0].join('|') + '|' + (tex.__id || (tex.__id = Math.random()));
+  if(_rngMatCache.has(key)) return _rngMatCache.get(key);
+  const t = tex.clone();
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.needsUpdate = true;
+  const m = new THREE.MeshStandardMaterial({
+    map: t,
+    color: opt.color === undefined ? 0xffffff : opt.color,
+    roughness: opt.rough === undefined ? 0.9 : opt.rough,
+    metalness: opt.metal === undefined ? 0.0 : opt.metal,
+    emissive: opt.emissive === undefined ? 0x000000 : opt.emissive,
+    side: opt.side || THREE.FrontSide,
+  });
+  _rngMatCache.set(key, m);
+  return m;
+}
+
+// Six materials for a box, each face repeating by its own real size so the
+// tile stays square whichever way the box is stretched. This is the difference
+// between a wall that looks like blockwork and one that looks like blockwork
+// smeared sideways.
+function rngSides(tex, w, h, d, opt){
+  const u = tex.__u || 4;
+  const rx = Math.max(1, Math.round(w / u));
+  const ry = Math.max(1, Math.round(h / u));
+  const rz = Math.max(1, Math.round(d / u));
+  const side = rngMat(tex, rz, ry, opt);   // +x, -x
+  const cap  = rngMat(tex, rx, rz, opt);   // +y, -y
+  const face = rngMat(tex, rx, ry, opt);   // +z, -z
+  return [side, side, cap, cap, face, face];
+}
+
+// The palette the room is built from. Each entry is a function of the box's
+// size, because a material with the right repeat depends on how big the thing
+// wearing it is.
 const _rngMat = {
-  floor: new THREE.MeshStandardMaterial({ color:0x3b3f46, roughness:0.95, metalness:0.0 }),
-  wall:  new THREE.MeshStandardMaterial({ color:0x4a4f58, roughness:0.9,  metalness:0.02 }),
-  trim:  new THREE.MeshStandardMaterial({ color:0xe0a35a, roughness:0.6,  metalness:0.05 }),
-  lane:  new THREE.MeshStandardMaterial({ color:0x2a2d33, roughness:0.95, metalness:0.0 }),
-  stop:  new THREE.MeshStandardMaterial({ color:0x33251c, roughness:1.0,  metalness:0.0 }),
-  // The roof is a box seen from INSIDE, so its front faces point away from you
-  // and back-face culling makes it invisible — you look up into the skybox
-  // through a ceiling that is definitely there. DoubleSide is the whole fix.
-  // A ceiling's visible face points DOWN, so it catches the ground half of the
-  // hemisphere light and none of the sun — a plain dark colour there renders as
-  // a black void rather than as a roof. Lighter, with a little emissive, so it
-  // reads as a surface under any of the game's quality settings.
-  roof:  new THREE.MeshStandardMaterial({ color:0x555c68, roughness:0.95, metalness:0.0,
-                                          emissive:0x191c22, side:THREE.DoubleSide }),
-  // Unlit on purpose: these are the lights.
-  strip: new THREE.MeshBasicMaterial({ color:0xffe0b0 }),
+  floor:    (w,h,d) => rngSides(RNG_TEX.floor, w, h, d),
+  wall:     (w,h,d) => rngSides(RNG_TEX.wall, w, h, d),
+  stop:     (w,h,d) => rngSides(RNG_TEX.backstop, w, h, d),
+  plate:    (w,h,d) => rngSides(RNG_TEX.plate, w, h, d, { rough:0.55, metal:0.55 }),
+  // The three course levels are tinted rather than differently textured: the
+  // same chequer plate reads as one structure, and the colour tells you at a
+  // glance how far up you are.
+  plateB:   (w,h,d) => rngSides(RNG_TEX.plate, w, h, d, { rough:0.55, metal:0.55, color:0xc2a878 }),
+  plateC:   (w,h,d) => rngSides(RNG_TEX.plate, w, h, d, { rough:0.55, metal:0.55, color:0xc48c8c }),
+  finish:   (w,h,d) => rngSides(RNG_TEX.plate, w, h, d,
+                                { rough:0.5, metal:0.5, color:0x8fd6a0, emissive:0x14301c }),
+  hazard:   (w,h,d) => rngSides(RNG_TEX.hazard, w, h, d, { rough:0.75 }),
+  rubber:   (w,h,d) => rngSides(RNG_TEX.rubber, w, h, d, { rough:0.98 }),
+  padding:  (w,h,d) => rngSides(RNG_TEX.padding, w, h, d, { rough:0.95 }),
+  roof:     (w,h,d) => rngSides(RNG_TEX.ceiling, w, h, d,
+                                { emissive:0x22262d, side:THREE.DoubleSide }),
+  trim:     () => rngMat(RNG_TEX.hazard, 1, 1, { rough:0.7 }),
+  lane:     (w,h,d) => rngSides(RNG_TEX.floor, w, h, d, { color:0x2f3238 }),
+  strip:    () => new THREE.MeshBasicMaterial({ color:0xffe0b0 }),
+  // per-bay floor washes
+  bayRange: (w,h,d) => rngSides(RNG_TEX.painted, w, h, d, { color:0x9fb0c4 }),
+  bayDuel:  (w,h,d) => rngSides(RNG_TEX.painted, w, h, d, { color:0xb59a99 }),
+  bayMove:  (w,h,d) => rngSides(RNG_TEX.painted, w, h, d, { color:0xb8b09b }),
+  bayFlick: (w,h,d) => rngSides(RNG_TEX.painted, w, h, d, { color:0x9bb8a6 }),
+  bayKnife: (w,h,d) => rngSides(RNG_TEX.painted, w, h, d, { color:0xa89bb8 }),
 };
 
 // ── GEOMETRY ────────────────────────────────────────────────────────────────
@@ -142,7 +379,12 @@ const _rngMat = {
 // in the same x/z grid cells as the city and be tested by every shot fired
 // down there for the rest of the session.
 function rngBox(w, h, d, cx, cy, cz, mat, solid, stand){
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  // `mat` is normally one of the entries in _rngMat, which are FUNCTIONS of the
+  // box's size — they hand back six materials whose repeat counts are derived
+  // from how big this particular box is. A plain material still works, for the
+  // handful of places that want one specific thing.
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+                           typeof mat === 'function' ? mat(w, h, d) : mat);
   m.position.set(cx, cy, cz);
   m.castShadow = false; m.receiveShadow = true;
   m.matrixAutoUpdate = false; m.updateMatrix();
@@ -183,7 +425,7 @@ function rngLabel(text, x, z){
   m.matrixAutoUpdate = false; m.updateMatrix();
   m.visible = false;
   scene.add(m); _rngMeshes.push(m);
-  rngBox(0.09, 1.15, 0.09, x, RANGE_Y + 0.575, z, _rngMat.wall, false);
+  rngBox(0.09, 1.15, 0.09, x, RANGE_Y + 0.575, z, _rngMat.plate, false);
 }
 
 // ── THE BAYS ────────────────────────────────────────────────────────────────
@@ -194,7 +436,7 @@ function rngLabel(text, x, z){
 const RANGE_BAYS = [
   { key:'range',    name:'MARKSMAN RANGE',  spawn:[0, RANGE_LINE],  yaw:0 },
   { key:'duel',     name:'DUEL BAY',        spawn:[-27, 30],        yaw:0 },
-  { key:'movement', name:'MOVEMENT COURSE', spawn:[27, 34],         yaw:0 },
+  { key:'movement', name:'MOVEMENT COURSE', spawn:[27, 33],         yaw:0 },
   { key:'flick',    name:'FLICK GRID',      spawn:[-27, -6],        yaw:0 },
   { key:'knife',    name:'KNIFE PIT',       spawn:[27, -19],        yaw:0 },
 ];
@@ -241,23 +483,54 @@ const DUEL_SPAWNS = [ [-7, -12], [0, -13], [7, -11] ];   // where they come from
 const DUEL_HP = 100;
 
 // ── THE MOVEMENT COURSE ─────────────────────────────────────────────────────
-// Stepped platforms and a couple of narrow beams. Targets stand off the course
-// rather than on it, so you are always shooting while your feet are busy.
+// Three levels of platforms, climbing from the floor to just under the roof,
+// and if you fall off you start again from the bottom.
+//
+// EVERY HOP IS SIZED AGAINST THE REAL PHYSICS, NOT BY EYE
+// 10-config sets gravity 0.015 and jumpPower 0.25 per frame, and 90-input sets
+// playerSpeed 0.14. That fixes the shape of a jump exactly: the apex is
+// v^2/2g = 2.08 m, the whole hop lasts 2v/g = 33 frames, and at 0.14 a frame
+// that is 4.6 m of ground covered on a flat jump. Rising costs reach — the
+// higher the landing, the less of the arc is spent above it — so every gap
+// here is kept under about 3.6 m and every rise at or under 1.0 m.
+//
+// The 0.55 m STEP_UP in 40-map matters too, and in a way that is easy to get
+// wrong: playerCollides SKIPS any box whose top is within 0.55 of your feet,
+// so a half-metre step is not an obstacle at all, it is a walk. Every rise of
+// 0.5 here is therefore a stride and every rise of 1.0 is a jump, which is what
+// gives the course its rhythm.
+//
+// courseReach() in the tests recomputes all of that from the shipped constants
+// and fails if any hop stops being makeable — so retuning jumpPower can never
+// silently turn this into a course nobody can finish.
 const MOV_X = 27, MOV_Z = 18;
-const MOV_BLOCKS = [                   // [ w, h, d, dx, dz ]
-  [ 6, 0.6, 6,  -7,  8 ],
-  [ 6, 1.2, 6,   0,  6 ],
-  [ 6, 1.8, 6,   7,  4 ],
-  [ 6, 2.4, 6,   0, -2 ],
-  [ 6, 1.2, 6,  -7, -4 ],
-  [ 2.2, 3.0, 2.2,  8, -8 ],           // a tall step to climb
-  [ 12, 0.9, 1.6, -2, -10 ],           // a beam to cross
+
+// [ dx, dz, top, size, level ]. `top` is metres above the bay floor.
+// Level 3 tops out at 6.6: standing there puts the head at 8.4 and the roof
+// underside is at 9.0, so the course fills the hall without poking through it.
+const MOV_COURSE = [
+  { x:  0, z: 15, h:0.60, s:3.4, l:0, tag:'START'  },
+  // level 1 — a stride out to the left, then back in
+  { x: -4, z: 13, h:1.10, s:2.6, l:1 },
+  { x: -8, z: 11, h:1.60, s:2.6, l:1 },
+  { x: -6, z:  7, h:2.10, s:2.6, l:1 },
+  { x: -2, z:  6, h:2.60, s:2.6, l:1 },
+  // level 2 — the first real jump up, then a loop to the right
+  { x:  1, z:  9, h:3.60, s:2.2, l:2 },
+  { x:  5, z: 10, h:4.10, s:2.2, l:2 },
+  { x:  8, z:  7, h:4.60, s:2.2, l:2 },
+  { x:  6, z:  3, h:5.10, s:2.2, l:2 },
+  // level 3 — narrower, and back across the bay to the finish
+  { x:  2, z:  2, h:5.60, s:1.9, l:3 },
+  { x: -2, z:  4, h:6.10, s:1.9, l:3 },
+  { x: -6, z:  3, h:6.60, s:1.9, l:3 },
+  { x: -9, z:  6, h:6.60, s:3.0, l:3, tag:'FINISH' },
 ];
-// Along the far edge of the bay, past every block. Scattering them among the
-// platforms sounded better and was wrong twice over: two of them ended up
-// standing inside a block, and a strafing target walked through one. Beyond
-// the course is also the better drill — you cross the obstacles to get an
-// angle on them, rather than standing on one to shoot the next.
+const MOV_LEVELS = 3;
+
+// The targets stay: the point of the bay is still shooting while your feet are
+// busy. They sit well beyond the far end of the course so the platforms never
+// stand between you and them.
 const MOV_TARGETS = [ [ -9, -14 ], [ -4.5, -14 ], [ 0, -14 ], [ 4.5, -14 ], [ 9, -14 ] ];
 
 // ── THE FLICK GRID ──────────────────────────────────────────────────────────
@@ -303,12 +576,12 @@ function rangeBuild(){
   // way to get someone stuck for no benefit anyone will ever see.
   rngBox(W, 0.4, L, 0, RANGE_Y + RANGE_WALL_H + 0.2, cz, _rngMat.roof, false);
   // Light strips down the roof, purely so the ceiling is not a flat slab.
-  for(let z = RANGE_Z0 + 8; z < RANGE_Z1; z += 16){
-    rngBox(W - 6, 0.12, 0.7, 0, RANGE_Y + RANGE_WALL_H - 0.2, z, _rngMat.strip, false);
+  for(let z = RANGE_Z0 + 4; z < RANGE_Z1; z += 16){
+    rngBox(W - 6, 0.14, 0.8, 0, RANGE_Y + RANGE_WALL_H - 0.44, z, _rngMat.strip, false);
   }
 
   // ── the marksman spine ──
-  rngBox(RANGE_SPINE * 2, 0.04, 0.35, 0, RANGE_Y + 0.02, RANGE_LINE, _rngMat.trim, false);
+  rngBox(RANGE_SPINE * 2, 0.04, 0.35, 0, RANGE_Y + 0.02, RANGE_LINE, _rngMat.hazard, false);
   for(const lx of RANGE_LANE_X){
     rngBox(0.10, 0.04, RANGE_LINE - RANGE_Z0, lx, RANGE_Y + 0.02,
            (RANGE_LINE + RANGE_Z0) / 2, _rngMat.lane, false);
@@ -329,14 +602,32 @@ function rangeBuild(){
   // ── duel bay ──
   for(const [w, h, d, dx, dz] of DUEL_COVER){
     rngBox(w, h, d, DUEL_X + dx, RANGE_Y + h / 2, DUEL_Z + dz, _rngMat.wall, true, true);
+    // A padded cap on every piece of cover. Cosmetic, but it is what makes the
+    // bay read as a training structure rather than as a lump of the map.
+    rngBox(w + 0.12, 0.14, d + 0.12, DUEL_X + dx, RANGE_Y + h + 0.07, DUEL_Z + dz,
+           _rngMat.padding, false);
   }
   rngSign('DUEL BAY', DUEL_X, DUEL_Z + 8, RANGE_Y + 4.4);
 
   // ── movement course ──
-  for(const [w, h, d, dx, dz] of MOV_BLOCKS){
-    rngBox(w, h, d, MOV_X + dx, RANGE_Y + h / 2, MOV_Z + dz, _rngMat.lane, true, true);
+  // Each platform is a slab standing on a leg. The slab is what you land on;
+  // the leg is only there so the course does not look like it is floating, and
+  // it is deliberately thinner than the slab so it never catches a jump that
+  // the slab above it would have caught.
+  for(const p of MOV_COURSE){
+    const x = MOV_X + p.x, z = MOV_Z + p.z, top = RANGE_Y + p.h;
+    const mat = p.tag === 'START'  ? _rngMat.hazard
+              : p.tag === 'FINISH' ? _rngMat.finish
+              : p.l === 1 ? _rngMat.plate
+              : p.l === 2 ? _rngMat.plateB
+                          : _rngMat.plateC;
+    rngBox(p.s, 0.4, p.s, x, top - 0.2, z, mat, true, true);
+    // edge trim, so the lip of each platform reads against the floor below
+    rngBox(p.s + 0.14, 0.10, p.s + 0.14, x, top - 0.42, z, _rngMat.hazard, false);
+    if(p.h > 0.9)
+      rngBox(0.45, p.h - 0.4, 0.45, x, RANGE_Y + (p.h - 0.4) / 2, z, _rngMat.wall, false);
   }
-  rngSign('MOVEMENT COURSE', MOV_X, MOV_Z + 13, RANGE_Y + 4.4);
+  rngSign('MOVEMENT COURSE', MOV_X, MOV_Z + 18, RANGE_Y + 4.4);
 
   // ── flick grid ──
   // The cells painted on the floor, so you know the shape of the space the
@@ -350,17 +641,103 @@ function rangeBuild(){
     rngBox(0.10, 0.04, (fz1 - fz0) + 4, FLK_X + dx, RANGE_Y + 0.021,
            (fz0 + fz1) / 2, _rngMat.lane, false);
   }
-  rngBox(fw + 0.4, 0.05, 0.22, FLK_X, RANGE_Y + 0.022, fz1 + 2.2, _rngMat.trim, false);
+  rngBox(fw + 0.4, 0.05, 0.22, FLK_X, RANGE_Y + 0.022, fz1 + 2.2, _rngMat.hazard, false);
   rngSign('FLICK GRID', FLK_X, FLK_Z + 12, RANGE_Y + 4.4);
 
   // ── knife pit ──
   for(const [w, d, dx, dz] of [[11, 0.5, 0, -5.5], [11, 0.5, 0, 5.5],
                                [0.5, 11, -5.5, 0], [0.5, 11, 5.5, 0]]){
-    rngBox(w, 0.45, d, KNF_X + dx, RANGE_Y + 0.225, KNF_Z + dz, _rngMat.stop, false);
+    rngBox(w, 0.45, d, KNF_X + dx, RANGE_Y + 0.225, KNF_Z + dz, _rngMat.padding, false);
   }
   rngSign('KNIFE PIT', KNF_X, KNF_Z + 8.5, RANGE_Y + 4.4);
 
+  rangeDress(W, L, cz);
   _rngBuilt = true;
+}
+
+// ── DRESSING ────────────────────────────────────────────────────────────────
+// Everything here is cosmetic and NON-SOLID. A facility built from flat-shaded
+// boxes reads as a placeholder however good the layout is; what makes a room
+// look built is the trim — the pilasters that break up a 120 m wall, the
+// skirting at its foot, the beams overhead, the painted pad under each bay.
+// None of it is allowed to block a bullet or a stride, so the geometry the
+// tests check is exactly the geometry that was there before.
+function rangeDress(W, L, cz){
+  const wallX = RANGE_HALFW + RANGE_WALL_T / 2;
+
+  // Bay floor pads, so each area reads as its own room from across the hall.
+  const pads = [
+    [_rngMat.bayDuel,  DUEL_X, DUEL_Z - 2, 26, 26],
+    [_rngMat.bayMove,  MOV_X,  MOV_Z - 2,  26, 26],
+    [_rngMat.bayFlick, FLK_X,  FLK_Z - 2,  26, 30],
+    [_rngMat.bayKnife, KNF_X,  KNF_Z,      13, 13],
+  ];
+  for(const [mat, x, z, w, d] of pads){
+    rngBox(w, 0.03, d, x, RANGE_Y + 0.015, z, mat, false);
+  }
+  // and one down the marksman spine
+  rngBox(RANGE_SPINE * 2 - 0.6, 0.03, RANGE_LINE - RANGE_Z0,
+         0, RANGE_Y + 0.014, (RANGE_LINE + RANGE_Z0) / 2, _rngMat.bayRange, false);
+
+  // Skirting and a hazard band along both side walls. The band sits at eye
+  // height, which is the single cheapest way to give a long wall a sense of
+  // scale as you walk past it.
+  for(const sx of [-wallX, wallX]){
+    rngBox(0.14, 0.55, L, sx + (sx < 0 ? 0.5 : -0.5), RANGE_Y + 0.275, cz, _rngMat.hazard, false);
+    rngBox(0.10, 0.30, L, sx + (sx < 0 ? 0.5 : -0.5), RANGE_Y + 2.6,   cz, _rngMat.plate,  false);
+  }
+  // and across both ends
+  rngBox(W, 0.55, 0.14, 0, RANGE_Y + 0.275, RANGE_Z1 - 0.5, _rngMat.hazard, false);
+
+  // Pilasters. Every 15 m down both walls, with a capital, so the hall has a
+  // rhythm instead of two unbroken slabs.
+  for(let z = RANGE_Z0 + 7; z < RANGE_Z1 - 4; z += 15){
+    for(const sx of [-wallX, wallX]){
+      const px = sx + (sx < 0 ? 0.85 : -0.85);
+      rngBox(1.7, RANGE_WALL_H, 1.2, px, RANGE_Y + RANGE_WALL_H / 2, z, _rngMat.wall, false);
+      rngBox(2.1, 0.35, 1.5, px, RANGE_Y + RANGE_WALL_H - 0.5, z, _rngMat.plate, false);
+      rngBox(2.1, 0.30, 1.5, px, RANGE_Y + 0.15, z, _rngMat.hazard, false);
+    }
+  }
+
+  // Roof beams, and a housing around each light run so the lights read as
+  // fixtures rather than as glowing tape.
+  //
+  // These were every 8 m at first. Over a 120 m hall that is fifteen dark bands
+  // seen almost edge-on from standing height, and the ceiling turned into a
+  // stack of black stripes — more clutter than structure. Every 16 m, in the
+  // lighter wall material, with the light runs offset into the gaps between
+  // them, reads as a roof instead.
+  for(let z = RANGE_Z0 + 12; z < RANGE_Z1; z += 16){
+    rngBox(W, 0.5, 0.9, 0, RANGE_Y + RANGE_WALL_H - 0.55, z, _rngMat.wall, false);
+  }
+  for(let z = RANGE_Z0 + 4; z < RANGE_Z1; z += 16){
+    rngBox(W - 5.4, 0.26, 1.3, 0, RANGE_Y + RANGE_WALL_H - 0.30, z, _rngMat.plate, false);
+  }
+
+  // The firing line: rubber matting to stand on, hazard kerbs either side, and
+  // a bench behind it.
+  rngBox(RANGE_SPINE * 2, 0.06, 3.4, 0, RANGE_Y + 0.03, RANGE_LINE + 1.4, _rngMat.rubber, false);
+  rngBox(RANGE_SPINE * 2, 0.22, 0.30, 0, RANGE_Y + 0.11, RANGE_LINE + 3.2, _rngMat.hazard, false);
+  for(const bx of [-6, 6]){
+    rngBox(5.0, 0.12, 1.0, bx, RANGE_Y + 0.95, RANGE_LINE + 5.4, _rngMat.plate, false);
+    for(const lx of [-2.2, 2.2])
+      rngBox(0.14, 0.90, 0.9, bx + lx, RANGE_Y + 0.45, RANGE_LINE + 5.4, _rngMat.plate, false);
+  }
+
+  // Lane dividers: low partitions between the shooting positions, the way a
+  // real range separates them.
+  for(const lx of [-6, -2, 2, 6]){
+    rngBox(0.12, 1.5, 5.0, lx, RANGE_Y + 0.75, RANGE_LINE - 1.4, _rngMat.plate, false);
+    rngBox(0.20, 0.12, 5.0, lx, RANGE_Y + 1.53, RANGE_LINE - 1.4, _rngMat.hazard, false);
+  }
+
+  // A deeper apron in front of the backstop, and hazard bands up its face, so
+  // the far end reads as somewhere you do not walk.
+  rngBox(W, 0.04, 5.0, 0, RANGE_Y + 0.022, RANGE_Z0 + 3.2, _rngMat.hazard, false);
+  for(const y of [1.2, 3.8]){
+    rngBox(W, 0.26, 0.16, 0, RANGE_Y + y, RANGE_Z0 + 0.1, _rngMat.hazard, false);
+  }
 }
 
 // Put the room into — or take it out of — the world.
@@ -568,6 +945,85 @@ function practiceMoveTargets(now){
   }
 }
 
+// ── RUNNING THE COURSE ──────────────────────────────────────────────────────
+// Falling means starting again from the bottom. That is the whole shape of the
+// thing, so the only real questions are what counts as a fall and what counts
+// as starting — and both have an answer simpler than it looks.
+//
+// A FALL is being back on the bay floor while a run is live. There is no need
+// to watch for edges or trace the arc: the course is the only thing in the bay
+// above floor level, so touching the floor at all means you came off it.
+//
+// A RUN STARTS when you leave the start pad for any other platform, not when
+// you enter the bay. Otherwise the clock is already running while you are
+// still deciding which way to go, and a course you cannot line up on is not
+// measuring your movement, it is measuring your reaction to being teleported.
+const MC_FLOOR_EPS = 0.35;      // how close to the floor counts as down
+const MC_ON_EPS    = 0.45;      // how close to a platform top counts as on it
+
+let _mcRun   = false;
+let _mcT0    = 0;
+let _mcFalls = 0;
+let _mcBest  = 0;               // ms
+let _mcLast  = 0;               // ms, the run just finished
+let _mcLevel = 0;
+let _mcIdx   = -1;
+let _mcHigh  = 0;               // furthest platform reached this run
+
+// Which platform the player is standing on, or -1. Walked backwards so the
+// finish pad wins if two ever overlap.
+function mcPlatformAt(x, z, feet){
+  for(let i = MOV_COURSE.length - 1; i >= 0; i--){
+    const p = MOV_COURSE[i];
+    const px = MOV_X + p.x, pz = MOV_Z + p.z, hs = p.s / 2;
+    if(x >= px - hs && x <= px + hs && z >= pz - hs && z <= pz + hs &&
+       Math.abs(feet - (RANGE_Y + p.h)) < MC_ON_EPS) return i;
+  }
+  return -1;
+}
+
+function mcPlace(i){
+  const p = MOV_COURSE[i];
+  if(typeof _playerGroundPos !== 'undefined' && _playerGroundPos){
+    _playerGroundPos.set(MOV_X + p.x, RANGE_Y + p.h + FEET_OFFSET, MOV_Z + p.z);
+  }
+  verticalVelocity = 0; isGrounded = true;
+}
+
+function mcRestart(){
+  _mcRun = false; _mcLevel = 0; _mcIdx = 0; _mcHigh = 0;
+  mcPlace(0);
+  practiceHud();
+}
+
+function practiceCourse(now){
+  if(bayKey() !== 'movement') return;
+  if(typeof _playerGroundPos === 'undefined' || !_playerGroundPos) return;
+
+  const feet = _playerGroundPos.y - FEET_OFFSET;
+  const idx = mcPlatformAt(_playerGroundPos.x, _playerGroundPos.z, feet);
+
+  if(idx >= 0){
+    _mcIdx = idx;
+    _mcLevel = MOV_COURSE[idx].l;
+    if(idx > _mcHigh) _mcHigh = idx;
+    // Stepping off the start pad onto anything else starts the clock.
+    if(!_mcRun && idx > 0){ _mcRun = true; _mcT0 = now; }
+    // The finish pad ends it.
+    if(_mcRun && MOV_COURSE[idx].tag === 'FINISH'){
+      _mcLast = Math.round(now - _mcT0);
+      if(!_mcBest || _mcLast < _mcBest) _mcBest = _mcLast;
+      mcRestart();
+      return;
+    }
+  }
+
+  if(_mcRun && feet <= RANGE_Y + MC_FLOOR_EPS){
+    _mcFalls++;
+    mcRestart();
+  }
+}
+
 // ── THE WEAPON RACK ─────────────────────────────────────────────────────────
 // Every gun, in shop order, cycled with Q and E. Both keys were unbound, and
 // swapping has to work with the pointer locked — which rules out clicking a
@@ -629,6 +1085,7 @@ function prResetStats(){
   for(const k in _prGun) delete _prGun[k];
   _prPat.length = 0;
   _prFlicks.length = 0;
+  _mcFalls = 0; _mcBest = 0; _mcLast = 0;
   // Numbers still floating belong to the run you just cleared, so they go too.
   if(typeof dmgClear === 'function') dmgClear();
   practiceHud(); prPanelDraw(); prBoardDraw();
@@ -794,6 +1251,13 @@ function practiceHud(){
   if(key === 'duel'){
     extra = '<span>' + kills + ' down &middot; ' + _prDeaths +
             (_prDeaths === 1 ? ' death' : ' deaths') + '</span>';
+  } else if(key === 'movement'){
+    const t = _mcRun ? ((performance.now() - _mcT0) / 1000).toFixed(1) + 's'
+            : (_mcLast ? (_mcLast / 1000).toFixed(1) + 's' : '\u2014');
+    extra = '<span>LEVEL ' + Math.max(1, _mcLevel) + '/' + MOV_LEVELS + '</span>' +
+            '<span>' + t + (_mcRun ? '' : ' last') + '</span>' +
+            '<span>' + _mcFalls + (_mcFalls === 1 ? ' fall' : ' falls') +
+            (_mcBest ? ' &middot; best ' + (_mcBest/1000).toFixed(1) + 's' : '') + '</span>';
   } else if(key === 'flick'){
     const avg = prFlickAvg();
     extra = '<span>' + (_prFlicks.length ? 'flick ' + _prFlicks[_prFlicks.length-1] + ' ms' +
@@ -917,10 +1381,14 @@ function prPanelMove(d){
 // look at the knife pit.
 function practiceWarp(){
   const bay = RANGE_BAYS[rsIdx('bay')];
+  yaw = bay.yaw; pitch = 0;
+  // The movement bay's firing point is the start pad, not a spot on the floor
+  // — arriving underneath the course and having to find your way onto it is
+  // not part of the drill.
+  if(bay.key === 'movement'){ mcRestart(); return; }
   if(typeof _playerGroundPos !== 'undefined' && _playerGroundPos){
     _playerGroundPos.set(bay.spawn[0], RANGE_Y + FEET_OFFSET, bay.spawn[1]);
   }
-  yaw = bay.yaw; pitch = 0;
   verticalVelocity = 0; isGrounded = true;
 }
 
@@ -1033,8 +1501,11 @@ function practiceStop(){
   if(typeof dmgClear === 'function') dmgClear();
   // Do not leave anyone standing on a floor that no longer exists.
   if(typeof _playerGroundPos !== 'undefined' && _playerGroundPos){
-    const gy = (typeof groundHeightAt === 'function') ? groundHeightAt(-40, 40, Infinity) : 0;
-    _playerGroundPos.set(-40, gy + FEET_OFFSET, 40);
+    // back to the T spawn of whichever map is loaded
+    const _z = (typeof TEAM_SPAWNS !== 'undefined') ? TEAM_SPAWNS.t : { x0:-40, x1:-40, z0:40, z1:40 };
+    const _sx = (_z.x0 + _z.x1) / 2, _sz = (_z.z0 + _z.z1) / 2;
+    const gy = (typeof groundHeightAt === 'function') ? groundHeightAt(_sx, _sz, Infinity) : 0;
+    _playerGroundPos.set(_sx, gy + FEET_OFFSET, _sz);
     verticalVelocity = 0; isGrounded = true;
   }
 }
@@ -1083,6 +1554,7 @@ const RANGE_RESPAWN_MS = [500, 1000, 2000, 4000];
     if(!s.obj && now >= s.dueAt) practiceSpawn(s);
   }
   practiceMoveTargets(now);
+  practiceCourse(now);
 
   // Reloading is worth practising; running dry is not. Spares are topped back
   // up, so the reload itself still costs you the time it always did — unless

@@ -584,6 +584,9 @@ function fitBulletModel(root){
 }
 
 function loadBullet(){
+  // The bullet model is no longer drawn (tracers show each shot instead), so
+  // it is not downloaded at all.
+  return;
   _weaponLoader.load(BULLET_FILE,
     gltf => { bulletModel = fitBulletModel(gltf.scene); },
     undefined,

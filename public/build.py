@@ -62,6 +62,6 @@ print(f'   {"":20} {"":5}         {len(html)/1024:7.1f} KB output')
 opens = html.count('<script type="module">')
 if opens != 1:
     print(f'\n  WARNING: expected one module script, found {opens}')
-for needle in ['function animate(', 'animate(0);', 'DE_ALCAZAR']:
+for needle in ['function animate(', 'animate(0);', 'TACTICAL CITY']:
     if needle not in html:
         print(f'  WARNING: output is missing {needle!r}')

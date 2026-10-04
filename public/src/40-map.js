@@ -1,5 +1,5 @@
 // ── CONFIG ──────────────────────────────────────────────────────────────────
-// DE_ALCAZAR II — a tighter rebuild.
+// TACTICAL CITY — a tighter rebuild.
 //
 // The first version was 184 units across with three lanes and a lot of ways
 // between them: two passages plus a window through each divider, on top of the
@@ -7,7 +7,7 @@
 // from somewhere else, so nothing you commit to really costs anything.
 //
 // This one is 144 across (about 40% less ground) and each divider has exactly
-// ONE passage, at mid-length. To reach a site you either walk its lane or take
+// ONE passage, at mid-length. To reach a court you either walk its lane or take
 // mid and cross — two routes, and picking one genuinely gives the other up.
 // The windows stay, but only as sightlines: you can shoot through them, not
 // walk through them.
@@ -18,7 +18,14 @@
 // 90 x 90 playfield, wall at +/-45. Five blocks reach out to +/-44, so this
 // leaves them inside with a unit to spare; at 76 they were poking through the
 // curtain wall.
-const BW       = 47;      // half-size of the playfield
+// half-size of the playfield. Overgrowth is built 1.33x bigger (OG_SCALE in
+// 35-overgrowth.js), and a0-loop clamps the player to BW - 3.
+// The palace is authored at 90 across (curtain wall at +/-47) and built 1.33x
+// wider, 120 across, by the scale pass at the end of its section. Heights are
+// NOT scaled: buildings stay 12 tall and stairs keep their step height.
+const PAL_SCALE = 4 / 3;
+const BW_D     = 47;      // design half-size, used while building the palace
+const BW       = 47 * (MAP_ID === 'overgrowth' ? ((typeof OG_SCALE === 'number') ? OG_SCALE : 1) : PAL_SCALE);
 const EDGE     = 45;      // inner face of the curtain wall
 const BORDER_H = 20;
 const WING_T   = 4;       // dividers are thinner now, the map is smaller
@@ -689,6 +696,306 @@ function doorLeaf(axis, fixed, cx, w, rotOpen){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  MAP SELECTION
+//  Everything from here to TEAM SPAWNS that is specific to the palace is
+//  wrapped in `if(MAP_ID === 'alcazar')`. Other maps build themselves from
+//  their own part file (35-overgrowth.js) at the TOWN step, using the same
+//  primitives, and hand back their spawn zones.
+// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//  PALACE RAMPARTS AND THE CITY BEYOND
+//  Built AFTER the scale pass, directly in world units (the inner face of the
+//  wall is at +/-60), so nothing here is stretched.
+//   · the wall: ochre rammed-earth plaster over an ashlar plinth, a zellige
+//     tile band, a painted blind arcade, stone pilasters with brass lanterns,
+//     a cornice and stepped Moorish merlons; a square tower on each corner
+//   · beyond it: date palms whose crowns rise over the wall, a sprawl of
+//     whitewashed and ochre houses with domes and minarets, desert to the
+//     horizon
+// ═══════════════════════════════════════════════════════════════════════════
+const rampartTex = (()=>{                     // tapial: rammed earth, plastered
+  const S=512, [cv,c]=_cv(S);
+  c.fillStyle='#c9965e'; c.fillRect(0,0,S,S);
+  for(let y=0;y<S;y+=64){                     // formwork lifts
+    const v=Math.random()*16-8;
+    c.fillStyle=`rgb(${204+v|0},${155+v|0},${100+v|0})`; c.fillRect(0,y+3,S,58);
+    c.fillStyle='rgba(120,78,40,0.35)'; c.fillRect(0,y+61,S,3);
+    for(let x=24+(y/64%2)*60;x<S;x+=120){     // putlog holes
+      c.fillStyle='rgba(70,44,22,0.75)'; c.fillRect(x,y+50,9,8);
+    }
+  }
+  for(let i=0;i<260;i++){                     // patchy plaster
+    c.fillStyle=`rgba(${Math.random()<.5?'236,206,160':'150,104,62'},${Math.random()*0.10})`;
+    c.beginPath(); c.ellipse(Math.random()*S,Math.random()*S,Math.random()*40+8,Math.random()*20+6,0,0,7); c.fill();
+  }
+  _grain(c,S,16); _streaks(c,S,22,0.10);
+  const t=_tex(cv); t.__sx=8; t.__sy=8; return t;
+})();
+const arcadeTex = (()=>{                      // blind horseshoe arcade
+  const W=256,H=256, [cv,c]=_cv(W);
+  c.fillStyle='#cf9d64'; c.fillRect(0,0,W,H);
+  const cx=W/2, top=58, r=74;
+  c.fillStyle='#e7c793';                      // carved frame
+  c.beginPath(); c.moveTo(cx-r-14,H); c.lineTo(cx-r-14,top+r);
+  c.arc(cx,top+r,r+14,Math.PI*0.92,Math.PI*2.08); c.lineTo(cx+r+14,H); c.closePath(); c.fill();
+  const g=c.createLinearGradient(0,top,0,H); g.addColorStop(0,'#5c3a20'); g.addColorStop(1,'#8a5a32');
+  c.fillStyle=g;                              // the recess
+  c.beginPath(); c.moveTo(cx-r,H); c.lineTo(cx-r,top+r);
+  c.arc(cx,top+r,r,Math.PI*0.92,Math.PI*2.08); c.lineTo(cx+r,H); c.closePath(); c.fill();
+  c.fillStyle='rgba(28,92,104,0.85)';         // tile spandrels
+  for(const sx of [10, W-34]) for(let k=0;k<3;k++){ c.save(); c.translate(sx+12,22+k*20); c.rotate(Math.PI/4); c.fillRect(-6,-6,12,12); c.restore(); }
+  c.strokeStyle='rgba(90,58,30,0.5)'; c.lineWidth=3; c.strokeRect(1,1,W-2,H-2);
+  _grain(c,W,12);
+  return _tex(cv);
+})();
+
+function buildPalaceRamparts(){
+  const IN = EDGE * PAL_SCALE;              // 60: inner face of the wall
+  const TH = 5, OUT = IN + TH, H = BORDER_H;
+  const WARM = 0xf0c898;                    // warms the plaster under the bright desert sun
+  const plaster = new THREE.MeshStandardMaterial({ map:rampartTex, color:WARM, roughness:0.95 });
+  const stone   = new THREE.MeshStandardMaterial({ map:ashlarTex, color:0xdcc6a0, roughness:0.9 });
+  const tile    = new THREE.MeshStandardMaterial({ map:zelligeTex, roughness:0.45, metalness:0.05 });
+  const add = (geo, mat, x, y, z, ry=0, shadow=true) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry;
+    m.castShadow = shadow; m.receiveShadow = true; m.matrixAutoUpdate = false; m.updateMatrix(); scene.add(m); return m;
+  };
+  const solid = (x0, z0, x1, z1, y1) => obstacles.push(new THREE.Box3(new THREE.Vector3(x0, 0, z0), new THREE.Vector3(x1, y1, z1)));
+  const repeat = (tex, rx, ry) => { const t = tex.clone(); t.repeat.set(rx, ry); t.needsUpdate = true; return t; };
+
+  // Each side is built along +x in its own frame, then turned into place.
+  // side: [rotation, maps local (u, inward-depth) to world]
+  const SIDES = [
+    { ry: 0,            P: (u, d) => [u, IN - d] },      // z = +60 wall, inner face towards -z
+    { ry: Math.PI,      P: (u, d) => [-u, -IN + d] },    // z = -60
+    { ry: -Math.PI / 2, P: (u, d) => [IN - d, -u] },     // x = +60
+    { ry: Math.PI / 2,  P: (u, d) => [-IN + d, u] },     // x = -60
+  ];
+  const LEN = 2 * OUT;
+  for(const s of SIDES){
+    const at = (u, d, y, geo, mat, shadow) => { const [x, z] = s.P(u, d); return add(geo, mat, x, y, z, s.ry, shadow); };
+    // main body: plaster faces, stone top
+    const bodyMats = [plaster, plaster, stone, stone,
+      new THREE.MeshStandardMaterial({ map:repeat(rampartTex, LEN / 8, H / 8), color:WARM, roughness:0.95 }),
+      new THREE.MeshStandardMaterial({ map:repeat(rampartTex, LEN / 8, H / 8), color:WARM, roughness:0.95 })];
+    at(0, -TH / 2, H / 2, new THREE.BoxGeometry(LEN, H, TH), bodyMats);
+    // ashlar plinth and zellige band
+    at(0, 0.18, 1.2, new THREE.BoxGeometry(LEN, 2.4, 0.36),
+       new THREE.MeshStandardMaterial({ map:repeat(ashlarTex, LEN / 4, 0.6), color:0xdcc6a0, roughness:0.9 }));
+    at(0, 0.08, 2.75, new THREE.BoxGeometry(LEN, 0.7, 0.16),
+       new THREE.MeshStandardMaterial({ map:repeat(zelligeTex, LEN / 0.7, 1), roughness:0.45 }), false);
+    // (no arch niches on the wall: they read as windows)
+    // cornice
+    at(0, 0.3, H - 1.6, new THREE.BoxGeometry(LEN, 0.55, 0.6), stone);
+    at(0, 0.14, H - 2.2, new THREE.BoxGeometry(LEN, 0.25, 0.3), tile, false);
+    // pilasters with lanterns between them
+    for(let u = -IN + 7.5; u <= IN - 7.5; u += 15){
+      at(u, 0.35, H / 2, new THREE.BoxGeometry(1.8, H, 0.7), stone);
+      const [x0, z0] = s.P(u - 0.9, 0.7), [x1, z1] = s.P(u + 0.9, 0);
+      solid(Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1), H);
+    }
+    for(let u = -IN + 15; u <= IN - 15; u += 15) lantern(s, u);
+    // stepped merlons along the inner edge
+    for(let u = -OUT + 1.4; u <= OUT - 1.4; u += 2.8){
+      at(u, -0.6, H + 0.55, new THREE.BoxGeometry(1.5, 1.1, 1.0), plaster);
+      at(u, -0.6, H + 1.35, new THREE.BoxGeometry(0.9, 0.5, 0.8), plaster);
+      at(u, -0.6, H + 1.85, new THREE.ConeGeometry(0.42, 0.55, 4).rotateY(Math.PI / 4), plaster);
+    }
+    // collision for the wall body
+    const [ax, az] = s.P(-OUT, -TH), [bx, bz] = s.P(OUT, 0.36);
+    solid(Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz), H + 2);
+  }
+
+  function lantern(s, u){
+    const brass = new THREE.MeshStandardMaterial({ color:0x8a6a2e, metalness:0.8, roughness:0.35 });
+    const glow  = new THREE.MeshStandardMaterial({ color:0xffc98a, emissive:0xffa64a, emissiveIntensity:1.6 });
+    const [bx, bz] = s.P(u, 0.45), [lx, lz] = s.P(u, 0.95);
+    add(new THREE.BoxGeometry(0.12, 0.12, 0.9), brass, bx, 7.4, bz, s.ry, false);
+    add(new THREE.CylinderGeometry(0.28, 0.22, 0.6, 8), glow, lx, 6.9, lz, 0, false);
+    add(new THREE.ConeGeometry(0.34, 0.4, 8), brass, lx, 7.4, lz, 0, false);
+    add(new THREE.CylinderGeometry(0.22, 0.14, 0.18, 8), brass, lx, 6.52, lz, 0, false);
+  }
+
+  // corner towers, outside the play space (their inner corner meets the walls)
+  for(const [sx, sz] of [[1,1],[1,-1],[-1,1],[-1,-1]]){
+    const c = IN + 5, x = sx * c, z = sz * c, TW = 10, TH2 = 27;
+    add(new THREE.BoxGeometry(TW, TH2, TW), [plaster, plaster, stone, stone, plaster, plaster], x, TH2 / 2, z);
+    add(new THREE.BoxGeometry(TW + 0.6, 3, TW + 0.6), stone, x, 1.5, z);
+    add(new THREE.BoxGeometry(TW + 0.8, 0.6, TW + 0.8), stone, x, TH2 - 0.3, z);
+    for(let k = 0; k < 4; k++) for(let j = -2; j <= 2; j++){
+      const off = j * 2.2, e = TW / 2 - 0.5;
+      const px = k < 2 ? x + off : x + (k === 2 ? e : -e), pz = k < 2 ? z + (k === 0 ? e : -e) : z + off;
+      add(new THREE.BoxGeometry(1.2, 1.3, 1.2), plaster, px, TH2 + 0.65, pz);
+      add(new THREE.ConeGeometry(0.5, 0.6, 4), plaster, px, TH2 + 1.6, pz, Math.PI / 4);
+    }
+    solid(x - TW / 2, z - TW / 2, x + TW / 2, z + TW / 2, TH2);
+  }
+
+  // ── beyond the wall ────────────────────────────────────────────────────
+  const rnd = (() => { let s = 4242; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; })();
+  const R = (a, b) => a + rnd() * (b - a);
+  const outside = (x, z, m) => Math.max(Math.abs(x), Math.abs(z)) > OUT + m;
+  const dummy = new THREE.Object3D();
+  const inst = (geo, mat, list, shadow) => {
+    const im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach((f, i) => { f(dummy); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix); });
+    im.castShadow = !!shadow; im.receiveShadow = true;
+    im.userData.dynamic = true;               // keep out of the static merge
+    scene.add(im); return im;
+  };
+
+  // desert floor out to the horizon, just under the courtyard floor
+  {
+    const dt = sandApproachTex.clone(); dt.repeat.set(70, 70); dt.needsUpdate = true;
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(900, 900),
+      new THREE.MeshStandardMaterial({ map:dt, color:0xe2c79a, roughness:1 }));
+    g.rotation.x = -Math.PI / 2; g.position.y = -0.04; g.receiveShadow = true;
+    g.matrixAutoUpdate = false; g.updateMatrix(); scene.add(g);
+  }
+
+  // the city: houses, domes, minarets
+  const houses = [], domes = [], minarets = [], caps = [];
+  const HOUSE_COLS = [0xefe6d2, 0xe6d6b6, 0xd8b07a, 0xcf9a62, 0xc4825a, 0xe9dcc0];
+  const houseCols = [];
+  for(let i = 0; i < 520; i++){
+    const a = rnd() * Math.PI * 2, r = R(78, 210);
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if(!outside(x, z, 10)) continue;
+    const w = R(6, 14), d = R(6, 14), h = R(7, 16) + Math.max(0, 26 - r * 0.1) * rnd();
+    houses.push(o => { o.position.set(x, h / 2, z); o.rotation.set(0, Math.round(rnd() * 4) * Math.PI / 2 + R(-.05, .05), 0); o.scale.set(w, h, d); });
+    houseCols.push(HOUSE_COLS[(rnd() * HOUSE_COLS.length) | 0]);
+    if(rnd() < 0.14){ const dr = Math.min(w, d) * 0.38; domes.push(o => { o.position.set(x, h, z); o.rotation.set(0, 0, 0); o.scale.set(dr, dr, dr); }); }
+  }
+  for(let i = 0; i < 9; i++){
+    const a = i / 9 * Math.PI * 2 + R(-.2, .2), r = R(95, 170), x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const h = R(38, 52);
+    minarets.push(o => { o.position.set(x, h / 2, z); o.rotation.set(0, R(0, 1), 0); o.scale.set(3.4, h, 3.4); });
+    caps.push(o => { o.position.set(x, h + 2.2, z); o.rotation.set(0, 0, 0); o.scale.set(2.2, 4.4, 2.2); });
+  }
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  const hm = inst(box, new THREE.MeshStandardMaterial({ map:palaceStuccoTex, roughness:0.95 }), houses, false);
+  houseCols.forEach((c, i) => hm.setColorAt(i, new THREE.Color(c)));
+  if(hm.instanceColor) hm.instanceColor.needsUpdate = true;
+  const sph = new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  inst(sph, new THREE.MeshStandardMaterial({ color:0xeadfc8, roughness:0.7 }), domes, false);
+  inst(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ map:ashlarTex, color:0xf0dcb8, roughness:0.9 }), minarets, false);
+  inst(new THREE.ConeGeometry(1, 1, 8), new THREE.MeshStandardMaterial({ color:0x2f7f74, roughness:0.5, metalness:0.2 }), caps, false);
+  // one great domed mosque on the skyline behind CT
+  {
+    const mx = 120, mz = -120;
+    add(new THREE.BoxGeometry(34, 18, 34), new THREE.MeshStandardMaterial({ map:palaceStuccoTex, color:0xefe2c6 }), mx, 9, mz, Math.PI / 4, false);
+    add(new THREE.SphereGeometry(13, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color:0x2f8a7c, roughness:0.4, metalness:0.25 }), mx, 18, mz, 0, false);
+    add(new THREE.CylinderGeometry(0.4, 0.4, 6, 6), new THREE.MeshStandardMaterial({ color:0xd8b04a, metalness:0.8, roughness:0.3 }), mx, 34, mz, 0, false);
+  }
+
+  // ── DATE PALMS ringing the wall, crowns rising over it ─────────────────
+  // Curved, scarred trunks; crowns of arching feathered fronds (an alpha
+  // texture of leaflets on a bent, folded strip) with a few dead fronds
+  // hanging below and clusters of dates. All instanced.
+  const palmTrunkTex = (() => {
+    const W = 128, Hh = 256, cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#6e5639'; c.fillRect(0, 0, W, Hh);
+    for(let y = 0; y < Hh; y += 16){                  // leaf-base scars, offset rows
+      const off = (y / 16 % 2) * 16;
+      for(let x = -32 + off; x < W + 32; x += 32){
+        c.fillStyle = `rgb(${120 + Math.random() * 30 | 0},${96 + Math.random() * 24 | 0},${66 + Math.random() * 18 | 0})`;
+        c.beginPath(); c.moveTo(x, y + 2); c.lineTo(x + 15, y + 9); c.lineTo(x + 30, y + 2); c.lineTo(x + 15, y + 15); c.closePath(); c.fill();
+        c.strokeStyle = 'rgba(40,28,16,0.55)'; c.lineWidth = 2; c.stroke();
+      }
+    }
+    for(let i = 0; i < 400; i++){ c.fillStyle = `rgba(30,20,10,${Math.random() * 0.15})`; c.fillRect(Math.random() * W, Math.random() * Hh, 2, 6); }
+    const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 9); t.anisotropy = 4; return t;
+  })();
+  const frondTex = dry => {
+    const W = 512, Hh = 128, cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
+    const c = cv.getContext('2d'); c.clearRect(0, 0, W, Hh);
+    const mid = Hh / 2;
+    for(let x = 14; x < W - 6; x += 7){               // leaflets, angled toward the tip
+      const t = x / W, len = (Hh * 0.47) * Math.sin(Math.PI * Math.min(1, t * 1.08)) * (0.85 + Math.random() * 0.25);
+      for(const s of [-1, 1]){
+        const g = dry ? [150 + Math.random() * 40, 112 + Math.random() * 30, 58 + Math.random() * 20]
+                      : [62 + Math.random() * 40, 104 + Math.random() * 38, 40 + Math.random() * 24];
+        c.strokeStyle = `rgb(${g[0] | 0},${g[1] | 0},${g[2] | 0})`; c.lineWidth = 3.2;
+        c.beginPath(); c.moveTo(x, mid); c.quadraticCurveTo(x + len * 0.25, mid + s * len * 0.6, x + len * 0.55, mid + s * len); c.stroke();
+      }
+    }
+    c.strokeStyle = dry ? '#8a6a3c' : '#6f7a3a'; c.lineWidth = 5;   // midrib
+    c.beginPath(); c.moveTo(0, mid); c.lineTo(W - 4, mid); c.stroke();
+    const t = new THREE.CanvasTexture(cv); t.anisotropy = 4; return t;
+  };
+  // frond strip: length along +x (0..1), arched down, folded into a shallow V
+  const frondGeo = (() => {
+    const g = new THREE.PlaneGeometry(1, 0.34, 16, 2); g.translate(0.5, 0, 0); g.rotateX(-Math.PI / 2);
+    const p = g.attributes.position;
+    for(let i = 0; i < p.count; i++){
+      const x = p.getX(i), z = p.getZ(i);
+      p.setY(i, -0.62 * x * x + Math.abs(z) * 0.35);
+    }
+    g.computeVertexNormals(); return g;
+  })();
+  const trunkGeo = (() => {
+    const g = new THREE.CylinderGeometry(0.36, 0.55, 1, 10, 8); g.translate(0, 0.5, 0);
+    const p = g.attributes.position;
+    for(let i = 0; i < p.count; i++){
+      const y = p.getY(i);
+      p.setX(i, p.getX(i) * (y < 0.06 ? 1.35 : 1) + 1.6 * y * y);   // flared foot, gentle curve
+    }
+    g.computeVertexNormals(); return g;
+  })();
+  const trunks = [], greens = [], drys = [], dates = [], boots = [];
+  for(let i = 0; i < 95; i++){
+    const a = rnd() * Math.PI * 2, r = R(68, 100);
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if(!outside(x, z, 2.5)) continue;
+    const h = R(20, 31), th = R(0, Math.PI * 2), thick = R(0.9, 1.15);
+    trunks.push(o => { o.position.set(x, 0, z); o.rotation.set(0, th, 0); o.scale.set(thick, h, thick); });
+    const tx = x + 1.6 * thick * Math.cos(th), tz = z - 1.6 * thick * Math.sin(th), ty = h;   // crown position
+    boots.push(o => { o.position.set(tx, ty - 0.3, tz); o.rotation.set(0, 0, 0); o.scale.set(1, 1, 1); });
+    const n = 15 + (rnd() * 5 | 0), rot0 = R(0, 6.28);
+    for(let k = 0; k < n; k++){
+      const az = rot0 + k * 2.399 + R(-0.15, 0.15);       // golden-angle spread
+      const pitch = R(-0.35, 0.75) * (1 - (k / n) * 0.6);  // inner fronds stand up, outer arch over
+      const L = R(5.2, 7.2);
+      greens.push(o => { o.position.set(tx, ty + R(-0.2, 0.3), tz); o.rotation.set(R(-0.25, 0.25), az, pitch, 'YZX'); o.scale.set(L, L, L * R(0.9, 1.2)); });
+    }
+    for(let k = 0; k < 3 + (rnd() * 3 | 0); k++){        // dead fronds hanging
+      const az = R(0, 6.28), L = R(4.5, 6);
+      drys.push(o => { o.position.set(tx, ty - 0.6, tz); o.rotation.set(R(-0.3, 0.3), az, R(-1.35, -0.95), 'YZX'); o.scale.set(L, L, L); });
+    }
+    for(let k = 0; k < (rnd() * 4 | 0); k++){              // date clusters
+      const az = R(0, 6.28);
+      dates.push(o => { o.position.set(tx + Math.cos(az) * 0.9, ty - 1.4, tz + Math.sin(az) * 0.9); o.rotation.set(0, az, R(-0.3, 0.3)); o.scale.set(0.7, 1.3, 0.7); });
+    }
+  }
+  inst(trunkGeo, new THREE.MeshStandardMaterial({ map:palmTrunkTex, color:0xd8c4a4, roughness:1 }), trunks, true);
+  inst(new THREE.ConeGeometry(0.8, 1.4, 9).rotateX(Math.PI), new THREE.MeshStandardMaterial({ map:palmTrunkTex, color:0x9a8160, roughness:1 }), boots, false);
+  const frondMat = dry => {
+    const map = frondTex(dry);
+    const m = new THREE.MeshStandardMaterial({ map, alphaTest:0.45, side:THREE.DoubleSide, roughness:0.8 });
+    return m;
+  };
+  const shadowDepth = map => new THREE.MeshDepthMaterial({ map, alphaTest:0.45, depthPacking:THREE.RGBADepthPacking, side:THREE.DoubleSide });
+  const gm = frondMat(false), dm = frondMat(true);
+  const gi = inst(frondGeo, gm, greens, true); gi.customDepthMaterial = shadowDepth(gm.map);
+  const di = inst(frondGeo, dm, drys, true);   di.customDepthMaterial = shadowDepth(dm.map);
+  inst(new THREE.SphereGeometry(0.75, 9, 7), new THREE.MeshStandardMaterial({ color:0xb4652a, roughness:0.6 }), dates, false);
+
+  // (sky: the palace keeps its original plain sky colour and fog)
+  console.log('palace: ramparts and city —', houses.length, 'houses,', trunks.length, 'palms');
+}
+
+let _mapSpawns = null;
+// declared here, before any map builds, because maps push into them
+const interiorLights = [];
+const _windowDecals  = [];
+const trafficLights  = [];
+const Y_GROUND = 0.02;
+const Y_ROOM   = 0.06;
+const _pal0 = { sc: scene.children.length, ob: obstacles.length, pl: platforms.length };
+if(MAP_ID === 'alcazar'){
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  4.  ATMOSPHERE
 // ═══════════════════════════════════════════════════════════════════════════
 scene.background = new THREE.Color(0xd3ddea);
@@ -705,8 +1012,6 @@ sun.shadow.needsUpdate = true;
 //  Patches are edge to edge, never stacked: two coplanar floors make the depth
 //  buffer flicker between them.
 // ═══════════════════════════════════════════════════════════════════════════
-const Y_GROUND = 0.02;
-const Y_ROOM   = 0.06;
 
 {
   const base = new THREE.Mesh(new THREE.PlaneGeometry(190, 190),
@@ -722,28 +1027,17 @@ ground(DIV_W, -46, DIV_E, 46, sandApproachTex, 7, Y_GROUND);     // mid
 for(const [lx0, lx1] of [[A_X0, A_X1], [B_X0, B_X1]]){
   ground(lx0, -46, lx1, -18, sandApproachTex, 9, Y_GROUND);      // CT-side approach
   ground(lx0,  18, lx1,  46, sandApproachTex, 9, Y_GROUND);      // T-side approach
-  ground(lx0, -18, lx1,  18, sandCourtTex,    9, Y_GROUND);      // the site itself
+  ground(lx0, -18, lx1,  18, sandCourtTex,    9, Y_GROUND);      // the court itself
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  6.  CURTAIN WALL
-// ═══════════════════════════════════════════════════════════════════════════
-{
-  const T = 4;
-  [[BW*2+T, BORDER_H, T,  0, BW], [BW*2+T, BORDER_H, T, 0, -BW],
-   [T, BORDER_H, BW*2+T,  BW, 0], [T, BORDER_H, BW*2+T, -BW, 0]]
-  .forEach(([w,h,d,x,z]) => addBox(w, h, d, x, 0, z, sides(ashlarTex, w, h, d), true));
-  for(const [x,z,axis,f] of [[0,BW,'x',-1],[0,-BW,'x',1],[BW,0,'z',-1],[-BW,0,'z',1]]){
-    const fixed = axis === 'x' ? z : x;
-    if(axis === 'x') merlonsX(fixed + f*1.6, -BW, BW, BORDER_H, 3.0);
-    else             merlonsZ(fixed + f*1.6, -BW, BW, BORDER_H, 3.0);
-  }
-}
+// (6. the curtain wall is built after the scale pass: buildPalaceRamparts)
+
+}   // end MAP_ID === 'alcazar' (atmosphere, ground, curtain wall)
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  7.  (no spawn gate walls)
 //  The old map had walls across z=+/-46 with gates in them. With the spawns
-//  moved to opposite corners those walls run straight through both sites, so
+//  moved to opposite corners those walls run straight through both courts, so
 //  they are gone. The buildings themselves now shape every route.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -765,6 +1059,7 @@ const STRUCTURE_FILES = {
   watchtower:     'Meshy_AI_Moroccan_palace_corne_0808145701_texture.glb',
   bridge:         'Meshy_AI_A_stone_bridge_A_lon_0808145825_texture.glb',
   marketStall:    'Meshy_AI_A_market_stall_A_low_0808145834_texture.glb',
+  palCrate:       'pal_crate.glb',
   // grandPalace and gateway were deleted. Their 10 placements are reassigned
   // below rather than left pointing at missing files.
 };
@@ -779,10 +1074,11 @@ const STRUCTURE_FILES = {
 const STRUCTURE_SHAPE = {
   palaceExterior: [1.00, 0.57, 0.89],
   facadeBlock:    [1.00, 0.64, 0.58],
-  cornerBlock:    [0.93, 0.63, 1.00],
+  cornerBlock:    [1.00, 0.68, 1.08],   // re-measured from the current export
   watchtower:     [0.46, 1.00, 0.46],
   bridge:         [1.00, 0.56, 0.43],
   marketStall:    [1.00, 0.93, 0.97],
+  palCrate:       [1.00, 0.92, 0.99],
 };
 
 // Models stream in over several seconds, and each correction invalidates the
@@ -1197,7 +1493,7 @@ function glbStructure(key, x, z, w, h, d, opts){
     // sized for a 32x44 one. That is what put walls where the street should be
     // and left gaps where a wall should be.
     const m = fitStructure(raw.clone(true), w, h, d, o);
-    m.position.set(x, 0, z);
+    m.position.set(x, o.y || 0, z);        // o.y lifts a model, e.g. a crate on a crate
     scene.add(m);
     m.updateMatrixWorld(true);
     // Clone materials per placement. They come from one cached model, so
@@ -1223,6 +1519,8 @@ function glbStructure(key, x, z, w, h, d, opts){
         // culling and doubles the fragments shaded on every wall in the map.
         // You cannot see the inside of a building you cannot enter.
         c.side = THREE.FrontSide;
+        // optional colour correction for a model whose texture came out off-palette
+        if(o.tint && c.color) c.color.multiply(new THREE.Color(o.tint));
         return c;
       });
       o.material = Array.isArray(o.material) ? cl : cl[0];
@@ -1231,6 +1529,13 @@ function glbStructure(key, x, z, w, h, d, opts){
     const bounds = new THREE.Box3().setFromObject(m);
     bounds.min.y = Math.min(bounds.min.y, 0);
     const rec = { mesh: m, mats, opacity: 1, target: 1, box: bounds };
+    // Placements with hand-authored collision (noCollide) never reach the
+    // collision rebuild below, which is what re-arms the one-shot shadow bake.
+    // Without this, models that stream in after boot cast no shadow at all.
+    if(o.noCollide && typeof sun !== 'undefined' && sun.shadow){
+      clearTimeout(glbStructure._shadowT);
+      glbStructure._shadowT = setTimeout(() => { sun.shadow.needsUpdate = true; }, 400);
+    }
     _structures.push(rec);
 
     // Correct the collision to the geometry actually on screen, and take a
@@ -1286,6 +1591,8 @@ function stairsZS(ax0, ax1, zBase, zTop, top, tex){
 function bagsX(z, a, b){ sandbagsX(z, Math.min(a,b), Math.max(a,b)); }
 function bagsZ(x, a, b){ sandbagsZ(x, Math.min(a,b), Math.max(a,b)); }
 
+if(MAP_ID === 'alcazar'){
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  8.  THE TOWN
 //
@@ -1298,13 +1605,13 @@ function bagsZ(x, a, b){ sandbagsZ(x, Math.min(a,b), Math.max(a,b)); }
 //  generated by (x,z) -> (-x,-z), which makes the two halves identical by
 //  construction rather than by careful typing.
 //
-//  That diagonal gives the four corners a neat property: T spawn, A site, CT
-//  spawn, B site run clockwise, so each team starts near one site and far from
+//  That diagonal gives the four corners a neat property: T spawn, Great Court,
+//  CT spawn, Bazaar Court run clockwise, so each team starts near one court and far from
 //  the other, the same way round for both.
 //
-//         NW  T SPAWN            A SITE  NE
+//         NW  T SPAWN       GREAT COURT  NE
 //                    [ the town ]
-//         SW  B SITE            CT SPAWN  SE
+//         SW  BAZAAR COURT     CT SPAWN  SE
 // ═══════════════════════════════════════════════════════════════════════════
 
 // The town: 17 buildings.
@@ -1323,24 +1630,29 @@ function bagsZ(x, a, b){ sandbagsZ(x, Math.min(a,b), Math.max(a,b)); }
 //
 // The result is better on both counts than what went in: 53u to 51u, and 353
 // exposed cells to 153.
+// ONE BUILDING PER PLOT, AND NO TWO PLOTS TOUCH. Wherever two plots used to
+// share an edge (which read as a single wall of buildings) they are pulled
+// apart to leave an alley at least 7 units wide at the 120 map size. The
+// alleys are offset so none of them lines up into a map-long lane, and a
+// watchtower stands in the open plaza east of mid. Measured on lay/palW220:
+// all areas connected, no slots, longest sightline about 70-74 design units,
+// centre of the map within 10% walking distance from each spawn.
 const TOWN = [
-  ['north',                 3,   24,   17,   45 ],
-  ['west-low',            -29,    2,   -5,   16 ],
-  ['south-west~',          21,   15,   45,   37 ],
-  ['north-4',             -45,  -45,  -27,  -31 ],
-  ['south-west-2',        -11,  -45,   11,  -25 ],
-  ['north-west-2',        -38,  -25,  -30,   -9 ],
-  ['east-low-2-2',         32,   -5,   45,   15 ],
-  ['south-west-2-2',       -8,  -20,   11,    2 ],
-  ['north-west-3-2',       16,   -9,   32,    6 ],
-  ['east-low-3',          -26,  -22,  -13,   -2 ],
-  ['west-hall',             1,    2,   12,   19 ],
-  ['south-west-2#2',      -25,   20,   -2,   45 ],
-  ['north-west-2#2',      -45,   11,  -29,   31 ],
-  ['east-low-2',          -45,   -9,  -33,   11 ],
-  ['west-low-3',           15,  -27,   39,  -13 ],
-  ['north-west-3',        -27,  -45,  -11,  -26 ],
-  ['west-low-3#2',         11,  -45,   35,  -27 ],
+  ['north',            3,    24,  16.5,    45 ],
+  ['west-hall',      -32,    -1,  -9.5,   9.5 ],
+  ['north-east',    21.5,  17.5,    45, 33.75 ],
+  ['south-west',     -45,   -45, -29.5,   -31 ],
+  ['south',         -8.5,   -45,   8.5,   -22 ],
+  ['east',          34.5,    -5,    45,  12.5 ],
+  ['east-mid',     16.75,  -8.5,  29.5,     6 ],
+  ['west-mid',     -25.5, -21.5,   -13,    -5 ],
+  ['mid-hall',         1,     2,  11.5,    19 ],
+  ['north-mid',   -23.75,  20.5,    -2,    45 ],
+  ['north-west',     -45,  13.5, -31.5,    31 ],
+  ['west',           -45,    -9,   -36,   8.5 ],
+  ['south-east',   16.25, -24.5,    39, -13.5 ],
+  ['south-mid',    -24.5,   -45, -13.5, -26.5 ],
+  ['south-east-2',  13.5,   -45,    35, -29.5 ],
 ];
 
 // Fill a footprint with a building.
@@ -1388,16 +1700,44 @@ function bestFit(w, d){
   return best;
 }
 
+// ── ONE BUILDING PER PLOT ───────────────────────────────────────────────────
+// Every plot holds exactly ONE building model: never two or more butted
+// together, which reads as a wall of buildings. The model and its turn are
+// chosen per plot to fit with the least distortion, and the height follows
+// the plot's size but is held between BLD_HMIN and BLD_HMAX, so buildings are
+// close to even (13-17 tall) without any tiny or giant ones. Worst distortion
+// across the town is 1.19x.
+//
+// (A model turned 90 degrees is given its own-axis width and depth, so it is
+// no longer fitted before turning, which used to shrink turned buildings.)
+//
+// Collision is the plot itself, a solid box as tall as the building, which is
+// what the town layout was measured with.
+const BLD_HMIN = 13, BLD_HMAX = 17;
 let worstStretch = 0;
-function building(x0, z0, x1, z1){
+function building(dx0, dz0, dx1, dz1){
+  const x0 = dx0 * PAL_SCALE, z0 = dz0 * PAL_SCALE, x1 = dx1 * PAL_SCALE, z1 = dz1 * PAL_SCALE;
   const w = x1 - x0, d = z1 - z0;
-  const f = bestFit(w, d);
-  if(!f){ console.warn('no model fits footprint', w, 'x', d); return; }
-  if(f.stretch > worstStretch) worstStretch = f.stretch;
-  // No stretching. With the height derived above, the model very nearly fills
-  // the footprint anyway, so uniform scaling costs almost nothing and nothing
-  // is distorted.
-  glbStructure(f.key, (x0+x1)/2, (z0+z1)/2, w, f.h, d, { yaw: f.yaw });
+  let best = null;
+  for(const key of SOLID_MODELS){
+    const n = STRUCTURE_SHAPE[key];
+    if(!n) continue;
+    for(const yaw of [0, 90]){
+      const nx = yaw ? n[2] : n[0], nz = yaw ? n[0] : n[2];
+      const sx = w / nx, sz = d / nz, sc = Math.sqrt(sx * sz);
+      const h = Math.min(BLD_HMAX, Math.max(BLD_HMIN, n[1] * sc));
+      const bad = Math.max(Math.abs(Math.log(sx / sz)), Math.abs(Math.log((h / n[1]) / sc)));
+      if(!best || bad < best.bad) best = { key, yaw, h, bad };
+    }
+  }
+  if(!best){ console.warn('no model fits footprint', w, 'x', d); return; }
+  worstStretch = Math.max(worstStretch, Math.exp(best.bad));
+  const yaw = best.yaw + (((dx0 * 13 + dz0 * 7) | 0) % 2 ? 180 : 0);   // vary facing
+  const turned = (yaw % 180) !== 0;
+  glbStructure(best.key, (x0 + x1) / 2, (z0 + z1) / 2,
+               turned ? d : w, best.h, turned ? w : d,
+               { stretch: true, noCollide: true, yaw });
+  obstacles.push(new THREE.Box3(new THREE.Vector3(dx0, 0, dz0), new THREE.Vector3(dx1, best.h, dz1)));
 }
 const sameRect = (a2, b2) => a2.every((v, i) => Math.abs(v - b2[i]) < 0.01);
 // FREE_LAYOUT: the table above already lists every building, so no partners
@@ -1413,15 +1753,46 @@ for(const [, x0, z0, x1, z1] of TOWN){
   if(!sameRect([x0, z0, x1, z1], [-x1, -z1, -x0, -z0]))
     building(-x1, -z1, -x0, -z0);
 }
-console.log('buildings: no stretch, worst shape mismatch', worstStretch.toFixed(2) + 'x');
+console.log('buildings: one per plot,', BLD_HMIN + '-' + BLD_HMAX, 'tall, worst distortion', worstStretch.toFixed(2) + 'x');
 
-// ── the two sites, in the corners the spawns do not occupy ─────────────────
-ground( 22, 22, EDGE, EDGE, sandCourtTex, 4, Y_GROUND);   // A, northeast
-ground(-EDGE,-EDGE, -22,-22, sandCourtTex, 4, Y_GROUND);  // B, southwest
+// ── the two open courts, in the corners the spawns do not occupy ───────────
+ground( 22, 22, EDGE, EDGE, sandCourtTex, 4, Y_GROUND);   // Great Court, northeast
+ground(-EDGE,-EDGE, -22,-22, sandCourtTex, 4, Y_GROUND);  // Bazaar Court, southwest
 
-// ── landmarks: a tower in each site corner, flush with the wall ────────────
-glbStructure('watchtower',  41,  41, 5, 11, 5);
-glbStructure('watchtower', -41, -41, 5, 11, 5);
+// ── landmarks: a tower in each court corner, flush with the wall ───────────
+// Crate cover [x, z, kind] in design units; built after the scale pass.
+const PAL_CRATES = [
+  [  1.00,  -9.00, 'stack'],
+  [  2.44,  -9.00, 'single'],
+  [  1.00,  -7.56, 'single'],
+  [ -4.50, -15.50, 'single'],
+  [ -3.06, -15.50, 'single'],
+  [  7.50,  -2.50, 'stack'],
+  [  7.50,  -1.06, 'single'],
+  [ -5.50,  -1.50, 'single'],
+  [-34.50, -18.00, 'stack'],
+  [-33.06, -18.00, 'single'],
+  [-33.50, -13.00, 'single'],
+  [-38.00, -26.40, 'single'],
+  [-36.56, -26.40, 'single'],
+  [ 30.00,  39.00, 'stack'],
+  [ 31.44,  39.00, 'single'],
+  [ 30.00,  37.56, 'single'],
+  [ 39.50,  37.50, 'single'],
+  // (the crate beside T spawn [-33, 36] is removed: no crates at spawn)
+  [ 11.90,  -7.90, 'stack'],     // breaks the east-west line past mid
+  [ 11.90,  -6.46, 'stack'],
+];
+
+window.PAL_CRATES = PAL_CRATES;
+
+// placed at world size (not stretched by the pass); collision added after it
+// [x, z, size] world units. The north-east tower sits in its court corner; the
+// second one (it used to be buried inside a south-west building) now stands
+// alone in the plaza east of mid, a little larger, where it breaks what would
+// otherwise be a map-long north-south line through the alleys.
+const PAL_TOWERS = [[56.5, 56.5, 5], [17.5 * PAL_SCALE, 12 * PAL_SCALE, 5 * PAL_SCALE]];
+for(const [tx, tz, ts] of PAL_TOWERS) glbStructure('watchtower', tx, tz, ts, 11 * ts / 5, ts, { noCollide: true });
 
 // (no gateways: the four arches that stood at the street entrances to the
 //  centre are removed. They used the bridge model, and at this map scale
@@ -1474,7 +1845,7 @@ for(const [x, z] of [[-60, 40], [50, 34], [-26, -36], [8, 48]]){
 if(skipped) console.log('cover skipped for clearance:', skipped, 'position(s)');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 10.  HIGH GROUND — a balcony overlooking each site, stairs from the street
+// 10.  HIGH GROUND — a balcony overlooking each court, stairs from the street
 // ═══════════════════════════════════════════════════════════════════════════
 function perch(ax0, az0, ax1, az1, top){
   const x0=Math.min(ax0,ax1), x1=Math.max(ax0,ax1);
@@ -1487,6 +1858,67 @@ for(const sgn of [1, -1]){
   platformS(S(48), S(50), S(62), S(60), 2.6, ashlarTex);
   stairsZS (S(52), S(60), S(41), S(50), 2.6, ashlarTex);
   wallZ(S(48), Math.min(S(50), S(60)), Math.max(S(50), S(60)), 1.1, ashlarTex, 2.6);
+}
+
+// ── PALACE SCALE PASS ───────────────────────────────────────────────────────
+// Everything above was built at design size. Stretch it 1.33x horizontally:
+// geometry through a parent group, collision and walkable surfaces directly.
+// Small props (jars, planters) keep their own size and only move, so they do
+// not come out fat; their collision boxes likewise keep size and move.
+{
+  const S = PAL_SCALE;
+  const grp = new THREE.Group();
+  grp.scale.set(S, 1, S);
+  for(const o of scene.children.slice(_pal0.sc)){
+    if(o.userData && o.userData.dynamic) continue;
+    scene.remove(o); grp.add(o);
+    if(o.isGroup){ o.scale.x /= S; o.scale.z /= S; o.updateMatrix(); }
+  }
+  grp.updateMatrixWorld(true);
+  scene.add(grp);
+  const small = (w, d) => w < 2.5 && d < 2.5;
+  for(let i = _pal0.ob; i < obstacles.length; i++){
+    const b = obstacles[i];
+    if(small(b.max.x - b.min.x, b.max.z - b.min.z)){
+      const cx = (b.min.x + b.max.x) / 2, cz = (b.min.z + b.max.z) / 2;
+      b.translate(new THREE.Vector3(cx * (S - 1), 0, cz * (S - 1)));
+    } else { b.min.x *= S; b.max.x *= S; b.min.z *= S; b.max.z *= S; }
+  }
+  for(let i = _pal0.pl; i < platforms.length; i++){
+    const p = platforms[i];
+    if(small(p.x1 - p.x0, p.z1 - p.z0)){
+      const dx = (p.x0 + p.x1) / 2 * (S - 1), dz = (p.z0 + p.z1) / 2 * (S - 1);
+      p.x0 += dx; p.x1 += dx; p.z0 += dz; p.z1 += dz;
+    } else { p.x0 *= S; p.x1 *= S; p.z0 *= S; p.z1 *= S; }
+  }
+  for(const [tx, tz, ts] of PAL_TOWERS)
+    obstacles.push(new THREE.Box3(new THREE.Vector3(tx - ts / 2, 0, tz - ts / 2), new THREE.Vector3(tx + ts / 2, 11 * ts / 5, tz + ts / 2)));
+
+  // ── CRATES ─────────────────────────────────────────────────────────────────
+  // Wooden crates (pal_crate.glb), placed for cover after the scale pass so
+  // they keep their real size. 'single' is one crate, waist high: you shoot
+  // over it. 'stack' is two, the top one turned, taller than eye level: it
+  // blocks sight. Positions are design units; layout checks in
+  // lay/palW220_all.json (all connected, no slots, longest sightline ~70-74).
+  const CS = 1.6 * 1.2, CH = 1.47 * 1.2;   // crate footprint and height, world units (1.2x)
+  for(const [dx, dz, kind] of PAL_CRATES){
+    const cx = dx * S, cz = dz * S;
+    const n = kind === 'stack' ? 2 : 1;
+    for(let k = 0; k < n; k++)
+      glbStructure('palCrate', cx, cz, CS, CH, CS,
+                   { stretch: true, noCollide: true, y: k * CH, yaw: ((dx * 7 + dz * 3 + k) | 0) % 4 * 90 + (k ? 12 : 0) });
+    obstacles.push(new THREE.Box3(new THREE.Vector3(cx - CS / 2, 0, cz - CS / 2), new THREE.Vector3(cx + CS / 2, n * CH, cz + CS / 2)));
+  }
+  _mapSpawns = {
+    t:  { x0:-45 * S, x1:-35 * S, z0: 35 * S, z1: 45 * S, yaw:  Math.PI * 0.75 },   // NW corner
+    ct: { x0: 35 * S, x1: 45 * S, z0:-45 * S, z1:-35 * S, yaw: -Math.PI * 0.25 },   // SE corner
+  };
+  buildPalaceRamparts();
+  console.log('palace: built 1.33x wide,', (EDGE * S * 2).toFixed(0), 'across inside the walls');
+}
+
+} else if(MAP_ID === 'overgrowth'){
+  _mapSpawns = buildOvergrowth();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1503,7 +1935,7 @@ for(const sgn of [1, -1]){
 // The curtain wall is at +/-45, so a zone running 35..45 sits flush against
 // both walls of its corner. That is as far apart as the two teams can start,
 // which on a diagonal is the full width of the map.
-const TEAM_SPAWNS = {
+const TEAM_SPAWNS = _mapSpawns || {
   t:  { x0:-45, x1:-35, z0: 35, z1: 45, yaw:  Math.PI * 0.75 },   // NW corner
   ct: { x0: 35, x1: 45, z0:-45, z1:-35, yaw: -Math.PI * 0.25 },   // SE corner
 };
@@ -1519,9 +1951,6 @@ function randomSpawnIn(zone, tries){
 }
 window.randomSpawnIn = randomSpawnIn;
 
-const interiorLights = [];
-const _windowDecals  = [];
-const trafficLights  = [];
 function updateTrafficLights(){}
 
 // (structures are placed by the street grid above)
@@ -1546,7 +1975,7 @@ function updateTrafficLights(){}
               '(' + (platforms.length - before) + ' derived from solids)');
 }
 
-console.log('DE_ALCAZAR built —',
+console.log('TACTICAL CITY built —',
             'obstacles:', obstacles.length, '| walkable surfaces:', platforms.length);
 
 function makeCar(x, z, ry, hue){

@@ -1,4 +1,4 @@
-# de_alcazar
+# Tactical City
 
 A two-sided palace map. Drop this whole folder into your `public/`, add the
 `.glb` models, and open `index.html`.
@@ -40,6 +40,28 @@ in hand — the game still runs.
 
 **Serve over http, not file://.** `GLTFLoader` fetches the models, and browsers
 block that on `file://`. Your existing `server.js` already handles this.
+
+## Maps
+
+Two maps ship: **Palace** (`alcazar`, the original) and **Overgrowth**
+(`overgrowth`, jungle temple ruins). The registry is `MAPS` at the top of
+`src/10-config.js`.
+
+A page builds exactly one map, at load. The lobby's map cards store the choice
+(`localStorage['tc.map']`) and reload; `?map=overgrowth` in the URL overrides
+it. Rooms remember the map they were created on (the server keeps `room.map`),
+the public list shows it, and joining a room on another map reloads you onto
+that map and joins automatically.
+
+**Adding a map:** add its key to `MAPS` in `10-config.js` *and* to `MAPS` in
+`server.js`, write a part like `35-overgrowth.js` that defines a
+`buildYourMap()` returning `{ t, ct }` spawn zones, and add an
+`else if(MAP_ID === 'yourmap')` branch next to Overgrowth's in `40-map.js`.
+Add the new part to `PARTS` in `index.html` too.
+
+Overgrowth is built entirely in code (no downloads). Its layout lives in the
+`OVERGROWTH` table, so the help panel's map plan and the lobby thumbnail are
+drawn from the same data as the level.
 
 ## Editing — no build needed
 

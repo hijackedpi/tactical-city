@@ -1,41 +1,81 @@
+// ── MAPS ───────────────────────────────────────────────────────────────────
+// Which map this page builds. The map is built once, at load, so switching
+// maps means reloading the page: the lobby's map picker stores the choice and
+// reloads. A ?map= link overrides the stored choice, which is how a player is
+// moved onto the map of a room they are joining.
+//
+// Keys are sent to the server and must match its MAPS list in server.js.
+const MAPS = {
+  alcazar:    { name:'Palace',     blurb:'Sun-baked palace compound. Diagonal spawns, open corner courts, tight streets.' },
+  overgrowth: { name:'Overgrowth', blurb:'Jungle ruins with diagonal spawns. Open plains north-west, a tight warren south-east.' },
+};
+const MAP_ID = (() => {
+  let id = null;
+  try { id = new URLSearchParams(location.search).get('map'); } catch(e){}
+  if(!MAPS[id]){ try { id = localStorage.getItem('tc.map'); } catch(e){} }
+  return MAPS[id] ? id : 'alcazar';
+})();
+window.MAPS = MAPS; window.MAP_ID = MAP_ID;
+
 // ── GUN DEFINITIONS ────────────────────────────────────────────────────────
 // price: cost in the shop ($). order: display order in the shop.
 const GUNS = {
   knife:   { name:'KNIFE',         ammo:0,  maxAmmo:0,  damage:90, pellets:0, spread:0, reloadTime:0,
              bulletSpeed:0, recoilZ:0.10, recoilY:0.04, bulletSize:0, price:0,    order:0,
              rpm:'Melee', range:'Contact', category:'melee',   melee:true, fireInterval:420 },
-  glock18: { name:'GLOCK 18',      ammo:15, maxAmmo:15, spareMags:2, damage:18, pellets:1, spread:0.018, reloadTime:1300,
+  // ── BALANCE ──────────────────────────────────────────────────────────────
+  // No armour, 100 hp. Each gun lists its own damage per body part in
+  // zoneDamage (head / chest / stomach / legs); `damage` is the chest value.
+  // SMGs are cheaper and pay $600 a kill; rifles out-gun them at every range
+  // and stay accurate while spraying (bloomMul: how much spraying spreads you).
+  // fireInterval is each gun's COOLDOWN between shots (ms). Auto weapons repeat
+  // at it; no weapon can be clicked (or auto-clicked) faster than it, and the
+  // server refuses hits that arrive faster than it too (server.js FIRE_MS).
+  //   knife 420 · glock 200 · deagle 500 · mac-10 120 · mp5 110 · mp7 130
+  //   ump-45 140 · ak-47 100 · m4a1 90 · awp 1300
+  glock18: { name:'GLOCK 18',      ammo:20, maxAmmo:20, spareMags:3, damage:20, pellets:1, spread:0.018, reloadTime:1300,
              bulletSpeed:5.70, recoilZ:0.08, recoilY:0.03, bulletSize:0.06, price:0,    order:1,
-             rpm:'Auto', range:'Short',  category:'pistols' },
-  deagle:  { name:'DESERT EAGLE',  ammo:7,  maxAmmo:7,  spareMags:2,  damage:60, pellets:1, spread:0, reloadTime:1600,
-             bulletSpeed:7.80, recoilZ:0.65, recoilY:0.28, bulletSize:0.08, price:1600, order:2,
-             rpm:'Slow', range:'Long',   category:'pistols', fireInterval:750 },
-  mac10:   { name:'MAC-10',        ammo:30, maxAmmo:30, spareMags:2, damage:13, pellets:1, spread:0.026, reloadTime:1450,
+             // semi-automatic: one round per click, no holding to spray.
+             rpm:'Semi', range:'Short',  category:'pistols', fireInterval:200, bloomMul:1.0,
+             zoneDamage:{ head:54, chest:20, stomach:21, legs:16 } },
+  deagle:  { name:'DESERT EAGLE',  ammo:7,  maxAmmo:7,  spareMags:3,  damage:46, pellets:1, spread:0.002, reloadTime:1600,
+             bulletSpeed:7.80, recoilZ:0.65, recoilY:0.28, bulletSize:0.08, price:700, order:2,
+             rpm:'Slow', range:'Long',   category:'pistols', fireInterval:500, bloomMul:1.6,
+             zoneDamage:{ head:92, chest:46, stomach:51, legs:37 } },
+  mac10:   { name:'MAC-10',        ammo:30, maxAmmo:30, spareMags:3, damage:15, pellets:1, spread:0.028, reloadTime:1450,
              bulletSpeed:6.20, recoilZ:0.06, recoilY:0.02, bulletSize:0.045, price:1050, order:3,
-             rpm:'Auto', range:'Short',  category:'smgs' },
-  mp5:     { name:'MP5',           ammo:20, maxAmmo:20, spareMags:3, damage:15, pellets:1, spread:0.012, reloadTime:1500,
+             rpm:'Auto', range:'Short',  category:'smgs', fireInterval:120, bloomMul:1.4,
+             zoneDamage:{ head:38, chest:15, stomach:18, legs:14 } },
+  mp5:     { name:'MP5',           ammo:30, maxAmmo:30, spareMags:3, damage:17, pellets:1, spread:0.012, reloadTime:1500,
              bulletSpeed:6.60, recoilZ:0.07, recoilY:0.02, bulletSize:0.045, price:1500, order:4,
-             rpm:'Auto', range:'Short',  category:'smgs' },
-  mp7:     { name:'MP7',           ammo:35, maxAmmo:35, spareMags:2, damage:16, pellets:1, spread:0.010, reloadTime:1550,
-             bulletSpeed:6.90, recoilZ:0.06, recoilY:0.02, bulletSize:0.045, price:1500, order:5,
-             rpm:'Auto', range:'Medium', category:'smgs' },
-  ump45:   { name:'UMP-45',        ammo:25, maxAmmo:25, spareMags:2, damage:20, pellets:1, spread:0.014, reloadTime:1600,
+             rpm:'Auto', range:'Short',  category:'smgs', fireInterval:110, bloomMul:1.1,
+             zoneDamage:{ head:44, chest:17, stomach:19, legs:16 } },
+  mp7:     { name:'MP7',           ammo:30, maxAmmo:30, spareMags:3, damage:19, pellets:1, spread:0.010, reloadTime:1550,
+             bulletSpeed:6.90, recoilZ:0.06, recoilY:0.02, bulletSize:0.045, price:1600, order:5,
+             rpm:'Auto', range:'Medium', category:'smgs', fireInterval:130, bloomMul:1.1,
+             zoneDamage:{ head:47, chest:19, stomach:22, legs:17 } },
+  ump45:   { name:'UMP-45',        ammo:25, maxAmmo:25, spareMags:3, damage:13, pellets:1, spread:0.020, reloadTime:1600,
              bulletSpeed:6.40, recoilZ:0.09, recoilY:0.03, bulletSize:0.05, price:1200, order:6,
-             rpm:'Auto', range:'Medium', category:'smgs' },
-  ak47:    { name:'AK-47',         ammo:30, maxAmmo:30, spareMags:3, damage:20, pellets:1, spread:0, reloadTime:1800,
-             bulletSpeed:7.20, recoilZ:0.10, recoilY:0.03, bulletSize:0.05, price:2700, order:7,
-             rpm:'Auto', range:'Long',   category:'rifles' },
-  m4a1:    { name:'M4A1',          ammo:20, maxAmmo:20, spareMags:4, damage:18, pellets:1, spread:0.004, reloadTime:1700,
-             bulletSpeed:7.50, recoilZ:0.07, recoilY:0.02, bulletSize:0.05, price:3100, order:8,
-             rpm:'Auto', range:'Long',   category:'rifles' },
+             rpm:'Auto', range:'Short',  category:'smgs', fireInterval:140, bloomMul:1.3,
+             zoneDamage:{ head:43, chest:13, stomach:14, legs:12 } },
+  ak47:    { name:'AK-47',         ammo:30, maxAmmo:30, spareMags:3, damage:24, pellets:1, spread:0.002, reloadTime:1800,
+             bulletSpeed:7.20, recoilZ:0.12, recoilY:0.035, bulletSize:0.05, price:2700, order:7,
+             rpm:'Auto', range:'Long',   category:'rifles', fireInterval:100, bloomMul:0.9,
+             zoneDamage:{ head:76, chest:24, stomach:36, legs:23 } },
+  m4a1:    { name:'M4A1',          ammo:30, maxAmmo:30, spareMags:3, damage:26, pellets:1, spread:0.001, reloadTime:1700,
+             bulletSpeed:7.50, recoilZ:0.07, recoilY:0.02, bulletSize:0.05, price:2900, order:8,
+             rpm:'Auto', range:'Long',   category:'rifles', fireInterval:90, bloomMul:0.7,
+             zoneDamage:{ head:68, chest:26, stomach:34, legs:22 } },
   // noSpread: the round goes exactly where the crosshair is pointing, at any
   // range, always. `spread: 0` alone was not enough — doShoot adds `bloom *
   // 0.05` on top of it, so the AWP inherited the scatter of whatever you had
   // been spraying a moment earlier and could miss a target it was dead on.
-  awp:     { name:'AWP',           ammo:5,  maxAmmo:5,  spareMags:2,  damage:90, pellets:1, spread:0, reloadTime:2400,
+  awp:     { name:'AWP',           ammo:5,  maxAmmo:5,  spareMags:3,  damage:115, pellets:1, spread:0, reloadTime:2400,
              bulletSpeed:12.60, recoilZ:0.55, recoilY:0.22, bulletSize:0.07, price:4750, order:9,
-             rpm:'Bolt', range:'Extreme', category:'snipers', fireInterval:1100, headshotDamage:100, scopeFov:12,
-             noSpread:true },
+             // 115: one shot anywhere on the body kills
+             rpm:'Bolt', range:'Extreme', category:'snipers', fireInterval:1300, headshotDamage:115, scopeFov:12,
+             noSpread:true,
+             zoneDamage:{ head:115, chest:115, stomach:115, legs:88 } },
 };
 
 // Muzzle velocity multiplier. Applied here, immediately after the table and
@@ -254,12 +294,23 @@ function syncAmmoIn(){                        // store -> globals
 }
 
 // One reload path for both the R key and the auto-reload on empty.
+let _reloadTimer = null;
+// Stop a reload in progress (weapon switch, death, new round).
+function cancelReload(){
+  if(_reloadTimer){ clearTimeout(_reloadTimer); _reloadTimer = null; }
+  isReloading = false;
+  const m = document.getElementById('reload-msg'); if(m) m.style.display = 'none';
+}
 function startReload(){
   if(isReloading || gun.melee) return;
   if(ammo >= gun.maxAmmo || reserve <= 0) return;
   playReload(); isReloading = true;
   document.getElementById('reload-msg').style.display = 'block';
-  setTimeout(() => {
+  const key = selectedGunKey;
+  _reloadTimer = setTimeout(() => {
+    _reloadTimer = null;
+    // switched weapon mid-reload: the reload belonged to the other gun
+    if(selectedGunKey !== key){ isReloading = false; document.getElementById('reload-msg').style.display = 'none'; return; }
     const need = gun.maxAmmo - ammo;
     const take = Math.min(need, reserve);
     ammo += take; reserve -= take;

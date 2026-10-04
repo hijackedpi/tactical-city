@@ -2,179 +2,272 @@
 //  e0-title.js — the title screen
 //
 //  Self-contained: injects its own CSS and restyles the existing screens rather
-//  than editing index.template.html. Delete this file and its PARTS entry and
-//  the old menu comes back untouched.
+//  than editing index.template.html. The lobby (d0-net.js) IS the title screen;
+//  this file dresses it.
 //
-//  WHAT WAS WRONG
+//  THE BACKDROP: TWO WORLDS
+//  The backdrop is not the live 3D map (that tied the front door to one level).
+//  It is a painted, animated split of the game's two maps, the palace at dusk
+//  and the jungle ruins in mist, divided by a diagonal seam that follows the
+//  lobby's map picker (TTScene below). It is cheap: the scenery is painted once
+//  per resize, and the 3D scene underneath is throttled to a trickle while the
+//  title is up (still rendering occasionally so shaders and textures are warm
+//  and the first deployed frame does not hitch).
 //
-//  1. It never showed the game. `#instructions` had an opaque background plus
-//     an 85 KB base64 JPEG, so the palace behind the menu was a photograph.
-//     The real map was already being rendered every frame by animate()'s
-//     early-return path, and was completely covered up.
-//
-//  2. Nothing moved, which reads as a loading screen rather than a game.
-//
-//  3. The lobby panel sat on top of all of it as a separate dark box, so the
-//     first thing anyone actually saw was a form. The lobby IS the title
-//     screen now; the title is drawn into it.
-//
-//  4. Exposed, the map is nearly white: bright sandstone under ambient 0.6 +
-//     hemi 0.4 + a 1.8 sun at tone-mapping exposure 1.0. A dark scrim over
-//     that just gives mud. So the menu drops the exposure and cools the sky
-//     into dusk, and puts both back the moment you deploy.
-//
-//     (Fog is NOT the culprit, despite appearances. 20-scene.js sets density
-//     0.018, but 40-map.js:695 replaces scene.fog outright with a warm
-//     FogExp2(0xd8caa8, 0.0052) — so the map is barely fogged already. The
-//     menu nudges it only to stay consistent if that ever changes.)
+//  Everything that decides WHEN the title is showing is unchanged:
+//  _titleShouldRun() is still the single source of truth, h0-self.js and
+//  j0-knife.js still ask it, and the solo-pause override at the bottom of this
+//  file still wraps it.
 // ════════════════════════════════════════════════════════════════════════════
 
 (function injectTitleStyles(){
   const css = `
-  /* ── both entry screens become windows onto the live map ── */
-  #instructions{ background:transparent !important; color:#f4ecdc; }
-  #instructions::after{ display:none !important; }   /* drop the baked JPEG */
-  #instructions::before{
-    background:
-      linear-gradient(180deg, rgba(6,8,12,.20) 0%, rgba(6,8,12,.04) 30%,
-                              rgba(6,8,12,.52) 66%, rgba(5,7,10,.92) 100%),
-      radial-gradient(ellipse 130% 90% at 50% 38%,
-                      rgba(0,0,0,0) 42%, rgba(4,6,9,.70) 100%) !important;
+  :root{
+    --tt-font:'Saira Condensed','Stratum2','Arial Narrow',sans-serif;
+    --tt-gold:#dca24c; --tt-gold-hi:#f5d68d; --tt-cream:#f4ecdc;
+    --tt-t:#e0a35a; --tt-ct:#6fa3dc; --tt-muted:#8f98a6; --tt-line:rgba(220,162,76,.24);
   }
-  /* #instructions is now an empty stub, permanently hidden by a rule in
-     index.html itself. Nothing here needs to hide it any more. */
 
-  #net-lobby, #net-room{
-    background:transparent !important;
-    backdrop-filter:none !important;
-    align-items:flex-end !important;
-    justify-content:flex-start !important;
+  /* ── backdrop + chrome layers. scene 398 < lobby 400 < chrome 401; the
+     chrome is click-through and sits above the lobby so its scrim cannot dim it ── */
+  #tt-scene{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:398;
+    pointer-events:none;opacity:0;visibility:hidden;
+    transition:opacity .9s ease, visibility 0s linear .9s}
+  #tt-chrome{position:fixed;inset:0;z-index:401;pointer-events:none;opacity:0;visibility:hidden;
+    transition:opacity .7s ease, visibility 0s linear .7s;font-family:var(--tt-font);color:var(--tt-cream)}
+  body.title-mode #tt-scene, body.title-mode #tt-chrome{opacity:1;visibility:visible;
+    transition:opacity .9s ease, visibility 0s}
+
+  /* scanlines + vignette, drawn once in CSS rather than per frame */
+  #tt-chrome > *{position:absolute;z-index:1}
+  #tt-chrome::before{content:'';position:absolute;inset:0;
+    background:repeating-linear-gradient(180deg,rgba(255,255,255,.018) 0 1px,transparent 1px 3px);
+    mix-blend-mode:overlay}
+  #tt-chrome::after{content:'';position:absolute;inset:0;
+    background:radial-gradient(ellipse 120% 100% at 50% 45%,transparent 55%,rgba(0,0,0,.55) 100%)}
+
+  .tt-corner{position:absolute;width:26px;height:26px;border:0 solid rgba(245,214,141,.42)}
+  .tt-corner.tl{top:18px;left:18px;border-top-width:2px;border-left-width:2px}
+  .tt-corner.tr{top:18px;right:18px;border-top-width:2px;border-right-width:2px}
+  .tt-corner.bl{bottom:18px;left:18px;border-bottom-width:2px;border-left-width:2px}
+  .tt-corner.br{bottom:18px;right:18px;border-bottom-width:2px;border-right-width:2px}
+
+  .tt-top,.tt-bot{position:absolute;left:54px;right:54px;display:flex;align-items:center;gap:22px;
+    font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:#a79c88}
+  .tt-top{top:22px}
+  .tt-bot{bottom:22px;color:#9a917f}
+  .tt-mark{display:flex;align-items:center;gap:10px;color:var(--tt-cream);font-weight:800;letter-spacing:.26em}
+  .tt-mark svg{width:22px;height:22px;display:block}
+  .tt-sep{flex:1;height:1px;background:linear-gradient(90deg,rgba(220,162,76,.35),rgba(220,162,76,0))}
+  .tt-top .tt-sep.r{background:linear-gradient(270deg,rgba(220,162,76,.35),rgba(220,162,76,0))}
+  .tt-stat{display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .tt-stat b{color:var(--tt-cream);font-weight:700;font-variant-numeric:tabular-nums}
+  .tt-led{width:7px;height:7px;border-radius:50%;background:#e0a35a;box-shadow:0 0 10px #e0a35a}
+  .tt-led.on{background:#6fdc95;box-shadow:0 0 10px #6fdc95;animation:ttPulse 2.4s ease-in-out infinite}
+  .tt-clock{font-variant-numeric:tabular-nums;color:var(--tt-cream)}
+  .tt-tip{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+  .tt-tip i{font-style:normal;color:#11151b;background:var(--tt-gold);padding:3px 7px 2px;font-weight:800;letter-spacing:.18em;font-size:10.5px}
+  .tt-tip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d3c9b6;letter-spacing:.12em;
+    transition:opacity .45s ease, transform .45s ease}
+  .tt-tip span.out{opacity:0;transform:translateY(6px)}
+
+  /* ── the lobby becomes a two-column composition over the backdrop ── */
+  #net-lobby, #net-room{ background:transparent !important; backdrop-filter:none !important; }
+  #net-lobby:not(.net-hide){
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) minmax(330px,420px);
+    align-items:center; align-content:safe center;
+    column-gap:clamp(28px,6vw,110px); row-gap:28px;
+    padding:clamp(72px,11vh,120px) clamp(28px,6.5vw,110px) clamp(70px,10vh,110px);
+    box-sizing:border-box; overflow-y:auto; overflow-x:hidden;
   }
-  /* the lobby needs the same scrim, since it no longer brings its own */
+  /* readability scrim: dark on the left under the logo, and along the floor */
   #net-lobby::before, #net-room::before{
-    content:''; position:absolute; inset:0; pointer-events:none;
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:-1;
     background:
-      linear-gradient(180deg, rgba(6,8,12,.20) 0%, rgba(6,8,12,.04) 30%,
-                              rgba(6,8,12,.52) 66%, rgba(5,7,10,.92) 100%),
-      radial-gradient(ellipse 130% 90% at 50% 38%,
-                      rgba(0,0,0,0) 42%, rgba(4,6,9,.70) 100%);
+      linear-gradient(90deg, rgba(4,6,10,.72) 0%, rgba(4,6,10,.30) 42%, rgba(4,6,10,0) 62%, rgba(4,6,10,.35) 100%),
+      linear-gradient(180deg, rgba(4,6,10,0) 55%, rgba(4,6,10,.75) 100%);
   }
+  #net-lobby, #net-room{ isolation:isolate; }
 
-  /* ── the shared title block, injected into the lobby ── */
-  .tt-wrap{
-    position:relative; z-index:2;
-    padding:0 0 clamp(34px,6vh,74px) clamp(30px,6vw,92px);
-    max-width:min(720px,90vw);
-  }
-  .tt-kick{
-    font:700 11px/1 'Stratum2','Arial Narrow',sans-serif;
-    letter-spacing:7px; text-transform:uppercase; color:#d9a75a;
-    margin-bottom:12px;
-    opacity:0; animation:tFade .7s .12s ease-out forwards;
-  }
-  .tt-title{
-    font:800 clamp(44px,8.6vw,124px)/.92 'Stratum2','Arial Narrow',sans-serif;
-    letter-spacing:clamp(2px,.5vw,8px);
-    margin:0; white-space:nowrap; color:#f7edda;
-    text-shadow:0 8px 46px rgba(0,0,0,.9), 0 1px 0 rgba(255,240,214,.18);
-  }
-  .tt-title .tl{
-    display:inline-block; opacity:0; transform:translateY(.34em);
-    animation:tRise .6s cubic-bezier(.22,.9,.28,1) forwards;
-  }
-  .tt-title .tl.dim{ color:#c98f4a; }
-  .tt-rule{
-    height:2px; width:clamp(140px,24vw,280px); margin:17px 0 14px;
-    background:linear-gradient(90deg,#d9b25a,rgba(217,178,90,0));
-    transform-origin:left center; opacity:0;
-    animation:tGrow .8s .5s cubic-bezier(.22,.9,.28,1) forwards;
-  }
-  .tt-sub{
-    margin:0 0 24px; max-width:46ch; font-size:15px; line-height:1.65;
-    color:#cdb794; opacity:0; animation:tFade .7s .58s ease-out forwards;
-  }
+  /* ── hero ── */
+  .tt-hero{ position:relative; min-width:0; }
+  .tt-kick{display:inline-flex;align-items:center;gap:12px;
+    font:700 13px/1 var(--tt-font);letter-spacing:.42em;text-transform:uppercase;color:var(--tt-gold);
+    margin-bottom:clamp(14px,2.4vh,24px); opacity:0; animation:tFade .7s .1s ease-out forwards}
+  .tt-kick::before{content:'';width:34px;height:2px;background:var(--tt-gold)}
 
-  /* ── lobby controls, restyled to belong to the composition ── */
+  .tt-logo{margin:0;font-family:var(--tt-font);font-weight:900;line-height:.8;text-transform:uppercase;
+    transform:skewX(-7deg);transform-origin:left bottom;user-select:none;white-space:nowrap}
+  .tt-logo .tt-ln{position:relative;display:block;width:max-content}
+  .tt-l1{font-size:clamp(46px,min(7.4vw,12.5vh),142px);letter-spacing:.035em;color:var(--tt-gold);
+    text-shadow:0 0 42px rgba(220,162,76,.35), 0 6px 30px rgba(0,0,0,.65)}
+  .tt-l2{font-size:clamp(92px,min(15.8vw,26.5vh),300px);letter-spacing:.012em;color:var(--tt-cream);
+    margin-top:clamp(2px,.6vh,8px);
+    text-shadow:0 10px 60px rgba(0,0,0,.85), 0 0 1px rgba(255,240,214,.4)}
+  .tt-l1 .tl.dim{color:inherit}
+  .tt-ln .tl{display:inline-block;opacity:0;transform:translateY(.28em) scaleY(1.15);
+    animation:tRise .65s cubic-bezier(.2,.9,.25,1) forwards}
+  /* light sweep: a clipped duplicate of the word, painted with a moving glint */
+  .tt-ln::after{content:attr(data-text);position:absolute;left:0;top:0;pointer-events:none;
+    color:transparent;-webkit-background-clip:text;background-clip:text;
+    background-image:linear-gradient(100deg,transparent 42%,rgba(255,250,235,.95) 50%,transparent 58%);
+    background-size:260% 100%;background-repeat:no-repeat;background-position:160% 0;
+    text-shadow:none;
+    animation:ttSweep 7s 1.6s ease-in-out infinite}
+  .tt-l2::after{animation-delay:1.8s}
+  /* occasional glitch, toggled from JS */
+  /* the shadows live inside the keyframes, so the effect ends on its own even
+     if the timer that removes the class is late (a long frame, a busy tab) */
+  .tt-logo.glitch .tt-l2{animation:ttJit .28s steps(3) 1}
+  .tt-logo.glitch .tt-l1{animation:ttJit1 .28s steps(3) 1}
+
+  .tt-rule{display:flex;align-items:center;gap:10px;margin:clamp(16px,2.8vh,28px) 0 clamp(12px,2vh,18px);
+    opacity:0;animation:tFade .6s .75s ease-out forwards}
+  .tt-rule i{display:block;height:3px;width:clamp(120px,16vw,240px);
+    background:linear-gradient(90deg,var(--tt-t),var(--tt-gold-hi) 50%,var(--tt-ct));
+    transform-origin:left center;animation:tGrow .9s .75s cubic-bezier(.22,.9,.28,1) both}
+  .tt-rule b{font:800 12px/1 var(--tt-font);letter-spacing:.3em;color:#a39a89;text-transform:uppercase}
+  .tt-rule b u{text-decoration:none;color:var(--tt-t)} .tt-rule b s{text-decoration:none;color:var(--tt-ct)}
+  .tt-tag{margin:0 0 8px;font:800 clamp(20px,2.1vw,30px)/1.15 var(--tt-font);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--tt-cream);opacity:0;animation:tFade .7s .85s ease-out forwards}
+  .tt-tag em{font-style:normal;color:var(--tt-gold)}
+  .tt-sub{margin:0 0 clamp(16px,2.6vh,24px);max-width:48ch;font:500 16px/1.55 var(--tt-font);
+    letter-spacing:.03em;color:#b8ad99;opacity:0;animation:tFade .7s .95s ease-out forwards}
+  .tt-chips{display:flex;flex-wrap:wrap;gap:8px;opacity:0;animation:tFade .7s 1.05s ease-out forwards}
+  .tt-chip{display:flex;align-items:center;gap:8px;padding:8px 13px 7px;
+    font:700 12px/1 var(--tt-font);letter-spacing:.18em;text-transform:uppercase;color:#d9cfbd;
+    background:rgba(12,15,21,.55);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(6px)}
+  .tt-chip b{color:var(--tt-gold-hi);font-weight:800}
+  .tt-chip.t{box-shadow:inset 3px 0 0 var(--tt-t)} .tt-chip.ct{box-shadow:inset 3px 0 0 var(--tt-ct)}
+
+  /* ── panel: the deploy card ── */
   #net-lobby #net-panel, #net-room #net-panel{
-    background:rgba(14,17,23,.62) !important;
-    backdrop-filter:blur(9px);
-    border:1px solid rgba(217,178,90,.22) !important;
-    border-top:2px solid #c98f4a !important;
-    box-shadow:0 20px 60px rgba(0,0,0,.5) !important;
-    width:min(430px,88vw) !important;
-    padding:20px 22px 18px !important;
-    /* the browse list makes this panel much taller; never let it run off a
-       short window */
-    max-height:calc(100vh - 40px); overflow-y:auto;
-    opacity:0; animation:tFade .6s .66s ease-out forwards;
+    position:relative; justify-self:end; width:100% !important; max-width:420px;
+    box-sizing:border-box; margin:0;
+    background:linear-gradient(180deg,rgba(17,21,28,.80),rgba(9,12,17,.88)) !important;
+    backdrop-filter:blur(16px) saturate(1.15);
+    border:1px solid rgba(255,255,255,.07) !important; border-top:none !important;
+    box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04) !important;
+    padding:0 22px 16px !important;
+    font-family:var(--tt-font);
+    opacity:0; animation:tSlide .7s .55s cubic-bezier(.2,.9,.25,1) forwards;
   }
-  /* the panel's own heading is redundant next to the big title */
+  #net-room #net-panel{justify-self:center;max-width:460px}
+  #net-lobby #net-panel::before, #net-room #net-panel::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;
+    background:linear-gradient(90deg,var(--tt-t),var(--tt-gold-hi) 50%,var(--tt-ct))}
+  .tt-ph{display:flex;align-items:center;gap:10px;margin:0 -22px 14px;padding:16px 22px 13px;
+    border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02)}
+  .tt-ph span{font:800 18px/1 var(--tt-font);letter-spacing:.24em;text-transform:uppercase;color:var(--tt-cream)}
+  .tt-ph em{margin-left:auto;display:flex;align-items:center;gap:7px;font:700 11px/1 var(--tt-font);
+    font-style:normal;letter-spacing:.18em;text-transform:uppercase;color:#8f98a6}
   #net-lobby #net-panel h2{ display:none !important; }
-  #net-lobby #net-panel .sub{
-    margin:0 0 14px !important; font-size:13px !important; color:#9c8a70 !important;
-    letter-spacing:.04em;
+  #net-room #net-panel h2{font:800 22px/1 var(--tt-font) !important;letter-spacing:.2em !important;margin:20px 0 6px !important}
+  #net-lobby #net-panel .sub, #net-room #net-panel .sub{
+    margin:0 0 14px !important; font:500 14px/1.45 var(--tt-font) !important; color:#9a917f !important; letter-spacing:.03em;
   }
-  #net-lobby .net-btn, #net-room .net-btn{ letter-spacing:.14em; }
-  #net-lobby .net-btn:not(.ghost){ background:linear-gradient(#f0cf7c,#c99a3f); color:#20160b; }
+  #net-lobby .net-sec, #net-room .net-sec{font:700 11px/1 var(--tt-font);letter-spacing:.24em;color:#8a806e;margin:16px 0 9px}
+  #net-lobby .net-sec::after{background:linear-gradient(90deg,rgba(220,162,76,.3),rgba(220,162,76,0))}
+  #net-lobby .net-in, #net-room .net-in{background:rgba(5,7,10,.65);border:1px solid rgba(255,255,255,.09);
+    font:700 16px/1 var(--tt-font);letter-spacing:.14em;padding:12px 14px;transition:border-color .15s, box-shadow .15s}
+  #net-lobby .net-in:focus, #net-room .net-in:focus{border-color:var(--tt-gold);box-shadow:0 0 0 3px rgba(220,162,76,.16)}
+  #net-lobby .net-in::placeholder{color:#5d5a53}
+  #net-lobby .net-btn, #net-room .net-btn{position:relative;overflow:hidden;
+    font:800 14px/1 var(--tt-font);letter-spacing:.2em;padding:13px 18px 12px;
+    clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+    transition:filter .15s, transform .15s, color .15s, background .15s}
+  #net-lobby .net-btn:not(.ghost), #net-room .net-btn:not(.ghost){background:linear-gradient(180deg,#f3d387,#cf9a43);color:#1d1408}
+  #net-lobby .net-btn:not(.ghost):hover, #net-room .net-btn:not(.ghost):hover{filter:brightness(1.1);transform:translateY(-1px)}
+  #net-lobby .net-btn:not(.ghost)::after, #net-room .net-btn:not(.ghost)::after{content:'';position:absolute;top:0;bottom:0;width:40%;left:-60%;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-20deg);transition:left .5s ease}
+  #net-lobby .net-btn:not(.ghost):hover::after, #net-room .net-btn:not(.ghost):hover::after{left:130%}
+  #net-lobby .net-btn.ghost, #net-room .net-btn.ghost{background:rgba(255,255,255,.035);color:#b5ad9f;border:1px solid rgba(255,255,255,.1)}
+  #net-lobby .net-btn.ghost:hover, #net-room .net-btn.ghost:hover{background:rgba(220,162,76,.1);color:var(--tt-cream);border-color:rgba(220,162,76,.45)}
+  #net-lobby .net-btn:active{transform:translateY(1px)}
+  #net-lobby .net-games{border:1px solid rgba(255,255,255,.07);background:rgba(4,6,9,.5);max-height:190px}
+  #net-lobby .net-g{font:600 14px/1.2 var(--tt-font);letter-spacing:.04em;transition:background .15s}
+  #net-lobby .net-g:hover{background:rgba(220,162,76,.06)}
+  #net-lobby .net-g button{font:800 11px/1 var(--tt-font);letter-spacing:.16em;background:var(--tt-gold)}
+  #net-lobby .net-empty{font:500 13.5px/1.5 var(--tt-font);color:#7a756b}
+  #net-lobby .net-mini{font:700 10px/1 var(--tt-font)}
+  #net-lobby .net-err{font-family:var(--tt-font)}
+  #net-lobby #net-solo{border-color:rgba(111,163,220,.35);color:#c9dbef}
+  #net-lobby #net-solo:hover{background:rgba(111,163,220,.12);border-color:rgba(111,163,220,.7);color:#fff}
+  #net-room .net-code{font:800 40px/1 var(--tt-font);letter-spacing:.42em;color:var(--tt-gold-hi);
+    background:rgba(4,6,9,.6);border:1px dashed rgba(220,162,76,.4)}
+  #net-room .net-list{border-color:rgba(255,255,255,.07)}
+  #net-room .net-p{font-family:var(--tt-font)}
 
-  /* ── solo path: same composition for #scr-main ── */
-  #instructions:has(#scr-main.on){ align-items:flex-end; justify-content:flex-start; }
-  #instructions:has(#scr-main.on) .menu-card{
-    text-align:left; width:auto; max-width:min(760px,88vw);
-    padding:0 0 clamp(34px,6vh,74px) clamp(30px,6vw,92px);
+  .tt-maps{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .tt-map{display:flex;align-items:center;gap:10px;padding:7px;cursor:pointer;text-align:left;
+    background:rgba(4,6,9,.5);border:1px solid rgba(255,255,255,.08);color:#d9cfbd;
+    font-family:var(--tt-font);transition:border-color .15s, background .15s}
+  .tt-map:hover{border-color:rgba(220,162,76,.5);background:rgba(220,162,76,.06)}
+  .tt-map.on{border-color:var(--tt-gold);background:rgba(220,162,76,.1);box-shadow:inset 0 0 0 1px rgba(220,162,76,.35)}
+  .tt-map-img{border:1px solid rgba(255,255,255,.08);line-height:0}
+  .tt-map-txt{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .tt-map-txt b{font:800 15px/1 var(--tt-font);letter-spacing:.14em;text-transform:uppercase;color:var(--tt-cream)}
+  .tt-map-txt em{font:700 10px/1 var(--tt-font);font-style:normal;letter-spacing:.18em;text-transform:uppercase;color:#8a806e}
+  .tt-map.on .tt-map-txt em{color:var(--tt-gold)}
+  .tt-map-blurb{margin:8px 0 2px;font:500 13px/1.4 var(--tt-font);color:#8f877a;letter-spacing:.02em}
+
+  /* ── adaptive layout ── */
+  @media (max-width:960px){
+    #net-lobby:not(.net-hide){grid-template-columns:minmax(0,1fr);align-content:start;
+      padding:84px 22px 76px;row-gap:26px}
+    #net-lobby #net-panel{justify-self:stretch;max-width:560px}
+    .tt-l1{font-size:clamp(40px,11vw,110px)} .tt-l2{font-size:clamp(78px,23vw,220px)}
+    .tt-top .tt-hide-sm, .tt-sep, .tt-bot, .tt-corner{display:none}
+    .tt-top{top:0;left:0;right:0;padding:16px 20px 26px;justify-content:space-between;
+      background:linear-gradient(180deg,rgba(4,6,10,.94) 40%,rgba(4,6,10,0))}
+    #tt-chrome::after{display:none}
+    .tt-kick{letter-spacing:.28em;font-size:12px}
+    #net-lobby::before{background:linear-gradient(180deg,rgba(4,6,10,.45),rgba(4,6,10,.8))}
   }
-  #scr-main #title{
-    font-size:clamp(44px,8.6vw,124px) !important; line-height:.92 !important;
-    letter-spacing:clamp(2px,.5vw,8px) !important; margin:0 0 2px !important;
-    white-space:nowrap;
-    text-shadow:0 8px 46px rgba(0,0,0,.9), 0 1px 0 rgba(255,240,214,.18) !important;
+  @media (max-width:560px){
+    .tt-top,.tt-bot{left:20px;right:20px;gap:14px;font-size:10.5px}
+    .tt-corner{display:none}
+    .tt-tip i{display:none}
+    .tt-sub{font-size:15px}
   }
-  #scr-main #title .tl{
-    display:inline-block; opacity:0; transform:translateY(.34em);
-    animation:tRise .6s cubic-bezier(.22,.9,.28,1) forwards;
+  @media (max-height:780px) and (min-width:961px){
+    #net-lobby:not(.net-hide){padding-top:64px;padding-bottom:56px}
+    #net-lobby .net-games{max-height:118px}
+    .tt-ph{padding:12px 22px 10px;margin-bottom:10px}
+    #net-lobby .net-sec{margin:10px 0 7px}
+    #net-lobby #net-panel .sub{display:none}
+    #net-lobby .net-row{margin-bottom:9px}
+    #net-lobby .net-btn{padding:11px 16px 10px}
   }
-  #scr-main #title .tl.dim{ color:#c98f4a; }
-  #scr-main .menu-rule{
-    margin:17px 0 14px !important; width:clamp(140px,24vw,280px) !important;
-    background:linear-gradient(90deg,#d9b25a,rgba(217,178,90,0)) !important;
-    transform-origin:left center; opacity:0;
-    animation:tGrow .8s .5s cubic-bezier(.22,.9,.28,1) forwards;
+  @media (max-height:640px) and (min-width:961px){
+    .tt-sub,.tt-chips{display:none}
+    .tt-l1{font-size:min(7vw,11vh)} .tt-l2{font-size:min(14vw,22vh)}
   }
-  #scr-main #desc{
-    margin:0 0 24px !important; max-width:46ch !important;
-    opacity:0; animation:tFade .7s .58s ease-out forwards;
-  }
-  #scr-main .menu-btns{ flex-direction:row !important; align-items:flex-start !important;
-    flex-wrap:wrap; gap:11px !important; }
-  #scr-main .mbtn{
-    width:auto !important; min-width:150px; padding:15px 28px !important;
-    background:rgba(20,24,30,.55); backdrop-filter:blur(6px);
-    opacity:0; animation:tFade .55s ease-out forwards;
-  }
-  #scr-main .mbtn:nth-of-type(1){ animation-delay:.68s }
-  #scr-main .mbtn:nth-of-type(2){ animation-delay:.76s }
-  #scr-main .mbtn:nth-of-type(3){ animation-delay:.84s }
-  #scr-main .mbtn.primary{ min-width:200px; background:linear-gradient(#f0cf7c,#c99a3f) !important; }
-  #scr-main .menu-kicker{ opacity:0; animation:tFade .7s .12s ease-out forwards; }
-  #scr-main .menu-foot{ margin-top:24px !important; opacity:0; animation:tFade .6s .95s ease-out forwards; }
 
   @keyframes tFade{ to{ opacity:1 } }
   @keyframes tRise{ to{ opacity:1; transform:none } }
-  @keyframes tGrow{ from{ opacity:0; transform:scaleX(.18) } to{ opacity:1; transform:none } }
+  @keyframes tGrow{ from{ transform:scaleX(0) } to{ transform:none } }
+  @keyframes tSlide{ from{ opacity:0; transform:translateX(26px) } to{ opacity:1; transform:none } }
+  @keyframes ttSweep{ 0%{background-position:160% 0} 22%,100%{background-position:-60% 0} }
+  @keyframes ttJit{
+    0%,99%{text-shadow:-4px 0 rgba(255,70,60,.75), 4px 0 rgba(80,190,255,.75), 0 10px 60px rgba(0,0,0,.85)}
+    0%{transform:translate(0,0)} 33%{transform:translate(-3px,1px)} 66%{transform:translate(3px,-1px)} 100%{transform:none} }
+  @keyframes ttJit1{ 0%,99%{text-shadow:-3px 0 rgba(255,70,60,.6), 3px 0 rgba(80,190,255,.6)} }
+  @keyframes ttPulse{ 50%{ opacity:.45 } }
 
-  /* The HUD used to be hidden by the menu's opaque background. Now that the
-     menu is a window, it has to be hidden deliberately. */
+  /* The HUD must not show through the title screen. */
   body.title-mode #crosshair, body.title-mode #cs-health, body.title-mode #cs-money,
   body.title-mode #cs-ammo, body.title-mode #cs-slots, body.title-mode #cs-pickup-prompt,
   body.title-mode #reload-msg, body.title-mode #enter-prompt, body.title-mode #speedo,
   body.title-mode #shop-btn{ display:none !important; }
 
   @media (prefers-reduced-motion:reduce){
-    .tt-kick,.tt-title .tl,.tt-rule,.tt-sub,#net-lobby #net-panel,
-    #scr-main .menu-kicker,#scr-main #title .tl,#scr-main .menu-rule,
-    #scr-main #desc,#scr-main .mbtn,#scr-main .menu-foot{
+    .tt-kick,.tt-ln .tl,.tt-rule,.tt-rule i,.tt-tag,.tt-sub,.tt-chips,
+    #net-lobby #net-panel,#net-room #net-panel{
       animation:none !important; opacity:1 !important; transform:none !important;
     }
+    .tt-ln::after{display:none}
+    .tt-led.on{animation:none}
   }
   `;
   const s = document.createElement('style');
@@ -183,69 +276,699 @@
 })();
 
 // ── LETTERING ───────────────────────────────────────────────────────────────
-// Split into per-letter spans so they can rise in sequence.
-function _titleSplit(el, text){
+// Split into per-letter spans so they can rise in sequence. Spaces become
+// non-breaking: each letter is an inline-block, and a plain space inside one
+// collapses to nothing. `delay0` offsets the whole word's entrance.
+function _titleSplit(el, text, delay0){
   el.innerHTML = '';
+  const cut = text.indexOf(' ');
+  const d0 = (typeof delay0 === 'number') ? delay0 : 0.18;
   [...text].forEach((ch, i) => {
     const sp = document.createElement('span');
-    sp.className = 'tl' + (ch === '_' || i < 3 ? ' dim' : '');
-    sp.textContent = ch;
-    sp.style.animationDelay = (0.18 + i * 0.034).toFixed(3) + 's';
+    sp.className = 'tl' + (ch === '_' || (cut > 0 ? i < cut : i < 3) ? ' dim' : '');
+    sp.textContent = ch === ' ' ? ' ' : ch;
+    sp.style.animationDelay = (d0 + i * 0.045).toFixed(3) + 's';
     el.appendChild(sp);
   });
 }
 
-// The big title, drawn into the lobby so the lobby IS the title screen.
+// ── HERO + CHROME ───────────────────────────────────────────────────────────
+// The lobby IS the title screen: the hero goes in as the left column, and
+// d0-net's panel stays a direct child as the right column.
+const TT_TIPS = [
+  'Headshots hit hardest. Aim at head height and keep your crosshair there',
+  'Press B during buy time to open the armory',
+  'SMG kills pay $600, twice what a rifle kill pays',
+  'A knife kill pays $1,500',
+  'Hold Tab to see the scoreboard',
+  'Sides swap after round 7. First team to 8 wins',
+  'Right-click to scope with the AWP',
+  'Buying a new primary drops the one you were carrying',
+  'Share a 4-letter code to bring friends into a private game',
+];
+
+
+// ── MAP PLANS ───────────────────────────────────────────────────────────────
+// Top-down plans for the lobby's map cards and the "The map" help tab. Both
+// maps' plans are available whichever one is loaded: Overgrowth's comes from
+// its own layout table, the palace's footprints are copied here (its table
+// only exists while the palace is the map being built).
+const PALACE_PLAN = [
+  [3,24,16.5,45],[-32,-1,-9.5,9.5],[21.5,17.5,45,33.75],[-45,-45,-29.5,-31],[-8.5,-45,8.5,-22],[34.5,-5,45,12.5],[16.75,-8.5,29.5,6],[-25.5,-21.5,-13,-5],[1,2,11.5,19],[-23.75,20.5,-2,45],[-45,13.5,-31.5,31],[-45,-9,-36,8.5],[16.25,-24.5,39,-13.5],[-24.5,-45,-13.5,-26.5],[13.5,-45,35,-29.5],
+  [40.5,40.5,44.25,44.25],[15,9.5,20,14.5],   // the two watchtowers
+];
+function ttPlanSVG(id, size, labels){
+  const px = x => ((x + 47) / 94 * 200).toFixed(1);
+  const py = z => ((47 - z) / 94 * 200).toFixed(1);
+  const rect = (x0, z0, x1, z1, fill, stroke, extra) =>
+    `<rect x="${px(x0)}" y="${py(z1)}" width="${(px(x1)-px(x0)).toFixed(1)}" height="${(py(z0)-py(z1)).toFixed(1)}" fill="${fill}" stroke="${stroke||'none'}" stroke-width="1" ${extra||''}/>`;
+  const txt = (x, z, t, col, fs) =>
+    `<text x="${px(x)}" y="${(+py(z) + fs*.35).toFixed(1)}" fill="${col}" font-size="${fs}" font-weight="800" text-anchor="middle" font-family="'Saira Condensed',sans-serif">${t}</text>`;
+  let b = '';
+  if(id === 'overgrowth' && window.OVERGROWTH){
+    const O = window.OVERGROWTH;
+    b += rect(-45,-45,45,45,'#18221a','#3f5a34');
+    b += rect(-45,O.river.z0,45,O.river.z1,'#24463f');
+    const t = O.spawns.t, c = O.spawns.ct;
+    b += rect(t.x0,t.z0,t.x1,t.z1,'rgba(224,163,90,.35)','#e0a35a');
+    b += rect(c.x0,c.z0,c.x1,c.z1,'rgba(111,163,220,.35)','#6fa3dc');
+    for(const s of O.solids) b += rect(s[0],s[1],s[2],s[3],'#5b5c4a','#23241c');
+    // long ruin blocks, drawn at their real angle
+    for(const [cx, cz, L, deg] of (O.walls || [])){
+      const D = L * .515, ux = Math.cos(deg * Math.PI / 180), uz = Math.sin(deg * Math.PI / 180);
+      const c = [[-L/2,-D/2],[L/2,-D/2],[L/2,D/2],[-L/2,D/2]].map(([a, e]) =>
+        px(cx + ux * a - uz * e) + ',' + py(cz + uz * a + ux * e)).join(' ');
+      b += `<polygon points="${c}" fill="#5b5c4a" stroke="#23241c" stroke-width="1"/>`;
+    }
+    for(const l of O.low) b += rect(l[0],l[1],l[2],l[3],'#8a7f5c');
+    const tu = O.tunnel;
+    b += rect(tu.x0,tu.z0,tu.x1,tu.z1,'none','#c9b27a','stroke-dasharray="3 2" opacity=".8"');
+    if(labels !== false){
+      const sc = (z) => [(z.x0 + z.x1) / 2, (z.z0 + z.z1) / 2];
+      b += txt(...sc(t),'T','#e0a35a',9) + txt(...sc(c),'CT','#6fa3dc',8);
+      b += txt(-30,-19,'PLAINS','#c9d8a8',7) + txt(29,40,'WARREN','#c9d8a8',7);
+      b += txt(-1,-0.6,'MID','#e8e4dc',6) + txt(40.5,23.4,'TUNNEL','#8fa184',4.5);
+    }
+  } else {
+    b += rect(-45,-45,45,45,'#221e17','#5d4a2c');
+    b += rect(-45,35,-35,45,'rgba(224,163,90,.35)','#e0a35a');
+    b += rect(35,-45,45,-35,'rgba(111,163,220,.35)','#7fa8d8');
+    for(const r of PALACE_PLAN) b += rect(r[0],r[1],r[2],r[3],'#6a5a40','#2a2418');
+    if(labels !== false){
+      b += txt(33,41,'GREAT COURT','#d9c49a',6) + txt(-37,-28,'BAZAAR','#d9c49a',6);
+      b += txt(-40,40,'T','#e0a35a',9) + txt(40,-40,'CT','#7fa8d8',8);
+    }
+  }
+  return `<svg viewBox="-4 -4 208 208" width="${size}" height="${size}" style="display:block;flex:0 0 auto">${b}</svg>`;
+}
+window.ttPlanSVG = ttPlanSVG;
+
 (function buildLobbyTitle(){
   const lobby = document.getElementById('net-lobby');
-  if(!lobby) return;                       // d0-net absent: solo path only
+  if(!lobby) return;                       // d0-net absent: fallback button only
   const panel = lobby.querySelector('#net-panel');
-  if(!panel) return;
-  const wrap = document.createElement('div');
-  wrap.className = 'tt-wrap';
-  wrap.innerHTML =
-    '<div class="tt-kick">Two-sided palace map</div>' +
-    '<h1 class="tt-title"></h1>' +
-    '<div class="tt-rule"></div>' +
-    '<p class="tt-sub">A royal palace split down the middle. Two spawns, two flanks ' +
-    'and a contested centre.</p>';
-  lobby.insertBefore(wrap, panel);
-  wrap.appendChild(panel);                 // panel now sits inside the composition
-  _titleSplit(wrap.querySelector('.tt-title'), 'DE_ALCAZAR');
+
+  const nGuns = (typeof GUNS === 'object') ? Object.keys(GUNS).filter(k => !GUNS[k].melee).length : 9;
+
+  const hero = document.createElement('div');
+  hero.className = 'tt-hero';
+  hero.innerHTML =
+    '<div class="tt-kick">Round-based tactical shooter &middot; 2 maps</div>' +
+    '<h1 class="tt-logo" aria-label="Tactical City">' +
+      '<span class="tt-ln tt-l1" data-text="TACTICAL"></span>' +
+      '<span class="tt-ln tt-l2" data-text="CITY"></span>' +
+    '</h1>' +
+    '<div class="tt-rule"><i></i><b><u>T</u> &nbsp;vs&nbsp; <s>CT</s></b></div>' +
+    '<p class="tt-tag">Buy. Plan. <em>Breach.</em> Hold the line.</p>' +
+    '<p class="tt-sub">Fast 5v5 rounds, right in your browser. Nothing to install. ' +
+      'Share a code, pick a side and win the round.</p>' +
+    '<div class="tt-chips">' +
+      '<div class="tt-chip t"><b>5v5</b> Online</div>' +
+      '<div class="tt-chip ct"><b>' + nGuns + '</b> Weapons</div>' +
+      '<div class="tt-chip"><b>$</b> Round economy</div>' +
+      '<div class="tt-chip"><b>' + (typeof MAPS === 'object' ? Object.keys(MAPS).length : 1) + '</b> Maps</div>' +
+    '</div>';
+  lobby.insertBefore(hero, panel);
+  _titleSplit(hero.querySelector('.tt-l1'), 'TACTICAL', 0.22);
+  _titleSplit(hero.querySelector('.tt-l2'), 'CITY', 0.42);
+
+  // Panel header: a status line in place of the hidden h2.
+  if(panel){
+    const ph = document.createElement('div');
+    ph.className = 'tt-ph';
+    ph.innerHTML = '<span>Deploy</span><em><i class="tt-led" id="tt-net-led"></i><span id="tt-net-txt">Connecting</span></em>';
+    panel.insertBefore(ph, panel.firstChild);
+
+    // Map picker. The page builds one map at load, so choosing another stores
+    // the choice and reloads. Rooms carry their map: create one and it is on
+    // yours; join one and you are moved onto its map.
+    const nameRow = panel.querySelector('#net-name') && panel.querySelector('#net-name').closest('.net-row');
+    if(nameRow && typeof MAPS === 'object'){
+      const wrap = document.createElement('div');
+      wrap.innerHTML = '<div class="net-sec"><span>Map</span></div><div class="tt-maps">' +
+        Object.keys(MAPS).map(id =>
+          '<button type="button" class="tt-map' + (id === MAP_ID ? ' on' : '') + '" data-map="' + id + '">' +
+            '<span class="tt-map-img">' + ttPlanSVG(id, 58, false) + '</span>' +
+            '<span class="tt-map-txt"><b>' + MAPS[id].name + '</b><em>' +
+              (id === MAP_ID ? 'Loaded' : 'Switch map') + '</em></span>' +
+          '</button>').join('') + '</div>' +
+        '<p class="tt-map-blurb">' + MAPS[MAP_ID].blurb + '</p>';
+      nameRow.after(...wrap.childNodes);
+      // hovering a card slides the backdrop's seam toward that map's world
+      panel.querySelectorAll('.tt-map').forEach(btn => {
+        btn.addEventListener('mouseenter', () => { if(typeof TTScene === 'object') TTScene.hover(btn.dataset.map); });
+        btn.addEventListener('mouseleave', () => { if(typeof TTScene === 'object') TTScene.hover(null); });
+        btn.addEventListener('focus',      () => { if(typeof TTScene === 'object') TTScene.hover(btn.dataset.map); });
+        btn.addEventListener('blur',       () => { if(typeof TTScene === 'object') TTScene.hover(null); });
+      });
+      panel.querySelectorAll('.tt-map').forEach(btn => btn.addEventListener('click', () => {
+        const id = btn.dataset.map;
+        if(id === MAP_ID) return;
+        if(typeof netSwitchMap === 'function') netSwitchMap(id);
+        else { try { localStorage.setItem('tc.map', id); } catch(e){} location.reload(); }
+      }));
+    }
+  }
+
+  // Occasional glitch on the logo. Rare enough to feel like an accident.
+  const logo = hero.querySelector('.tt-logo');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!reduced){
+    (function glitch(){
+      setTimeout(() => {
+        if(document.body.classList.contains('title-mode')){
+          logo.classList.add('glitch');
+          setTimeout(() => logo.classList.remove('glitch'), 280);
+        }
+        glitch();
+      }, 7000 + Math.random() * 7000);
+    })();
+  }
 })();
 
-// The solo screen's own <h1>. resetGame() rewrites it to "ELIMINATED", which
-// would wipe the spans, so re-split whenever the text changes.
-(function buildSoloTitle(){
-  const el = document.getElementById('title');
-  if(!el) return;
-  const go = () => { if(!el.querySelector('.tl')) _titleSplit(el, (el.textContent||'').trim()); };
-  go();
-  new MutationObserver(go).observe(el, { childList: true });
+(function buildChrome(){
+  const ch = document.createElement('div');
+  ch.id = 'tt-chrome';
+  ch.innerHTML =
+    '<div class="tt-corner tl"></div><div class="tt-corner tr"></div>' +
+    '<div class="tt-corner bl"></div><div class="tt-corner br"></div>' +
+    '<div class="tt-top">' +
+      '<div class="tt-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">' +
+        '<circle cx="12" cy="12" r="8"/><path d="M12 1v6M12 17v6M1 12h6M17 12h6"/>' +
+        '<circle cx="12" cy="12" r="1.6" fill="#dca24c" stroke="none"/></svg>Tactical City</div>' +
+      '<div class="tt-sep"></div>' +
+      '<div class="tt-stat tt-hide-sm">Public games <b id="tt-s-games">0</b></div>' +
+      '<div class="tt-stat tt-hide-sm">In play <b id="tt-s-players">0</b></div>' +
+      '<div class="tt-sep r"></div>' +
+      '<div class="tt-stat"><span class="tt-clock" id="tt-clock">--:--</span></div>' +
+    '</div>' +
+    '<div class="tt-bot"><div class="tt-tip"><i>Intel</i><span id="tt-tip"></span></div></div>';
+  document.body.appendChild(ch);
+
+  const $ = id => document.getElementById(id);
+  const tipEl = $('tt-tip');
+  let tipI = Math.floor(Math.random() * TT_TIPS.length);
+  tipEl.textContent = TT_TIPS[tipI];
+  setInterval(() => {
+    if(!document.body.classList.contains('title-mode')) return;
+    tipEl.classList.add('out');
+    setTimeout(() => {
+      tipI = (tipI + 1) % TT_TIPS.length;
+      tipEl.textContent = TT_TIPS[tipI];
+      tipEl.classList.remove('out');
+    }, 450);
+  }, 6500);
+
+  // Live readouts. Cheap, and only while the title is up.
+  function tick(){
+    if(!document.body.classList.contains('title-mode')) return;
+    const d = new Date();
+    $('tt-clock').textContent = d.toTimeString().slice(0, 8);
+    const rooms = (typeof netRooms !== 'undefined' && Array.isArray(netRooms)) ? netRooms : [];
+    $('tt-s-games').textContent = rooms.length;
+    $('tt-s-players').textContent = rooms.reduce((a, r) => a + (+r.players || 0), 0);
+    const on = (typeof netSocket !== 'undefined' && netSocket && netSocket.connected);
+    const led = $('tt-net-led'), txt = $('tt-net-txt');
+    if(led){ led.classList.toggle('on', !!on); }
+    if(txt){ txt.textContent = on ? 'Online' : 'Offline, solo only'; }
+  }
+  tick();
+  setInterval(tick, 1000);
 })();
 
-// ── CINEMATIC CAMERA + MENU MOOD ────────────────────────────────────────────
-// animate() early-returns without pointer lock and only renders, so while the
-// menu is up nothing else touches the camera and this drives it freely.
+// ════════════════════════════════════════════════════════════════════════════
+//  TTScene — "TWO WORLDS", the animated title backdrop
 //
-// It must NOT run mid-match: tab away during a round and you want to see where
-// you actually are, not a fly-around. Hence the netInMatch check.
-// Framing note: the map is a walled compound. A low camera just stares at the
-// outside of the curtain wall (11 high, merlons to ~13), so this sits well
-// above it and looks down INTO the courtyard — roughly a 33 degree depression.
-const TITLE_CAM = {
-  radius: 60, height: 38, lookAt: 3,
-  period: 165,          // seconds per revolution — slow enough to feel still
-  pushFrom: 22,         // extra distance at the start, eased away
-  pushSecs: 5.5,
-  fov: 52,              // tighter than gameplay's 75
-  fogDensity: 0.0055,
-  exposure: 0.46,       // the map is near-white at 1.0; this is dusk
-  sky: 0x24405e,
-};
+//  The screen is split by a glowing diagonal seam into the game's two maps,
+//  both painted procedurally on a 2D canvas:
+//
+//    PALACE (left)      dusk: violet-to-gold sky, a low swollen sun, palace
+//                       silhouettes with domes, minarets and warm-lit arches,
+//                       palms and a crenellated wall in the foreground,
+//                       gliding birds and drifting desert dust
+//    OVERGROWTH (right) green mist: light shafts through the canopy, a stepped
+//                       pyramid, the tower and the colossus head in silhouette,
+//                       vast trunks and swaying vines in the foreground,
+//                       fireflies, falling leaves and rolling ground mist
+//
+//  The seam is not fixed. The loaded map owns most of the screen; hovering a
+//  map card in the lobby slides the seam so that world takes over, and each
+//  world slides with it so its landmark stays centred in the space it has.
+//
+//  Static scenery is painted once per resize into layer canvases; per frame
+//  only the skies, the animated extras and the composite are drawn.
+// ════════════════════════════════════════════════════════════════════════════
+const TTScene = (function(){
+  const cv = document.createElement('canvas');
+  cv.id = 'tt-scene';
+  cv.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(cv);
+  const ctx = cv.getContext('2d');
 
-let _titleActive = false, _titleT0 = 0;
-let _fogWas = null, _fovWas = null, _expWas = null, _skyWas = null;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W = 0, H = 0, DPR = 1, PAD = 0;
+  let P = null, J = null, grain = null;          // pre-rendered worlds
+  let running = false, raf = 0, last = 0, T = 0;
+  let mx = 0, my = 0, smx = 0, smy = 0;
+
+  // ── seam control ──────────────────────────────────────────────────────────
+  // split = fraction of the screen width given to the palace (left world)
+  const SPLIT = { alcazar: .62, overgrowth: .30, none: .5 };
+  const HOVER = { alcazar: .86, overgrowth: .14 };
+  const loaded = (typeof MAP_ID === 'string' && SPLIT[MAP_ID] !== undefined) ? MAP_ID : 'none';
+  let hoverId = null;
+  let split = SPLIT[loaded], splitTarget = split;
+
+  function rng(seed){
+    return function(){
+      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function layer(){
+    const c = document.createElement('canvas');
+    c.width = Math.ceil((W + PAD * 2) * DPR); c.height = Math.ceil(H * DPR);
+    const g = c.getContext('2d'); g.scale(DPR, DPR); g.translate(PAD, 0);
+    return [c, g];
+  }
+
+  // ── PALACE painting ─────────────────────────────────────────────────────────
+  function dome(g, cx, base, r, drumH){
+    g.fillRect(cx - r * 1.02, base - drumH, r * 2.04, drumH + 2);
+    g.beginPath(); g.ellipse(cx, base - drumH, r, r * 1.08, 0, Math.PI, 0); g.fill();
+    g.fillRect(cx - r * .05, base - drumH - r * 1.08 - r * .35, r * .1, r * .4);
+    g.beginPath(); g.arc(cx, base - drumH - r * 1.08 - r * .38, r * .09, 0, 6.283); g.fill();
+  }
+  function minaret(g, cx, base, h, w){
+    g.fillRect(cx - w / 2, base - h, w, h + 2);
+    g.fillRect(cx - w * .85, base - h * .72, w * 1.7, h * .035);     // balcony
+    g.fillRect(cx - w * .7, base - h - h * .05, w * 1.4, h * .05);
+    g.beginPath(); g.ellipse(cx, base - h - h * .05, w * .62, w * .9, 0, Math.PI, 0); g.fill();
+    g.fillRect(cx - w * .06, base - h - h * .05 - w * .9 - h * .08, w * .12, h * .08);
+  }
+  function crenels(g, x0, x1, top, h, step){
+    for(let x = x0; x < x1; x += step) g.fillRect(x, top - h, step * .55, h + 1);
+  }
+  function arches(g, x0, x1, top, h, n, glow){
+    const w = (x1 - x0) / n;
+    for(let i = 0; i < n; i++){
+      const ax = x0 + i * w + w * .22, aw = w * .56;
+      g.fillStyle = glow;
+      g.beginPath();
+      g.moveTo(ax, top + h); g.lineTo(ax, top + aw * .5);
+      g.ellipse(ax + aw / 2, top + aw * .5, aw / 2, aw * .55, 0, Math.PI, 0);
+      g.lineTo(ax + aw, top + h); g.closePath(); g.fill();
+    }
+  }
+  function palm(g, x, base, h, lean){
+    g.lineWidth = Math.max(3, h * .035); g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x, base);
+    g.quadraticCurveTo(x + lean * .4, base - h * .55, x + lean, base - h); g.stroke();
+    const tx = x + lean, ty = base - h;
+    for(let i = 0; i < 9; i++){
+      const a = -Math.PI * .95 + i * (Math.PI * 1.1 / 8);
+      const len = h * (.42 + (i % 3) * .06);
+      g.lineWidth = Math.max(2, h * .018);
+      g.beginPath(); g.moveTo(tx, ty);
+      g.quadraticCurveTo(tx + Math.cos(a) * len * .6, ty + Math.sin(a) * len * .35 - len * .15,
+                         tx + Math.cos(a) * len, ty + Math.sin(a) * len * .5 + len * .25);
+      g.stroke();
+    }
+  }
+  function buildPalace(){
+    const r = rng(311);
+    const far = layer(), mid = layer(), near = layer();
+    // far: a long hazy skyline of the palace city
+    { const g = far[1], base = H * .76;
+      g.fillStyle = 'rgba(122,62,78,.72)';
+      g.fillRect(-PAD, base, W + PAD * 2, H - base);
+      for(let x = -PAD; x < W + PAD; ){
+        const w = 30 + r() * 70, h = H * (.03 + r() * .07);
+        g.fillRect(x, base - h, w, h + 1);
+        if(r() < .35) dome(g, x + w / 2, base - h, w * .32, h * .15);
+        else if(r() < .25) minaret(g, x + w * .5, base - h, H * (.09 + r() * .06), Math.max(5, w * .09));
+        else crenels(g, x, x + w, base - h, 5, 9);
+        x += w + r() * 14;
+      }
+    }
+    // mid: the palace itself, centred on world x .36W
+    { const g = mid[1], base = H * .83, cx = W * .36, R = Math.min(H * .13, W * .1);
+      g.fillStyle = '#3a1e30';
+      g.fillRect(cx - R * 4.4, base - H * .12, R * 8.8, H);                 // main block
+      crenels(g, cx - R * 4.4, cx + R * 4.4, base - H * .12, 8, 16);
+      dome(g, cx, base - H * .12, R, R * .55);                              // the great dome
+      for(const s of [-1, 1]){
+        minaret(g, cx + s * R * 2.6, base - H * .12, H * .36, R * .22);
+        dome(g, cx + s * R * 1.55, base - H * .12, R * .42, R * .25);
+        g.fillStyle = '#3a1e30';
+        g.fillRect(cx + s * R * 5.6 - R * 1.1, base - H * .07, R * 2.2, H);   // side towers
+        crenels(g, cx + s * R * 5.6 - R * 1.1, cx + s * R * 5.6 + R * 1.1, base - H * .07, 7, 14);
+      }
+      arches(g, cx - R * 4, cx + R * 4, base - H * .1, H * .07, 9, 'rgba(255,170,80,.55)');
+      arches(g, cx - R * 4, cx + R * 4, base - H * .1, H * .07, 9, 'rgba(255,214,140,.18)');
+      // a second, smaller palace wing off to the left
+      g.fillStyle = '#3a1e30';
+      const lx = cx - R * 9;
+      g.fillRect(lx - R * 1.8, base - H * .08, R * 3.6, H);
+      dome(g, lx, base - H * .08, R * .6, R * .3);
+      minaret(g, lx + R * 2.2, base - H * .08, H * .26, R * .18);
+      arches(g, lx - R * 1.5, lx + R * 1.5, base - H * .065, H * .05, 3, 'rgba(255,160,70,.45)');
+    }
+    // near: wall, palms, dark ground
+    { const g = near[1], base = H * .93;
+      g.fillStyle = '#170c14';
+      g.fillRect(-PAD, base, W + PAD * 2, H);
+      crenels(g, -PAD, W * .9, base, H * .035, 26);
+      g.fillRect(-PAD, base - 4, W * .9 + PAD, 6);
+      g.strokeStyle = '#170c14';
+      palm(g, W * .04, base, H * .42, W * .03);
+      palm(g, W * .12, base, H * .3, -W * .02);
+      palm(g, W * .62, base, H * .36, W * .025);
+      palm(g, -W * .08, base, H * .5, W * .05);
+    }
+    return { far: far[0], mid: mid[0], near: near[0] };
+  }
+
+  // ── JUNGLE painting ─────────────────────────────────────────────────────────
+  function canopy(g, x0, x1, base, rMin, rMax, r){
+    for(let x = x0; x < x1; x += rMin * .9){
+      const rad = rMin + r() * (rMax - rMin);
+      g.beginPath(); g.arc(x, base - rad * .5 + r() * rad * .4, rad, 0, 6.283); g.fill();
+    }
+  }
+  function stepped(g, cx, base, w, h, tiers){
+    for(let i = 0; i < tiers; i++){
+      const tw = w * (1 - i / (tiers + .6)), th = h / tiers;
+      g.fillRect(cx - tw / 2, base - th * (i + 1), tw, th + 1);
+    }
+  }
+  function buildJungle(){
+    const r = rng(733);
+    const far = layer(), mid = layer(), near = layer();
+    // far: misty canopy line with a pyramid rising out of it
+    { const g = far[1], base = H * .72;
+      g.fillStyle = 'rgba(58,98,78,.8)';
+      stepped(g, W * .48, base + 4, H * .52, H * .27, 5);
+      g.fillRect(W * .48 - H * .03, base - H * .31, H * .06, H * .05);
+      canopy(g, -PAD, W + PAD, base, H * .025, H * .06, r);
+      g.fillRect(-PAD, base, W + PAD * 2, H);
+    }
+    // mid: the tower, the colossus, and a darker canopy
+    { const g = mid[1], base = H * .84, tx = W * .6;
+      g.fillStyle = '#132a20';
+      canopy(g, -PAD, W + PAD, base - H * .02, H * .04, H * .09, r);
+      g.fillRect(-PAD, base, W + PAD * 2, H);
+      // the tower: stacked, narrowing, crowned
+      const tw = H * .1;
+      g.fillRect(tx - tw * .8, base - H * .14, tw * 1.6, H * .14 + 2);
+      g.fillRect(tx - tw * .5, base - H * .48, tw, H * .36);
+      g.fillRect(tx - tw * .62, base - H * .5, tw * 1.24, H * .025);
+      g.fillRect(tx - tw * .58, base - H * .33, tw * 1.16, H * .02);
+      g.fillRect(tx - tw * .3, base - H * .55, tw * .6, H * .05);
+      // the colossus head
+      const hx = W * .38, hr = H * .085;
+      g.beginPath(); g.ellipse(hx, base - hr * .9, hr, hr * 1.05, 0, Math.PI, 0); g.fill();
+      g.fillRect(hx - hr, base - hr * .9, hr * 2, hr * .9 + 2);
+      g.fillStyle = 'rgba(160,200,170,.12)';
+      g.fillRect(hx - hr * .95, base - hr * 1.25, hr * 1.9, hr * .12);           // helmet band
+      g.beginPath(); g.arc(hx - hr * .98, base - hr * .7, hr * .18, 0, 6.283); g.fill();
+      g.beginPath(); g.arc(hx + hr * .98, base - hr * .7, hr * .18, 0, 6.283); g.fill();
+      g.fillStyle = 'rgba(10,20,14,.55)';
+      g.fillRect(hx - hr * .55, base - hr * .95, hr * .35, hr * .08);           // eyes
+      g.fillRect(hx + hr * .2, base - hr * .95, hr * .35, hr * .08);
+    }
+    // near: vast trunks, ferns
+    { const g = near[1], base = H * .95;
+      g.fillStyle = '#050d08';
+      g.fillRect(-PAD, base, W + PAD * 2, H);
+      for(const [x, w] of [[W * .97, W * .07], [W * .86, W * .03], [W * 1.08, W * .1]]){
+        g.beginPath();
+        g.moveTo(x - w * .5, H); g.lineTo(x - w * .38, 0); g.lineTo(x + w * .38, 0); g.lineTo(x + w * .5, H);
+        g.fill();
+        for(let i = 0; i < 5; i++){                                       // buttress roots
+          const a = (i - 2) * .5;
+          g.beginPath(); g.moveTo(x, base - H * .12);
+          g.quadraticCurveTo(x + a * w * .8, base - H * .04, x + a * w * 1.6, H); g.lineTo(x, H); g.fill();
+        }
+      }
+      for(let x = W * .3; x < W + PAD; x += 24 + r() * 30){               // fern fans
+        const fh = H * (.06 + r() * .08);
+        for(let k = 0; k < 7; k++){
+          const a = -Math.PI / 2 + (k - 3) * .32;
+          g.beginPath(); g.moveTo(x, base + 4);
+          g.quadraticCurveTo(x + Math.cos(a) * fh * .5, base - fh * .7,
+                             x + Math.cos(a) * fh * 1.1, base + Math.sin(a) * fh * .6 + fh * .3);
+          g.lineTo(x + Math.cos(a) * fh * 1.05, base + Math.sin(a) * fh * .6 + fh * .36);
+          g.closePath(); g.fill();
+        }
+      }
+    }
+    return { far: far[0], mid: mid[0], near: near[0] };
+  }
+
+  // ── animated extras ───────────────────────────────────────────────────────
+  let dust = [], birds = [], flies = [], leaves = [], vines = [];
+  function seedFX(){
+    const r = Math.random;
+    dust = Array.from({ length: 60 }, () => ({ x: r() * W, y: H * (.35 + r() * .6), s: .6 + r() * 1.6, v: 6 + r() * 14, ph: r() * 6 }));
+    birds = Array.from({ length: 5 }, (_, i) => ({ x: r() * W, y: H * (.18 + r() * .22), v: 18 + r() * 14, s: 5 + r() * 5, ph: r() * 6 }));
+    flies = Array.from({ length: 46 }, () => ({ x: r() * W, y: H * (.45 + r() * .5), ph: r() * 6, sp: .5 + r() * 1.5, dx: (r() - .5) * 8 }));
+    leaves = Array.from({ length: 14 }, () => ({ x: r() * W, y: r() * H, v: 14 + r() * 18, rot: r() * 6, vr: (r() - .5) * 2, s: 4 + r() * 5, ph: r() * 6 }));
+    vines = Array.from({ length: 9 }, (_, i) => ({ x: W * (.55 + i * .055 + (r() - .5) * .03), len: H * (.18 + r() * .3), ph: r() * 6 }));
+  }
+
+  function drawPalace(dx){
+    // sky
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#1b1032'); g.addColorStop(.32, '#47284a'); g.addColorStop(.56, '#a2503a');
+    g.addColorStop(.72, '#e39a4c'); g.addColorStop(.8, '#f5cd80'); g.addColorStop(1, '#c97a40');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // sun
+    const sx = W * .3 + dx * .15 - smx * 6, sy = H * .7, sr = H * .09 * (1 + Math.sin(T * .6) * .01);
+    const glow = ctx.createRadialGradient(sx, sy, sr * .5, sx, sy, sr * 6);
+    glow.addColorStop(0, 'rgba(255,214,140,.55)'); glow.addColorStop(.3, 'rgba(255,150,70,.22)'); glow.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffe9b0'; ctx.beginPath(); ctx.arc(sx, sy, sr, 0, 6.283); ctx.fill();
+    // birds
+    ctx.strokeStyle = 'rgba(40,18,30,.75)'; ctx.lineWidth = 1.6;
+    for(const b of birds){
+      const flap = Math.sin(T * 6 + b.ph) * .5;
+      const bx = b.x + dx * .3, by = b.y + Math.sin(T * .7 + b.ph) * 6;
+      ctx.beginPath(); ctx.moveTo(bx - b.s, by - b.s * flap); ctx.lineTo(bx, by); ctx.lineTo(bx + b.s, by - b.s * flap); ctx.stroke();
+    }
+    // scenery
+    ctx.drawImage(P.far,  -PAD + dx * .35 - smx * 8,  smy * 3, W + PAD * 2, H);
+    ctx.drawImage(P.mid,  -PAD + dx * .7  - smx * 16, smy * 5, W + PAD * 2, H);
+    // heat haze band over the city
+    const hz = ctx.createLinearGradient(0, H * .62, 0, H * .86);
+    hz.addColorStop(0, 'rgba(255,190,120,0)'); hz.addColorStop(.6, 'rgba(255,180,110,.16)'); hz.addColorStop(1, 'rgba(255,170,100,0)');
+    ctx.fillStyle = hz; ctx.fillRect(0, H * .62, W, H * .24);
+    ctx.drawImage(P.near, -PAD + dx * 1.0 - smx * 30, smy * 9, W + PAD * 2, H);
+    // dust
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for(const d of dust){
+      const a = .25 + .25 * Math.sin(T * 1.3 + d.ph);
+      ctx.fillStyle = `rgba(255,200,140,${a.toFixed(3)})`;
+      ctx.fillRect(d.x + dx * .8, d.y + Math.sin(T * .5 + d.ph) * 8, d.s, d.s);
+    }
+    ctx.restore();
+  }
+
+  function drawJungle(dx){
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#12332a'); g.addColorStop(.34, '#3a735a'); g.addColorStop(.6, '#94c09b');
+    g.addColorStop(.74, '#d2e7c5'); g.addColorStop(1, '#88aa7c');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // pale sun through mist, top right
+    const sx = W * .8 + dx * .15, sy = H * .16;
+    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, H * .55);
+    sg.addColorStop(0, 'rgba(240,255,220,.55)'); sg.addColorStop(.4, 'rgba(200,235,190,.16)'); sg.addColorStop(1, 'rgba(200,235,190,0)');
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+    // light shafts
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for(let i = 0; i < 5; i++){
+      const a = .045 + .03 * Math.sin(T * .4 + i * 1.7);
+      const x0 = sx - W * .05 + i * W * .045;
+      const lg = ctx.createLinearGradient(sx, sy, sx - W * .3, H);
+      lg.addColorStop(0, `rgba(230,255,210,${a.toFixed(3)})`); lg.addColorStop(1, 'rgba(230,255,210,0)');
+      ctx.fillStyle = lg;
+      ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0 + W * .025, 0);
+      ctx.lineTo(x0 - W * .32 + W * .07, H); ctx.lineTo(x0 - W * .32, H); ctx.fill();
+    }
+    ctx.restore();
+    ctx.drawImage(J.far, -PAD + dx * .35 - smx * 8,  smy * 3, W + PAD * 2, H);
+    // rolling mist between the layers
+    ctx.save();
+    for(let i = 0; i < 4; i++){
+      const mxp = ((T * (8 + i * 4) + i * W * .3) % (W * 1.6)) - W * .3;
+      const my2 = H * (.68 + i * .05);
+      const m = ctx.createRadialGradient(mxp, my2, 0, mxp, my2, W * .28);
+      m.addColorStop(0, 'rgba(200,230,205,.22)'); m.addColorStop(1, 'rgba(200,230,205,0)');
+      ctx.fillStyle = m; ctx.fillRect(mxp - W * .3, my2 - H * .15, W * .6, H * .3);
+    }
+    ctx.restore();
+    ctx.drawImage(J.mid,  -PAD + dx * .7  - smx * 16, smy * 5, W + PAD * 2, H);
+    // swaying vines hanging from the canopy
+    ctx.strokeStyle = '#0c1c13'; ctx.lineWidth = 2.2;
+    for(const v of vines){
+      const vx = v.x + dx, sw = Math.sin(T * .8 + v.ph) * 10;
+      ctx.beginPath(); ctx.moveTo(vx, 0);
+      ctx.quadraticCurveTo(vx + sw, v.len * .5, vx + sw * 1.6, v.len); ctx.stroke();
+      ctx.fillStyle = '#10261a';
+      for(let k = 1; k < 6; k++){
+        const t = k / 6, lx = vx + sw * 1.6 * t * t, ly = v.len * t;
+        ctx.beginPath(); ctx.ellipse(lx + 4, ly, 5, 2.4, .6, 0, 6.283); ctx.fill();
+      }
+    }
+    ctx.drawImage(J.near, -PAD + dx * 1.0 - smx * 30, smy * 9, W + PAD * 2, H);
+    // fireflies
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for(const f of flies){
+      const on = Math.max(0, Math.sin(T * f.sp * 2 + f.ph));
+      if(on < .05) continue;
+      const fx = f.x + dx * .9 + Math.sin(T * .6 + f.ph) * 14 + f.dx * Math.sin(T * .2);
+      const fy = f.y + Math.cos(T * .5 + f.ph) * 10;
+      const gl = ctx.createRadialGradient(fx, fy, 0, fx, fy, 7);
+      gl.addColorStop(0, `rgba(230,255,140,${(.9 * on).toFixed(3)})`); gl.addColorStop(1, 'rgba(230,255,140,0)');
+      ctx.fillStyle = gl; ctx.fillRect(fx - 7, fy - 7, 14, 14);
+    }
+    ctx.restore();
+    // falling leaves
+    ctx.fillStyle = '#2f5a2c';
+    for(const l of leaves){
+      ctx.save(); ctx.translate(l.x + dx + Math.sin(T + l.ph) * 20, l.y); ctx.rotate(l.rot);
+      ctx.beginPath(); ctx.ellipse(0, 0, l.s, l.s * .45, 0, 0, 6.283); ctx.fill(); ctx.restore();
+    }
+  }
+
+  function tick(dt){
+    for(const d of dust){ d.x += d.v * dt; if(d.x > W + 10) d.x = -10; }
+    for(const b of birds){ b.x += b.v * dt; if(b.x > W + 40){ b.x = -40; b.y = H * (.18 + Math.random() * .22); } }
+    for(const l of leaves){ l.y += l.v * dt; l.rot += l.vr * dt; if(l.y > H + 10){ l.y = -10; l.x = Math.random() * W; } }
+  }
+
+  function frame(now, once){
+    const dt = Math.min(.05, Math.max(0, (now - (last || now)) / 1000));
+    last = now;
+    if(!reduced) T += dt;
+    smx += (mx - smx) * Math.min(1, dt * 2.2);
+    smy += (my - smy) * Math.min(1, dt * 2.2);
+    splitTarget = hoverId ? HOVER[hoverId] : SPLIT[loaded];
+    split += (splitTarget - split) * (reduced ? 1 : Math.min(1, dt * 3.2));
+    if(!reduced) tick(dt);
+
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const sx = split * W, tilt = H * .2;
+    // each world slides so its landmark sits in the middle of its share
+    const palDx = (sx * .5 - W * .36) * .75;
+    // the jungle's landmarks aim for the gap between the seam and the deploy
+    // panel (which covers roughly the right third on wide screens)
+    const panelL = W > 960 ? W * .67 : W;
+    const junDx = ((sx + panelL) * .5 - W * .5) * .75;
+
+    drawPalace(palDx);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(sx + tilt, 0); ctx.lineTo(W + 2, 0); ctx.lineTo(W + 2, H); ctx.lineTo(sx - tilt, H);
+    ctx.closePath(); ctx.clip();
+    drawJungle(junDx);
+    // a soft shadow along the jungle side of the seam
+    const sh = ctx.createLinearGradient(sx, 0, sx + 60, 0);
+    sh.addColorStop(0, 'rgba(0,0,0,.45)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sh; ctx.fillRect(sx - tilt, 0, tilt * 2 + 60, H);
+    ctx.restore();
+
+    // the seam: a glowing gold edge
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = 'rgba(255,200,110,.85)'; ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(255,170,70,.9)'; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.moveTo(sx + tilt, 0); ctx.lineTo(sx - tilt, H); ctx.stroke();
+    ctx.restore();
+
+    // world names, faded by how much of the screen each world owns
+    ctx.save();
+    // world names ride the seam, one either side of it, near the bottom
+    ctx.font = "800 14px 'Saira Condensed','Arial Narrow',sans-serif";
+    ctx.textBaseline = 'middle';
+    const ly = H * .115, lx = sx + tilt * (1 - 2 * ly / H);
+    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 8;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(255,226,170,.85)';
+    ctx.fillText('P A L A C E   \u25C2', lx - 18, ly);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(220,244,206,.85)';
+    ctx.fillText('\u25B8   O V E R G R O W T H', lx + 18, ly);
+    ctx.restore();
+
+    // floor fade + grain
+    const fl = ctx.createLinearGradient(0, H * .84, 0, H);
+    fl.addColorStop(0, 'rgba(3,5,8,0)'); fl.addColorStop(1, 'rgba(3,5,8,.7)');
+    ctx.fillStyle = fl; ctx.fillRect(0, H * .84, W, H * .16);
+    if(grain){
+      ctx.save(); ctx.globalAlpha = .45;
+      ctx.fillStyle = ctx.createPattern(grain, 'repeat');
+      ctx.translate((Math.random() * 160) | 0, (Math.random() * 160) | 0);
+      ctx.fillRect(-160, -160, W + 320, H + 320);
+      ctx.restore();
+    }
+    if(running && !once && !reduced) raf = requestAnimationFrame(frame);
+  }
+
+  function build(){
+    DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+    W = innerWidth; H = innerHeight; PAD = Math.round(W * .3);
+    cv.width = Math.ceil(W * DPR); cv.height = Math.ceil(H * DPR);
+    P = buildPalace(); J = buildJungle(); seedFX();
+    grain = document.createElement('canvas');
+    grain.width = grain.height = 160;
+    const gg = grain.getContext('2d'), id = gg.createImageData(160, 160);
+    for(let i = 0; i < id.data.length; i += 4){
+      const v = Math.random() * 255 | 0;
+      id.data[i] = id.data[i+1] = id.data[i+2] = v; id.data[i+3] = 20;
+    }
+    gg.putImageData(id, 0, 0);
+    if(!running) frame(performance.now(), true);
+  }
+
+  addEventListener('pointermove', e => {
+    if(!running) return;
+    mx = (e.clientX / (W || 1)) * 2 - 1;
+    my = (e.clientY / (H || 1)) * 2 - 1;
+  }, { passive: true });
+  let rt = 0;
+  addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(build, 140); });
+  document.addEventListener('visibilitychange', () => {
+    if(document.hidden){ cancelAnimationFrame(raf); raf = 0; }
+    else if(running && !reduced && !raf){ last = 0; raf = requestAnimationFrame(frame); }
+  });
+
+  build();
+
+  return {
+    start(){
+      if(running) return;
+      running = true; last = 0;
+      if(reduced) frame(performance.now(), true);
+      else raf = requestAnimationFrame(frame);
+    },
+    stop(){ running = false; cancelAnimationFrame(raf); raf = 0; },
+    // the lobby's map cards call this on hover; null returns to the loaded map
+    hover(id){
+      hoverId = (id && HOVER[id] !== undefined) ? id : null;
+      if(reduced) frame(performance.now(), true);
+    },
+  };
+})();
+
+// ── TITLE MODE ──────────────────────────────────────────────────────────────
+// animate() early-returns without pointer lock and only renders. While the
+// title is up that render is invisible under the backdrop, so it is throttled
+// to one frame in 15: enough to keep shaders compiled and textures uploaded,
+// so the first deployed frame does not hitch, at a fraction of the GPU cost.
+let _titleActive = false;
 
 let _titleShouldRun = function(){
   if(document.pointerLockElement) return false;
@@ -253,80 +976,39 @@ let _titleShouldRun = function(){
   return true;
 };
 
+(function throttleHiddenRender(){
+  if(typeof renderer === 'undefined' || !renderer || typeof renderer.render !== 'function') return;
+  const orig = renderer.render.bind(renderer);
+  let n = 0;
+  renderer.render = function(s, c){
+    if(_titleActive && (n++ % 15) !== 0) return;
+    return orig(s, c);
+  };
+})();
+
+let _titleStopT = 0;
 function _titleEnter(){
   _titleActive = true;
-  _titleT0 = performance.now();
+  clearTimeout(_titleStopT);
   document.body.classList.add('title-mode');
-  if(scene.fog && _fogWas === null){ _fogWas = scene.fog.density; scene.fog.density = TITLE_CAM.fogDensity; }
-  if(_fovWas === null){ _fovWas = camera.fov; camera.fov = TITLE_CAM.fov; camera.updateProjectionMatrix(); }
-  if(_expWas === null){ _expWas = renderer.toneMappingExposure; renderer.toneMappingExposure = TITLE_CAM.exposure; }
-  if(_skyWas === null && scene.background && scene.background.isColor){
-    _skyWas = scene.background.getHex();
-    scene.background = new THREE.Color(TITLE_CAM.sky);
-  }
-  _titleHideViewmodel();
+  TTScene.start();
 }
-
-// The weapon is parented to the CAMERA, so it flies around with the title
-// shot -- a pistol floating over the palace. The body.title-mode CSS cannot
-// touch it: it is a 3D object, not an element.
-//
-// This runs every frame rather than once, because preloadWeapons() attaches
-// the glock only when its GLB finishes downloading, which is usually well
-// after the title screen has already appeared.
-function _titleHideViewmodel(){
-  if(typeof playerGun !== 'undefined' && playerGun && playerGun.visible) playerGun.visible = false;
-  if(typeof _fpBody !== 'undefined' && _fpBody && _fpBody.visible) _fpBody.visible = false;
-}
-
 function _titleExit(){
   _titleActive = false;
   document.body.classList.remove('title-mode');
-  if(scene.fog && _fogWas !== null){ scene.fog.density = _fogWas; _fogWas = null; }
-  if(_expWas !== null){ renderer.toneMappingExposure = _expWas; _expWas = null; }
-  if(_skyWas !== null){ scene.background = new THREE.Color(_skyWas); _skyWas = null; }
-  // Give the weapon back. applyViewmodel() respects the VIEWMODEL setting, so
-  // someone who chose HIDDEN keeps it hidden.
-  if(typeof applyViewmodel === 'function') applyViewmodel();
-  else if(typeof playerGun !== 'undefined' && playerGun) playerGun.visible = true;
-  if(typeof _fpBody !== 'undefined' && _fpBody && typeof _fpBodyWanted !== 'undefined')
-    _fpBody.visible = _fpBodyWanted;
-
-  if(_fovWas !== null){
-    // Restore through currentFov, not the saved value: animate()'s FOV easing
-    // only runs when currentFov and targetFov disagree, so it would never undo
-    // this by itself and every round would start at 52 degrees.
-    camera.fov = (typeof currentFov === 'number') ? currentFov : _fovWas;
-    camera.updateProjectionMatrix();
-    _fovWas = null;
-  }
+  // keep animating through the CSS fade-out, then stop drawing entirely
+  clearTimeout(_titleStopT);
+  _titleStopT = setTimeout(() => { if(!_titleActive) TTScene.stop(); }, 1000);
 }
 
-const _titleTmp = new THREE.Vector3();
 (function titleFrame(){
   requestAnimationFrame(titleFrame);
   const want = _titleShouldRun();
   if(want && !_titleActive) _titleEnter();
   else if(!want && _titleActive) _titleExit();
-  if(!_titleActive) return;
-
-  _titleHideViewmodel();          // weapons can finish loading at any moment
-
-  const t = (performance.now() - _titleT0) / 1000;
-  const k = Math.min(1, t / TITLE_CAM.pushSecs);
-  const push = TITLE_CAM.pushFrom * Math.pow(1 - k, 3);        // easeOutCubic
-  const ang = (t / TITLE_CAM.period) * Math.PI * 2 + 0.55;
-  const r = TITLE_CAM.radius + push;
-
-  camera.position.set(
-    Math.sin(ang) * r,
-    TITLE_CAM.height + push * 0.3 + Math.sin(t * 0.1) * 1.5,
-    Math.cos(ang) * r
-  );
-  camera.lookAt(_titleTmp.set(0, TITLE_CAM.lookAt, 0));
 })();
 
-console.log('title: live map backdrop (the 85 KB baked JPEG is no longer used)');
+console.log('title: two-worlds backdrop (palace / overgrowth)');
 
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -432,34 +1114,53 @@ console.log('title: live map backdrop (the 85 KB baked JPEG is no longer used)')
   const box = (x0,z0,x1,z1,fill,stroke) =>
     `<rect x="${px(x0)}" y="${py(z1)}" width="${(px(x1)-px(x0)).toFixed(1)}" height="${(py(z0)-py(z1)).toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="1"/>`;
 
-  const MAP_SVG = `
-  <svg viewBox="-6 -6 212 212" width="330" height="330" style="flex:0 0 auto;background:#12100c;border:1px solid #2e2a22">
-    <rect x="0" y="0" width="200" height="200" fill="#1d1913"/>
-    ${box(-45,-45,45,45,'#241f17','#5d4a2c')}
-    ${box(22,22,45,45,'#3d3320','#a8813c')}
-    ${box(-45,-45,-22,-22,'#3d3320','#a8813c')}
-    ${box(-45,35,-35,45,'#4a3a1c','#e0a35a')}
-    ${box(35,-45,45,-35,'#1e3049','#7fa8d8')}
-    <text x="${px(33)}" y="${py(33)}" fill="#e8c877" font-size="15" font-weight="700" text-anchor="middle" font-family="sans-serif">A</text>
-    <text x="${px(-33)}" y="${py(-33)}" fill="#e8c877" font-size="15" font-weight="700" text-anchor="middle" font-family="sans-serif">B</text>
-    <text x="${px(-40)}" y="${py(40)}" fill="#e0a35a" font-size="8" font-weight="700" text-anchor="middle" font-family="sans-serif">T</text>
-    <text x="${px(40)}" y="${py(-40)}" fill="#7fa8d8" font-size="8" font-weight="700" text-anchor="middle" font-family="sans-serif">CT</text>
-    <line x1="${px(-35)}" y1="${py(35)}" x2="${px(22)}" y2="${py(22)}" stroke="#e0a35a" stroke-width="1.4" stroke-dasharray="4 3" opacity=".75"/>
-    <line x1="${px(35)}" y1="${py(-35)}" x2="${px(-22)}" y2="${py(-22)}" stroke="#7fa8d8" stroke-width="1.4" stroke-dasharray="4 3" opacity=".75"/>
-    <text x="100" y="102" fill="#6b6152" font-size="8" text-anchor="middle" font-family="sans-serif">MID</text>
-    <text x="100" y="-1" fill="#5c5344" font-size="7" text-anchor="middle" font-family="sans-serif">N</text>
-  </svg>`;
+  const MAP_PANE = (MAP_ID === 'overgrowth') ? `
+        <div class="tt-h">Overgrowth</div>
+        <p class="tt-p">Temple ruins swallowed by jungle, 90 by 90 units. Deliberately
+          <strong>asymmetric</strong>, with <strong>diagonal spawns</strong>: Attack in the south-west
+          corner, Defence in the north-east. Each quarter plays differently, and each team
+          starts nearer to one side. A river runs the full width through mid.</p>
+        <div class="tt-map-wrap">
+          ${ttPlanSVG('overgrowth', 330)}
+          <div class="tt-legend">
+            <div><i style="background:#e0a35a"></i> <strong class="tt-t-col">Attack spawn</strong> &mdash; south-west corner</div>
+            <div><i style="background:#6fa3dc"></i> <strong class="tt-ct-col">Defence spawn</strong> &mdash; north-east corner, by the temple</div>
+            <div><i style="background:#5b5c4a"></i> <strong>North-west plains</strong> &mdash; open ground around the colossus and a giant banyan tree. Long sightlines: rifles and the AWP. Closest to Attack.</div>
+            <div><i style="background:#5b5c4a"></i> <strong>South-east warren</strong> &mdash; packed ruins, narrow alleys and a torch-lit tunnel. Close range: SMGs. Closest to Defence.</div>
+            <div><i style="background:#c9b27a"></i> <strong>Mid</strong> &mdash; the tower at the centre, where the diagonal routes meet. About equally far from both spawns.</div>
+            <p class="tt-p" style="margin-top:14px;font-size:13.5px">
+              Each team can reach its own side first, so the fight usually starts over
+              <strong>mid</strong>. Whoever holds it can rotate to either side faster.</p>
+          </div>
+        </div>        </div>` : `
+        <div class="tt-h">Palace</div>
+        <p class="tt-p">A walled palace compound, 94 by 94 units. The layout is
+          <strong>diagonal, not mirrored</strong>: the two spawns and two open courts alternate
+          around the four corners, so each team begins near one court and far from the other.</p>
+        <div class="tt-map-wrap">
+          ${ttPlanSVG('alcazar', 330)}
+          <div class="tt-legend">
+            <div><i style="background:#e0a35a"></i> <strong class="tt-t-col">Attack spawn</strong> &mdash; north-west</div>
+            <div><i style="background:#7fa8d8"></i> <strong class="tt-ct-col">Defence spawn</strong> &mdash; south-east</div>
+            <div><i style="background:#6a5a40"></i> <strong>Great Court</strong> &mdash; north-east</div>
+            <div><i style="background:#6a5a40"></i> <strong>Bazaar Court</strong> &mdash; south-west</div>
+            <div><i style="background:#5d4a2c"></i> Curtain wall &mdash; the hard edge of the map</div>
+            <p class="tt-p" style="margin-top:14px;font-size:13.5px">
+              Attack reaches the Great Court quickly and the Bazaar the long way round;
+              Defence is the reverse. Whoever holds <strong>mid</strong> can rotate to either
+              side faster than the other team can.</p>
+          </div>
+        </div>`;
 
   const modal = document.createElement('div');
   modal.id = 'tt-modal';
   modal.innerHTML = `
    <div id="tt-box">
     <div id="tt-head">
-      <span class="ttl">De_Alcazar</span>
+      <span class="ttl">Tactical City</span>
       <button class="tt-tab on" data-p="controls">Controls</button>
       <button class="tt-tab" data-p="round">The round</button>
       <button class="tt-tab" data-p="money">Money</button>
-      <button class="tt-tab" data-p="damage">Damage</button>
       <button class="tt-tab" data-p="map">The map</button>
       <button class="tt-tab" data-p="settings">Settings</button>
       <button id="tt-close">Close</button>
@@ -524,44 +1225,7 @@ console.log('title: live map backdrop (the 85 KB baked JPEG is no longer used)')
           now, and the round after next you can afford everything.</div>
       </div>
 
-      <div class="tt-pane" data-p="damage">
-        <div class="tt-h">Where you hit matters</div>
-        <p class="tt-p">Every body is four stacked hit zones. The same bullet does very
-          different damage depending on which one it passes through.</p>
-        <table class="tt-t">
-          <tr><th>Zone</th><th>Multiplier</th><th>AK-47 (20 base)</th></tr>
-          <tr><td class="tt-bad">Head</td><td class="tt-bad">4.00&times;</td><td>80</td></tr>
-          <tr><td>Stomach</td><td>1.25&times;</td><td>25</td></tr>
-          <tr><td>Chest and arms</td><td>1.00&times;</td><td>20</td></tr>
-          <tr><td>Legs</td><td>0.75&times;</td><td>15</td></tr>
-        </table>
-        <p class="tt-p">You start each round with 100 health and there is no regeneration
-          and no armour. Four chest hits from an AK, or two to the head.</p>
-        <div class="tt-note">The AWP is the exception: it carries its own headshot value
-          rather than a multiplier, so it does not scale to an absurd number. Anywhere it
-          lands, it hurts.</div>
-      </div>
-
-      <div class="tt-pane" data-p="map">
-        <div class="tt-h">De_Alcazar</div>
-        <p class="tt-p">A walled palace compound, 94 by 94 units. The layout is
-          <strong>diagonal, not mirrored</strong>: spawns and sites alternate around the
-          four corners, so each team begins near one site and far from the other.</p>
-        <div class="tt-map-wrap">
-          ${MAP_SVG}
-          <div class="tt-legend">
-            <div><i style="background:#e0a35a"></i> <strong class="tt-t-col">Attack spawn</strong> &mdash; north-west</div>
-            <div><i style="background:#7fa8d8"></i> <strong class="tt-ct-col">Defence spawn</strong> &mdash; south-east</div>
-            <div><i style="background:#a8813c"></i> <strong>A site</strong> &mdash; north-east, the Great Court</div>
-            <div><i style="background:#a8813c"></i> <strong>B site</strong> &mdash; south-west, the Bazaar Court</div>
-            <div><i style="background:#5d4a2c"></i> Curtain wall &mdash; the hard edge of the map</div>
-            <p class="tt-p" style="margin-top:14px;font-size:13.5px">
-              Dashed lines are each team's short route. Attack reaches A quickly and B the
-              long way round; Defence is the reverse. Whoever holds <strong>mid</strong>
-              can rotate to either site faster than the other team can.</p>
-          </div>
-        </div>
-      </div>
+      <div class="tt-pane" data-p="map">${MAP_PANE}</div>
 
       <div class="tt-pane" data-p="settings">
         <div class="tt-h">Settings</div>

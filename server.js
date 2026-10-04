@@ -53,6 +53,10 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 // ── RULES ───────────────────────────────────────────────────────────────────
 const MAX_PLAYERS   = 10;      // 5v5
+// Map keys the client knows (MAPS in public/src/10-config.js). A room keeps
+// the map it was created on, and everyone who joins is moved onto it.
+const MAPS          = ['alcazar', 'overgrowth'];
+const DEFAULT_MAP   = 'alcazar';
 const MIN_TO_START  = 2;
 const ROUNDS_TO_WIN = 8;       // first to 8
 const SWAP_AFTER    = 7;       // sides swap once 7 rounds have been played
@@ -84,6 +88,16 @@ const KILL_REWARD  = {                                  // by weapon key
 };
 const DEFAULT_KILL_REWARD = 300;
 
+// Cooldown between shots per weapon (ms), matching fireInterval in the
+// client's 10-config.js. Hits from one player are refused if they arrive
+// faster than their weapon can fire (with a little room for network bunching),
+// so an auto-clicker or a modified client gains nothing.
+const FIRE_MS = { knife: 420, glock18: 200, deagle: 500, mac10: 120, mp5: 110, mp7: 130,
+                  ump45: 140, ak47: 100, m4a1: 90, awp: 1300 };
+// how many hits may arrive bunched together: 3 for fast guns (lag spikes),
+// only a quarter-cooldown of leeway for the slow ones (deagle, awp, knife)
+const fireBurst = cd => cd >= 400 ? 1.25 : 3;
+
 // ── ROOMS ───────────────────────────────────────────────────────────────────
 /** @type {Map<string, Room>} */
 const rooms = new Map();
@@ -107,6 +121,7 @@ function createRoom(hostId, opts){
     // Public rooms appear in the browse list; private ones are reachable only
     // by their code. Both work identically once you are inside.
     isPublic: !!o.isPublic,
+    map: MAPS.includes(o.map) ? o.map : DEFAULT_MAP,
     name: '',                       // filled from the host's name on join
     players: new Map(),
     phase: 'LOBBY',
@@ -157,6 +172,7 @@ function publicRoomList(){
       round: r.round,
       score: r.score,
       full: r.players.size >= MAX_PLAYERS,
+      map: r.map,
     });
   }
   // Fullest first: a room with people in it is the one worth joining.
@@ -170,12 +186,19 @@ function broadcastRooms(){
   io.to('browse').emit('rooms', publicRoomList());
 }
 
+// Match statistics for the end-of-match screen. Reset when a match starts.
+function freshStats(){
+  return { assists: 0, hsKills: 0, damage: 0, shots: 0, hits: 0, headHits: 0,
+           mvps: 0, roundsPlayed: 0, roundKills: 0, roundDamage: 0, dmgFrom: {} };
+}
+
 function makePlayer(id, name, team){
   return {
     id, name, team,
     alive: false, hp: 0,
     money: START_MONEY,
     kills: 0, deaths: 0, score: 0,
+    ...freshStats(),
     weapon: 'glock18',
     x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0,
     moving: false,
@@ -208,6 +231,17 @@ function rosterOf(room){
   return [...room.players.values()].map(p => ({
     id: p.id, name: p.name, team: p.team, alive: p.alive, hp: p.hp,
     kills: p.kills, deaths: p.deaths, money: p.money, weapon: p.weapon,
+  }));
+}
+
+// Per-player match stats, for the win screen.
+function statsOf(room){
+  return [...room.players.values()].map(p => ({
+    id: p.id, name: p.name, team: p.team,
+    kills: p.kills, deaths: p.deaths, assists: p.assists,
+    hsKills: p.hsKills, damage: Math.round(p.damage),
+    shots: p.shots, hits: p.hits, headHits: p.headHits,
+    mvps: p.mvps, rounds: p.roundsPlayed,
   }));
 }
 
@@ -256,6 +290,7 @@ function startMatch(room){
   for(const p of room.players.values()){
     p.money = START_MONEY;
     p.kills = 0; p.deaths = 0;
+    Object.assign(p, freshStats());
   }
   beginBuy(room);
 }
@@ -267,8 +302,16 @@ function beginBuy(room){
     p.alive = true;
     p.hp = 100;
     p.weapon = 'glock18';
+    p.roundKills = 0; p.roundDamage = 0; p.dmgFrom = {};
+    p.inRound = true;               // counts toward rounds played (for ADR)
   }
-  io.to(room.code).emit('roundReset', { round: room.round + 1 });
+  // Each player's team rides along with the reset. The per-player 'you'
+  // update is only sent afterwards (by setPhase), so without this a client
+  // respawning at halftime still knows its OLD team and spawns on the wrong
+  // side for the first round after the swap.
+  const teams = {};
+  for(const p of room.players.values()) teams[p.id] = p.team;
+  io.to(room.code).emit('roundReset', { round: room.round + 1, teams });
   setPhase(room, 'BUY', BUY_MS, beginLive);
 }
 
@@ -280,6 +323,8 @@ function beginLive(room){
     const winner = alive.t > alive.ct ? 't' : alive.ct > alive.t ? 'ct' : 'ct';
     endRound(room, winner, 'time');
   });
+  // a side that emptied during buy time would otherwise wait out the clock
+  checkElimination(room);
 }
 
 function countAlive(room){
@@ -312,6 +357,15 @@ function endRound(room, winner, reason){
   room.lossStreak[loser] = Math.min(room.lossStreak[loser] + 1, LOSS_BONUS.length);
   room.lossStreak[winner] = 0;
   const lossPay = LOSS_BONUS[Math.max(0, room.lossStreak[loser] - 1)];
+  // MVP of the round: the winning side's top fragger (damage breaks ties)
+  let mvp = null;
+  for(const p of room.players.values()){
+    if(p.inRound){ p.roundsPlayed++; p.inRound = false; }
+    if(p.team !== winner) continue;
+    if(!mvp || p.roundKills > mvp.roundKills ||
+       (p.roundKills === mvp.roundKills && p.roundDamage > mvp.roundDamage)) mvp = p;
+  }
+  if(mvp && (mvp.roundKills > 0 || mvp.roundDamage > 0)) mvp.mvps++;
   for(const p of room.players.values()){
     p.money = Math.min(MAX_MONEY, p.money + (p.team === winner ? WIN_REWARD : lossPay));
     p.alive = false;
@@ -330,6 +384,8 @@ function swapSides(room){
   for(const p of room.players.values()){
     p.team = p.team === 't' ? 'ct' : 't';
     p.money = START_MONEY;         // both sides restart the economy at halftime
+    // tell each player straight away, before the next round's reset arrives
+    io.to(p.id).emit('you', { id: p.id, team: p.team, money: p.money, hp: p.hp, alive: p.alive });
   }
   const s = room.score;
   room.score = { t: s.ct, ct: s.t };
@@ -341,7 +397,8 @@ function endMatch(room, winner){
   for(const p of room.players.values()) p.alive = false;
   room.lastResult = { winner, reason: 'match' };
   setPhase(room, 'MATCH_END', 0, () => {});
-  io.to(room.code).emit('matchEnd', { winner, score: room.score, roster: rosterOf(room) });
+  io.to(room.code).emit('matchEnd', { winner, score: room.score, roster: rosterOf(room),
+                                      rounds: room.round, stats: statsOf(room) });
 }
 
 // ── CONNECTIONS ─────────────────────────────────────────────────────────────
@@ -359,14 +416,20 @@ io.on('connection', socket => {
   // Accepts either a bare name (the original shape) or {name, isPublic}, so an
   // older client keeps working and simply gets a private room.
   socket.on('createRoom', (arg, cb) => {
+    if(typeof cb !== 'function') cb = null;
+    // one lobby per connection: a double-click used to leave a ghost room
+    if(roomOf(socket)) return cb && cb({ ok: false, error: 'Already in a lobby.' });
     const isObj = arg && typeof arg === 'object';
     const name  = cleanName(isObj ? arg.name : arg);
-    const room  = createRoom(socket.id, { isPublic: isObj && !!arg.isPublic });
+    const room  = createRoom(socket.id, { isPublic: isObj && !!arg.isPublic, map: isObj ? arg.map : null });
     room.name   = name + "'S GAME";
     joinRoom(socket, room, name, cb);
   });
 
-  socket.on('joinRoom', ({ code, name }, cb) => {
+  socket.on('joinRoom', (arg, cb) => {
+    if(typeof cb !== 'function') cb = null;
+    const { code, name } = (arg && typeof arg === 'object') ? arg : {};
+    if(roomOf(socket)) return cb && cb({ ok: false, error: 'Already in a lobby.' });
     const room = rooms.get(String(code || '').toUpperCase().trim());
     if(!room) return cb && cb({ ok: false, error: 'No lobby with that code.' });
     if(room.players.size >= MAX_PLAYERS) return cb && cb({ ok: false, error: 'That lobby is full (10 players).' });
@@ -377,24 +440,27 @@ io.on('connection', socket => {
   // it is dropped from the subscription the moment it is inside a room, so a
   // player never receives list traffic while actually playing.
   socket.on('browse', (on, cb) => {
+    if(typeof cb !== 'function') cb = null;
     if(on){ socket.join('browse'); if(cb) cb(publicRoomList()); }
     else socket.leave('browse');
   });
-  socket.on('listRooms', cb => { if(cb) cb(publicRoomList()); });
+  socket.on('listRooms', cb => { if(typeof cb === 'function') cb(publicRoomList()); });
 
   function joinRoom(socket, room, name, cb){
     const team = pickTeam(room);
     const p = makePlayer(socket.id, name, team);
     // Drop-in mid-match: you sit out until the next round rather than appearing
     // in the middle of a live one.
-    if(room.phase === 'BUY'){ p.alive = true; p.hp = 100; }
+    if(room.phase === 'BUY'){ p.alive = true; p.hp = 100; p.inRound = true; }
     room.players.set(socket.id, p);
     socket.join(room.code);
     socket.leave('browse');            // you are in a game now, not shopping
     socket.data.room = room.code;
     cb && cb({ ok: true, code: room.code, id: socket.id, team,
                isHost: room.hostId === socket.id, max: MAX_PLAYERS,
-               isPublic: room.isPublic, roomName: room.name });
+               isPublic: room.isPublic, roomName: room.name, map: room.map });
+    // joining during buy time: put them at their spawn like everyone else
+    if(room.phase === 'BUY') socket.emit('roundReset', { round: room.round + 1, teams: { [socket.id]: team } });
     io.to(room.code).emit('chatSys', name + ' joined');
     broadcastPhase(room);
     broadcastRooms();
@@ -412,14 +478,17 @@ io.on('connection', socket => {
   // 20 Hz from each client. Trusted, clamped only enough to stop nonsense
   // reaching other clients' renderers.
   socket.on('input', d => {
+    if(!d || typeof d !== 'object') return;
     const room = roomOf(socket);
     if(!room) return;
     const p = room.players.get(socket.id);
     if(!p || !p.alive) return;
     if(!Number.isFinite(d.x) || !Number.isFinite(d.y) || !Number.isFinite(d.z)) return;
-    p.x = Math.max(-60, Math.min(60, d.x));
-    p.y = Math.max(-5,  Math.min(40, d.y));
-    p.z = Math.max(-60, Math.min(60, d.z));
+    // +/-75 covers the largest map (Overgrowth is 120 across, edge at +/-60)
+    // with room to spare; the clamp only stops nonsense, it is not the wall.
+    p.x = Math.max(-75, Math.min(75, d.x));
+    p.y = Math.max(-5,  Math.min(80, d.y));
+    p.z = Math.max(-75, Math.min(75, d.z));
     p.yaw = d.yaw || 0;
     p.pitch = d.pitch || 0;
     p.moving = !!d.moving;
@@ -428,10 +497,12 @@ io.on('connection', socket => {
 
   // Purely cosmetic — lets everyone else see a tracer and hear the shot.
   socket.on('shot', d => {
+    if(!d || typeof d !== 'object') return;
     const room = roomOf(socket);
     if(!room || room.phase !== 'LIVE') return;
     const p = room.players.get(socket.id);
     if(!p || !p.alive) return;
+    p.shots++;
     socket.to(room.code).emit('shot', {
       id: socket.id, weapon: p.weapon,
       x: d.x, y: d.y, z: d.z, dx: d.dx, dy: d.dy, dz: d.dz,
@@ -441,7 +512,8 @@ io.on('connection', socket => {
   // The shooter's client decides it connected; we decide what that costs.
   // Tier 1 trusts the claim but still owns the consequences, so every client
   // agrees on who is alive.
-  socket.on('hit', ({ target, damage, head }) => {
+  socket.on('hit', (arg) => {
+    const { target, damage, head } = (arg && typeof arg === 'object') ? arg : {};
     const room = roomOf(socket);
     if(!room || room.phase !== 'LIVE') return;
     const shooter = room.players.get(socket.id);
@@ -468,12 +540,24 @@ io.on('connection', socket => {
       (shooter.hitTokens == null ? HIT_BURST : shooter.hitTokens) + since * HIT_REFILL_PER_MS);
     shooter.lastHitAt = now;
     if(shooter.hitTokens < 1) return;
+    // per-weapon cooldown: tokens refill at one per cooldown, at most FIRE_BURST
+    const cd = Object.prototype.hasOwnProperty.call(FIRE_MS, shooter.weapon) ? FIRE_MS[shooter.weapon] : 70;
+    const burst = fireBurst(cd);
+    shooter.fireTokens = Math.min(burst,
+      (shooter.fireTokens == null ? burst : shooter.fireTokens) + (now - (shooter.lastFireAt || now)) / cd);
+    shooter.lastFireAt = now;
+    if(shooter.fireTokens < 1) return;
+    shooter.fireTokens -= 1;
     shooter.hitTokens -= 1;
 
     // 300, not 120. A headshot multiplier can legitimately exceed 100 — a
     // Deagle head hit is 60 x 4 = 240 — and the old ceiling silently ate that,
     // turning one-shot kills into survivable hits. Still a sanity bound.
     const dmg = Math.max(1, Math.min(300, Number(damage) || 0));
+    const dealt = Math.min(dmg, victim.hp);          // damage past 0 hp does not count
+    shooter.hits++; if(head) shooter.headHits++;
+    shooter.damage += dealt; shooter.roundDamage += dealt;
+    victim.dmgFrom[shooter.id] = (victim.dmgFrom[shooter.id] || 0) + dealt;
     victim.hp -= dmg;
     io.to(victim.id).emit('you', { id: victim.id, team: victim.team, money: victim.money, hp: Math.max(0, victim.hp), alive: victim.hp > 0 });
     io.to(shooter.id).emit('hitConfirm', { head: !!head, lethal: victim.hp <= 0 });
@@ -483,8 +567,16 @@ io.on('connection', socket => {
       victim.hp = 0;
       victim.deaths++;
       shooter.kills++;
+      shooter.roundKills++;
+      if(head) shooter.hsKills++;
+      // assist: anyone else who did 40+ damage to this victim this round
+      for(const [aid, d] of Object.entries(victim.dmgFrom)){
+        if(aid === shooter.id || d < 40) continue;
+        const a = room.players.get(aid);
+        if(a && a.team !== victim.team) a.assists++;
+      }
       shooter.money = Math.min(MAX_MONEY,
-        shooter.money + (KILL_REWARD[shooter.weapon] ?? DEFAULT_KILL_REWARD));
+        shooter.money + (Object.prototype.hasOwnProperty.call(KILL_REWARD, shooter.weapon) ? KILL_REWARD[shooter.weapon] : DEFAULT_KILL_REWARD));
       io.to(room.code).emit('kill', {
         killer: shooter.id, killerName: shooter.name, killerTeam: shooter.team,
         victim: victim.id, victimName: victim.name, victimTeam: victim.team,
@@ -498,7 +590,8 @@ io.on('connection', socket => {
 
   // Client spends locally for responsiveness and tells us after; we are the
   // record of truth and push the corrected figure straight back.
-  socket.on('buy', ({ weapon, price }) => {
+  socket.on('buy', (arg) => {
+    const { weapon, price } = (arg && typeof arg === 'object') ? arg : {};
     const room = roomOf(socket);
     if(!room || room.phase !== 'BUY') return;
     const p = room.players.get(socket.id);
@@ -541,7 +634,7 @@ io.on('connection', socket => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log('de_alcazar server on port ' + PORT);
+  console.log('Tactical City server on port ' + PORT);
 });
 
 module.exports = { app, server, io, rooms };

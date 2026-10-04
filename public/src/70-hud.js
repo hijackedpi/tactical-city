@@ -68,6 +68,7 @@ function resetGame(){
   // Eject from car if dying mid-drive
   if(playerInCar) exitCar(true);
   if(isScoped) setScoped(false);
+  cancelReload(); stopAutoFire();
   // Keep money and owned weapons across deaths; keep the equipped gun.
   gun={...GUNS[selectedGunKey]};
   health=100;kills=0;verticalVelocity=0;pitch=0;
@@ -90,8 +91,8 @@ function resetGame(){
     camera.add(playerGun);
     applyViewmodel();
   }
-  updateHUD(); updateMoneyUI();
   money = Math.max(money, START_MONEY);
+  updateHUD(); updateMoneyUI();
   document.getElementById('title').innerText='ELIMINATED';
   document.getElementById('desc').innerHTML='You went down. Your loadout is kept &mdash; redeploy at your spawn.';
   document.getElementById('start-btn').innerText='REDEPLOY';

@@ -57,5 +57,5 @@ console.log(`   ${''.padEnd(20)} ${''.padStart(5)}         ${(html.length/1024).
 // obvious-breakage check
 const n = (html.match(/<script type="module">/g) || []).length;
 if(n !== 1) console.log(`\n  WARNING: expected one module script, found ${n}`);
-for(const needle of ['function animate(', 'animate(0);', 'DE_ALCAZAR'])
+for(const needle of ['function animate(', 'animate(0);', 'TACTICAL CITY'])
   if(!html.includes(needle)) console.log(`  WARNING: output is missing ${JSON.stringify(needle)}`);

@@ -123,8 +123,8 @@ if(typeof hitZone === 'function'){
 
 if(typeof hitDamage === 'function'){
   const _origDamage = hitDamage;
-  hitDamage = function(base, headshot, zone, mult){
-    const d = _origDamage(base, headshot, zone, mult);
+  hitDamage = function(base, headshot, zone, mult, zoneDamage){
+    const d = _origDamage(base, headshot, zone, mult, zoneDamage);
     if(_dmgPend && _dmgPend.zone === zone){
       dmgOnHit(_dmgPend, d);
       _dmgPend = null;
@@ -152,8 +152,62 @@ function onMeleeHit(enemy, amount){
 // One funnel, so anything that wants to know about a hit — the training
 // centre's statistics, today — subscribes in one place rather than installing
 // a second set of wrappers around the same two functions.
+// ── HIT ZONE FLASH ─────────────────────────────────────────────────────────
+// Instead of a damage number, the part of the body you hit turns red for a
+// moment (head, chest, stomach or legs). The player's OWN model is tinted, only
+// between that zone's heights, so nothing sticks out past the body.
+//
+// How: the first time a player is hit, their materials are cloned (so tinting
+// one player never tints another) and given a small shader addition that reds
+// out any pixel whose world height falls in the band. Three uniforms drive it.
+const ZF_LIFE = 280;                               // ms
+const _zfActive = new Map();                       // enemy -> { y0, y1, born }
+function _zfPrepare(e){
+  if(e.userData._zfU) return e.userData._zfU;
+  const U = { uZfY0:{ value:0 }, uZfY1:{ value:0 }, uZfAmt:{ value:0 } };
+  e.traverse(o => {
+    if(!o.isMesh || !o.material) return;
+    const patch = m => {
+      const c = m.clone();
+      c.onBeforeCompile = sh => {
+        Object.assign(sh.uniforms, U);
+        sh.vertexShader = 'varying float vZfY;\n' + sh.vertexShader.replace('#include <project_vertex>',
+          '#include <project_vertex>\n  vZfY = (modelMatrix * vec4(transformed, 1.0)).y;');
+        sh.fragmentShader = 'uniform float uZfY0; uniform float uZfY1; uniform float uZfAmt; varying float vZfY;\n' +
+          sh.fragmentShader.replace('#include <dithering_fragment>',
+          '#include <dithering_fragment>\n  if(uZfAmt > 0.0 && vZfY > uZfY0 && vZfY < uZfY1) gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.0, 0.06, 0.04), uZfAmt);');
+      };
+      c.customProgramCacheKey = () => 'zoneflash';
+      return c;
+    };
+    o.material = Array.isArray(o.material) ? o.material.map(patch) : patch(o.material);
+  });
+  e.userData._zfU = U;
+  return U;
+}
+function zoneFlash(h){
+  const zone = h.zone === 'melee' ? 'chest' : h.zone;
+  const box = (typeof HITBOX !== 'undefined') && HITBOX.find(b => b.zone === zone);
+  if(!box || !h.e || !h.e.traverse) return;
+  _zfPrepare(h.e);
+  _zfActive.set(h.e, { box, born: performance.now() });
+}
+(function zfFrame(){
+  requestAnimationFrame(zfFrame);
+  if(!_zfActive.size) return;
+  const now = performance.now();
+  for(const [e, f] of _zfActive){
+    const U = e.userData._zfU, t = (now - f.born) / ZF_LIFE;
+    if(t >= 1 || !e.parent){ U.uZfAmt.value = 0; _zfActive.delete(e); continue; }
+    const s = (e.userData && e.userData.hitScale) || 1, y = e.position.y;
+    U.uZfY0.value = y + f.box.y0 * s;
+    U.uZfY1.value = y + f.box.y1 * s;
+    U.uZfAmt.value = 0.85 * (1 - t);
+  }
+})();
+
 function dmgOnHit(h, amount){
-  dmgShow(h.x, h.y, h.z, amount, h.zone);
+  zoneFlash(h);                                    // red flash on the body part, no number
   if(typeof prOnHit === 'function') prOnHit(h, amount);
 }
 

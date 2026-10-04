@@ -67,10 +67,14 @@
     const pos = geo.attributes.position;
     if(!pos) return null;
     const nor = geo.attributes.normal, uv = geo.attributes.uv, src = geo.index;
-    const want = new Set(matIndices);
+    // matIndices === null: the mesh has ONE material, so every group belongs to
+    // it. BoxGeometry and CylinderGeometry always carry groups (6 and 3), and
+    // filtering those by index 0 used to keep a single face of every box and
+    // drop every cylinder's caps.
+    const want = matIndices ? new Set(matIndices) : null;
 
     const list = [];
-    if(geo.groups && geo.groups.length){
+    if(want && geo.groups && geo.groups.length){
       for(const gr of geo.groups){
         if(!want.has(gr.materialIndex || 0)) continue;
         for(let i = gr.start; i < gr.start + gr.count; i++) list.push(src ? src.getX(i) : i);
@@ -113,6 +117,7 @@
   scene.traverse(o=>{
     if(!o.isMesh || o.isLight || o.isCamera) return;
     if(exclude.has(o)) return;
+    if(o.userData && o.userData.dynamic) return;   // animated props (flames) stay separate
     let p = o.parent, skip = false;
     while(p){ if(exclude.has(p)){ skip = true; break; } p = p.parent; }
     if(skip) return;
@@ -140,7 +145,7 @@
     }
 
     for(const [mat, slots] of slotsByMat){
-      const clean = sliceByMaterial(o.geometry, slots, o.matrixWorld);
+      const clean = sliceByMaterial(o.geometry, Array.isArray(o.material) ? slots : null, o.matrixWorld);
       if(!clean) continue;
       const key = cellPrefix + matKey(mat);
       let rec = buckets.get(key);

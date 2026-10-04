@@ -274,6 +274,9 @@ function buildHealthBar(){
   const barFill = new THREE.Mesh(new THREE.PlaneGeometry(barW, barH),
     new THREE.MeshBasicMaterial({ color:0x66ee66 }));
   barFill.renderOrder = 999; healthBar.add(barFill);
+  // Hidden: no health bar over players. The object is kept (code still updates
+  // it) and its spot is where the name tag sits now.
+  healthBar.visible = false;
   return { healthBar, barFill, barW };
 }
 
@@ -348,8 +351,8 @@ function makeEnemy(team){
 const HITBOX = [
   { zone:'head',    y0:1.54, y1:1.86, r:0.24, mult:4.00 },
   { zone:'chest',   y0:1.04, y1:1.54, r:0.46, mult:1.00 },   // torso + arms
-  { zone:'stomach', y0:0.82, y1:1.04, r:0.32, mult:1.25 },
-  { zone:'legs',    y0:0.00, y1:0.82, r:0.30, mult:0.75 },
+  { zone:'stomach', y0:0.82, y1:1.04, r:0.32, mult:1.00 },   // no body multipliers:
+  { zone:'legs',    y0:0.00, y1:0.82, r:0.30, mult:1.00 },   // chest, stomach and legs all take base damage
 ];
 
 // Swept segment vs a vertical cylinder. Returns the entry parameter along the
@@ -409,7 +412,9 @@ function hitZone(e, fx, fy, fz, tx, ty, tz){
 }
 
 // Damage for a hit, honouring an authored headshotDamage where one exists.
-function hitDamage(baseDamage, headshotDamage, zone, mult){
+function hitDamage(baseDamage, headshotDamage, zone, mult, zoneDamage){
+  // per-gun damage for each body part (10-config zoneDamage) wins when present
+  if(zoneDamage && zoneDamage[zone] != null) return zoneDamage[zone];
   if(zone === 'head' && headshotDamage) return headshotDamage;
   return Math.max(1, Math.round(baseDamage * mult));
 }
