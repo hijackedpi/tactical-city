@@ -1125,7 +1125,7 @@ console.log('title: two-worlds backdrop (palace / overgrowth)');
           <div class="tt-legend">
             <div><i style="background:#e0a35a"></i> <strong class="tt-t-col">Attack spawn</strong> &mdash; south-west corner</div>
             <div><i style="background:#6fa3dc"></i> <strong class="tt-ct-col">Defence spawn</strong> &mdash; north-east corner, by the temple</div>
-            <div><i style="background:#5b5c4a"></i> <strong>North-west plains</strong> &mdash; open ground around the colossus and a giant banyan tree. Long sightlines: rifles and the AWP. Closest to Attack.</div>
+            <div><i style="background:#5b5c4a"></i> <strong>North-west plains</strong> &mdash; open ground around the colossus, with a long ruin wall and stone blocks for cover. Long sightlines: rifles and the AWP. Closest to Attack.</div>
             <div><i style="background:#5b5c4a"></i> <strong>South-east warren</strong> &mdash; packed ruins, narrow alleys and a torch-lit tunnel. Close range: SMGs. Closest to Defence.</div>
             <div><i style="background:#c9b27a"></i> <strong>Mid</strong> &mdash; the tower at the centre, where the diagonal routes meet. About equally far from both spawns.</div>
             <p class="tt-p" style="margin-top:14px;font-size:13.5px">

@@ -17,7 +17,7 @@
 //  north-east. No block has a mirror twin, and each quarter plays its own way:
 //
 //     NORTH-WEST  the PLAINS: open jungle floor around the colossus (the one
-//                 stone head on the map) and the giant banyan tree. Long
+//                 stone head on the map), a long ruin wall and stone blocks. Long
 //                 sightlines, scattered low cover. T's side: 62u from T
 //                 spawn, 79u from CT spawn.
 //     SOUTH-EAST  the WARREN: packed ruin blocks, tight alleys and a roofed,
@@ -54,9 +54,11 @@ const OVERGROWTH = {
     [37, -24, 42, -15, 6, 'stelae'],   // CT east stelae, screening the courtyard from the warren
     [-45, -45, -40, -36, 6, 'stelae'],   // plains: stelae in the north-west corner
     [-30, -30, -23, -23, 5.2, 'colossus'],   // plains: the colossus, the only stone head on the map
-    [-41, -14, -36, -9, 12, 'banyan'],   // plains: the giant banyan tree
+    [-40.93, -14, -36.07, -9, 4.88, 'stone'],   // plains: big stone block (og_block) where the banyan tree stood
+    [-37.2, -29.2, -34.8, -26.8, 2.2, 'stone'],   // plains: stone block cover, west of the colossus
+    [-33.2, -36.25, -30.8, -33.85, 2.2, 'stone'],   // plains: stone block cover, under the north wall
     [-6, -6, 4, 4, 17, 'tower'],   // mid: the tower, dead centre where the diagonal routes meet
-    [8, 4, 14, 9, 5, 'jaguar'],   // mid: the jaguar
+    [8.57, 4, 13.43, 9, 4.88, 'stone'],   // mid: one big stone block (og_block at its own proportions) where the jaguar statue stood
     [-31.5, 1, -22.5, 9, 8, 'house'],   // temple-house: freestanding building
     [-9, -21.5, -1, -12.5, 8, 'house'],   // temple-house: freestanding building
     [25.5, -16.5, 33.5, -7.5, 8, 'house'],   // temple-house: freestanding building
@@ -74,34 +76,34 @@ const OVERGROWTH = {
   // the other way). Length 11 or 8; depth is 0.515 of the length and height
   // 0.456 of it, the model's own shape.
   walls: [
-    [40.38, 17.12, 9.25, 0],
-    [40.38, 28.38, 9.25, 180],
-    [17, -39.5, 11, 90],
-    [-36, 16, 11, 180],
-    [-42.94, 5.5, 8, 90],
-    [-16, -6, 11, 180],
-    [6, -28, 11, 90],
-    [-17, 42.17, 11, 180],
-    [5, 17, 11, 0],
-    [20, 0, 8, 270],
-    [13, 30, 11, 90],
-    [-27.97, 37.51, 8, 270],
-    [-16.39, 28.77, 11, 90],
-    [-17.21, 10.51, 8, 270],
-    [-3.58, -32.41, 11, 90],
-    [9.86, -14.92, 8, 180],
-    [-7.63, 14.76, 11, 90],
-    [19.24, 15.07, 11, 180],
-    [15.5, -25.9, 8, 90],
-    [-29.56, -4.53, 8, 180],
-    [12.26, -5.26, 8, 90],
-    [3.69, 30.99, 8, 270],
+    [39.9, 17.12, 10.2, 0],
+    [39.9, 28.38, 10.2, 180],
+    [17.0, -39.5, 10.2, 90],
+    [-36.0, 16, 10.2, 180],
+    [-42.37, 5.5, 10.2, 90],
+    [-16.3, -6, 10.2, 180],
+    [6.0, -28, 10.2, 90],
+    [-17.0, 42.17, 10.2, 180],
+    [5.0, 17.4, 10.2, 0],
+    [20.0, 0, 10.2, 270],
+    [13.0, 30, 10.2, 90],
+    [-27.97, 37.51, 10.2, 270],
+    [-16.39, 28.77, 10.2, 90],
+    [-17.21, 10.51, 10.2, 270],
+    [-3.58, -32.41, 10.2, 90],
+    [9.86, -14.92, 10.2, 180],
+    [-8.6, 14.76, 10.2, 90],
+    [19.24, 15.07, 10.2, 180],
+    [15.5, -25.9, 10.2, 90],
+    [-29.56, -4.53, 10.2, 180],
+    [12.26, -3.66, 10.2, 90],
+    [3.69, 30.99, 10.2, 270],
+    [-27, -42.37, 10.2, 180],   // plains: north wall, flush with the edge
   ],
 
   // waist-high cover [x0,z0,x1,z1]: dense on the plains, sparse in the warren
   low: [
     [-42, -26, -39, -24],
-    [-36, -36, -33, -34],
     [-40, -4, -37, -2],
     [-32, -18, -29, -16],
     [-18, -16, -15, -14],

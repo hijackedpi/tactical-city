@@ -250,7 +250,10 @@ function animate(now){
     // NET HOOK 1 — frozen during buy time and between rounds. Look around all
     // you like; you just cannot leave spawn until the round goes live.
     const frozen = (typeof netFrozen !== 'undefined') && netFrozen;
-    const moveSpeed = frozen ? 0 : (isScoped ? playerSpeed * 0.45 : playerSpeed);
+    // what you are holding sets your speed (GUN_MOVE in 10-config; knife fastest)
+    const gunMove = (typeof GUN_MOVE !== 'undefined' && GUN_MOVE[selectedGunKey]) || 1;
+    const scopeMove = (typeof GUN_MOVE_SCOPED !== 'undefined' && GUN_MOVE_SCOPED[selectedGunKey]) || 0.45;
+    const moveSpeed = frozen ? 0 : (isScoped ? playerSpeed * scopeMove : playerSpeed * gunMove);
     let dx = 0, dz = 0;
     if(keys['KeyW']){ dx += fwd.x; dz += fwd.z; }
     if(keys['KeyS']){ dx -= fwd.x; dz -= fwd.z; }

@@ -1308,7 +1308,7 @@ const _structures = [];
 // visibility is binary, so the instant a sliver of a building clears an edge it
 // appears. Easing the change over a fifth of a second is what actually removes
 // it. Set CULL_ENABLED false to draw everything and rely on the poly budget.
-const CULL_ENABLED = true;
+const CULL_ENABLED = false;       // off: it hid buildings that were in plain view
 const FADE_SECONDS = 0.22;         // how long a building takes to fade in or out
 // every corner plus the centre — see the comment in the loop below
 
@@ -1361,6 +1361,17 @@ function _segHitsBox(from, to, b){
 
 function updateStructureCulling(cam){
   if(!_structures.length) return;
+  // Culling off: every building drawn, fully solid, every frame.
+  if(!CULL_ENABLED){
+    for(const rec of _structures){
+      if(!rec.mesh.visible) rec.mesh.visible = true;
+      if(rec.opacity !== 1){
+        rec.opacity = rec.target = 1;
+        for(const m of rec.mats){ m.opacity = 1; m.transparent = false; }
+      }
+    }
+    return;
+  }
   cam.getWorldPosition(_cA);
 
   // Every structure, every frame — no round-robin.

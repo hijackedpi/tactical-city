@@ -449,11 +449,134 @@ function _bhWorldHit(ox, oy, oz, dx, dy, dz, maxD){
   return best < maxD ? { d: best, nx, ny, nz } : null;
 }
 
+// ── WHERE THE ROUND REALLY LANDS ────────────────────────────────────────────
+// The collision boxes are a rough fit around each model, so a hole placed on
+// a box floats in the air wherever the model's real surface sits inside it.
+// Holes are placed on the VISIBLE surface instead: the shot is ray-tested
+// against the actual triangles of the walls, models and floor it passes.
+//
+// That is only cheap with an index over each model's triangles (a BVH, from
+// three-mesh-bvh): a 120k-triangle building tests in microseconds instead of
+// milliseconds. The library is loaded optionally — if it ever fails to load,
+// holes fall back to the old box placement and nothing else is affected.
+let _bhBVH = null;                         // the library, once loaded
+import('three-mesh-bvh').then(m => {
+  _bhBVH = m;
+  THREE.Mesh.prototype.raycast = m.acceleratedRaycast;
+  console.log('bullet holes: surface-accurate (BVH ready)');
+}).catch(err => console.warn('bullet holes: BVH library unavailable, using collision boxes', err && err.message));
+
+const _bhRay = new THREE.Raycaster();
+_bhRay.firstHitOnly = true;
+let _bhList = [], _bhListAt = -1e9, _bhBuildQ = [];
+const _bhBoxT = new THREE.Box3(), _bhHits = [], _bhCand = [], _bhNW = new THREE.Vector3();
+
+// Every static, solid, visible mesh in the world, with its world box. Players,
+// weapons, effects, foliage (alpha-cut leaves) and water are left out: a round
+// passes through leaves, and a hole on a player is exactly what we do not want.
+function _bhRebuildList(){
+  _bhList = [];
+  const skipRoots = new Set();
+  if(typeof enemies !== 'undefined') for(const e of enemies) skipRoots.add(e);
+  if(typeof _selfHolder !== 'undefined') skipRoots.add(_selfHolder);
+  skipRoots.add(camera); skipRoots.add(_bhMesh);
+  const walk = (o, hidden) => {
+    if(skipRoots.has(o)) return;
+    if(o.userData && (o.userData.dynamic || o.userData.hp !== undefined || o.userData.isWeapon)) return;
+    hidden = hidden || !o.visible;
+    if(o.isMesh && !o.isInstancedMesh && !o.isSkinnedMesh && !hidden){
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      const seeThrough = m && ((m.transparent && m.opacity < 0.95) || m.alphaTest > 0 || m.depthWrite === false);
+      if(!seeThrough && o.geometry && o.geometry.attributes.position){
+        if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        const box = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+        _bhList.push({ mesh: o, box });
+        if(_bhBVH && !o.geometry.boundsTree && !o.geometry.userData._bhQueued){
+          o.geometry.userData._bhQueued = true; _bhBuildQ.push(o.geometry);
+        }
+      }
+    }
+    for(const c of o.children) walk(c, hidden);
+  };
+  scene.updateMatrixWorld();
+  walk(scene, false);
+  _bhListAt = performance.now();
+}
+// Build triangle indexes a few per frame in the background, biggest first is
+// not needed: the queue drains in a second or two after the map streams in.
+(function _bhBuildStep(){
+  requestAnimationFrame(_bhBuildStep);
+  if(!_bhBVH) return;
+  const now = performance.now();
+  if(now - _bhListAt > 4000) _bhRebuildList();          // models stream in after boot
+  const t0 = now;
+  while(_bhBuildQ.length && performance.now() - t0 < 6){
+    const g = _bhBuildQ.shift();
+    try { if(!g.boundsTree) g.boundsTree = new _bhBVH.MeshBVH(g); } catch(e){}
+  }
+})();
+
+// Distance to the first PLAYER on the ray, or Infinity.
+function _bhPlayerDist(from, d, maxD){
+  let best = Infinity;
+  if(typeof hitZone !== 'function' || typeof enemies === 'undefined') return best;
+  const ex = from.x + d.x * maxD, ey = from.y + d.y * maxD, ez = from.z + d.z * maxD;
+  for(const e of enemies){
+    if(e.userData && e.userData.netDead) continue;
+    const hz = hitZone(e, from.x, from.y, from.z, ex, ey, ez);
+    if(hz && hz.t * maxD < best) best = hz.t * maxD;
+  }
+  return best;
+}
+
+// First visible surface along the ray: { d, nx, ny, nz } or null.
+// Only meshes whose box the ray enters are tested, nearest first, and only
+// ones that already have their triangle index (the rest are skipped, never
+// slow-pathed, so a shot can never hitch).
+function _bhVisibleHit(from, d, maxD){
+  _bhRay.set(from, d); _bhRay.far = maxD; _bhRay.near = 0.05;
+  _bhCand.length = 0;
+  const ray = _bhRay.ray;
+  for(const r of _bhList){
+    if(!r.mesh.geometry.boundsTree) continue;
+    if(!r.mesh.parent) continue;                           // removed from the scene
+    const p = ray.intersectBox(r.box, _bhNW);
+    if(!p) continue;
+    const t = p.distanceTo(from);
+    if(t <= maxD) _bhCand.push([t, r.mesh]);
+  }
+  _bhCand.sort((a, b) => a[0] - b[0]);
+  let best = null;
+  for(const [t, mesh] of _bhCand){
+    if(best && t > best.distance) break;                  // nothing nearer can follow
+    _bhHits.length = 0;
+    mesh.raycast(_bhRay, _bhHits);
+    for(const h of _bhHits) if(!best || h.distance < best.distance) best = h;
+  }
+  if(!best || !best.face) return null;
+  const n = _bhNW.copy(best.face.normal).transformDirection(best.object.matrixWorld);
+  if(n.dot(d) > 0) n.negate();                             // always face the shooter
+  return { d: best.distance, nx: n.x, ny: n.y, nz: n.z };
+}
+
 function addBulletHole(from, d, len){
-  const h = _bhWorldHit(from.x, from.y, from.z, d.x, d.y, d.z, 240);
-  if(!h) return;
-  // a player was hit first: no hole
-  if(h.d > len + 0.05) return;
+  let h = null;
+  if(_bhBVH && _bhList.length){
+    h = _bhVisibleHit(from, d, 240);
+    if(!h) return;                                          // open sky: no hole
+    // The round itself stops at the collision box. If the visible surface is
+    // well past that (it went through an opening the box treats as solid),
+    // the hole would appear somewhere the bullet never reached: leave none.
+    const hb = _bhWorldHit(from.x, from.y, from.z, d.x, d.y, d.z, 240);
+    if(hb && h.d > hb.d + 1.0) return;
+    // a player was hit first: no hole
+    if(_bhPlayerDist(from, d, 240) < h.d) return;
+  } else {
+    h = _bhWorldHit(from.x, from.y, from.z, d.x, d.y, d.z, 240);
+    if(!h) return;
+    // a player was hit first: no hole
+    if(h.d > len + 0.05) return;
+  }
   // a shot from someone else that passes through YOUR body (you are not in
   // `enemies`, so aimDistance cannot see you) leaves no hole behind you either
   const cp = camera.position;

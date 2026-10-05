@@ -137,6 +137,27 @@ const WEAPON_FIX = {
   // example: ak47: { flip:true, rot:[0, 0, 0], pos:[0, 0, 0], scale:1 },
 };
 
+// ── MOVEMENT SPEED PER WEAPON ──────────────────────────────────────────────
+// What you hold changes how fast you run, as in CS2. The knife is full speed
+// (1.00); everything else is a fraction of it, from CS2's own speeds (knife
+// 250 u/s). Scoping uses GUN_MOVE_SCOPED below.
+const GUN_MOVE = {
+  knife:   1.00,   // fastest
+  glock18: 0.93,   // everything else stays below 94%
+  mac10:   0.88,
+  mp5:     0.88,
+  deagle:  0.92,
+  ump45:   0.87,
+  mp7:     0.86,
+  ak47:    0.82,
+  awp:     0.83,
+  m4a1:    0.77,
+};
+// Speed while scoped in, as a fraction of knife speed (only the AWP scopes).
+const GUN_MOVE_SCOPED = { awp: 0.70 };
+window.GUN_MOVE_SCOPED = GUN_MOVE_SCOPED;
+window.GUN_MOVE = GUN_MOVE;
+
 let selectedGunKey = 'glock18';
 let gun = {...GUNS.glock18};
 
