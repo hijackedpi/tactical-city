@@ -565,6 +565,14 @@
 
   // 00-imports.js is skipped on purpose — its four imports are the four above,
   // and a classic script cannot use import syntax. Everything else, in order.
+  // Testing on your own computer (VS Code Live Server, 127.0.0.1 / localhost):
+  // Live Server sends no cache rules, so the browser can keep old copies of
+  // some parts and mix them with new ones after an update — which breaks the
+  // game. Locally every load fetches fresh copies. The real server already
+  // tells browsers to check for updates, so the live site is unaffected.
+  const _local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  const _bust = _local ? '?v=' + Date.now() : '';
+
   const PARTS = [
     '10-config', '20-scene', '30-textures', '35-overgrowth', '40-map', '50-weapons',
     '60-actors', '70-hud', '80-audio', '90-input', 'a0-loop',
@@ -580,7 +588,7 @@
     if(_msg) _msg.textContent = 'Loading ' + name;
     await new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'src/' + name + '.js';   // classic: shares the global scope
+      s.src = 'src/' + name + '.js' + _bust;   // classic: shares the global scope
       s.onload = resolve;
       s.onerror = () => reject(new Error('could not load src/' + name + '.js'));
       document.head.appendChild(s);

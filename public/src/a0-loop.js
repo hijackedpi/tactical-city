@@ -284,6 +284,8 @@ function animate(now){
         verticalVelocity = 0;
         isGrounded = true;
       }
+      // still inside something with no top to ride up onto: push out sideways
+      if(typeof playerUnstick === 'function') playerUnstick(pp);
     }
     // Clamp to play area
     pp.x = Math.max(-BW + 3, Math.min(BW - 3, pp.x));

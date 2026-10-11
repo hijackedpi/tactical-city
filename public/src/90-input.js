@@ -904,6 +904,32 @@ function playerCollides(x, z, feetY){
 }
 const _nearbyPC = [];
 
+// ── PUSH OUT IF STUCK INSIDE SOMETHING ─────────────────────────────────────
+// Every move from inside a solid box collides, so a player who ends up
+// overlapping one (e.g. landing on a block with no walkable top) used to be
+// frozen there. Instead, push them out to the nearest free spot: the shortest
+// move along x or z that leaves them clear. Returns true if it moved them.
+const _nearbyUnstick = [];
+function playerUnstick(pp){
+  const f = pp.y - FEET_OFFSET;
+  if(!playerCollides(pp.x, pp.z, f)) return false;
+  _queryRegion(pp.x - PLAYER_HALF, pp.z - PLAYER_HALF, pp.x + PLAYER_HALF, pp.z + PLAYER_HALF, _nearbyUnstick);
+  const cands = [];
+  const E = 0.02;
+  for(let i = 0; i < _nearbyUnstick.length; i++){
+    const b = _nearbyUnstick[i];
+    if(b.max.y <= f + STEP_UP_H || b.min.y >= f + 1.8) continue;
+    cands.push([b.min.x - PLAYER_HALF - E - pp.x, 0], [b.max.x + PLAYER_HALF + E - pp.x, 0],
+               [0, b.min.z - PLAYER_HALF - E - pp.z], [0, b.max.z + PLAYER_HALF + E - pp.z]);
+  }
+  cands.sort((a, c) => Math.hypot(a[0], a[1]) - Math.hypot(c[0], c[1]));
+  for(const [dx, dz] of cands){
+    if(Math.hypot(dx, dz) > 3) break;
+    if(!playerCollides(pp.x + dx, pp.z + dz, f)){ pp.x += dx; pp.z += dz; return true; }
+  }
+  return false;
+}
+
 // Is the camera itself buried in geometry? Uses a tighter radius than the body
 // (the eye is a point, not a torso) but wider than the near plane, so the near
 // plane can never slice into a wall face.
