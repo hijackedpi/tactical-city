@@ -68,6 +68,7 @@ const BUY_MS       = envMs('BUY_MS', 15000);        // frozen in spawn, shop ope
 const LIVE_MS      = envMs('LIVE_MS', 115000);      // 1:55, same as CS
 const ROUND_END_MS = envMs('ROUND_END_MS', 5000);   // beat before the next buy
 const TICK_MS      = envMs('TICK_MS', 50);          // 20 Hz snapshot rate
+const CHAT_COOLDOWN_MS = 2000;                      // one chat message per 2 s
 
 // Hit-claim throttle. HIT_BURST is how many rounds may land at once — a client
 // frame can legitimately deliver several — and HIT_REFILL_PER_MS caps the
@@ -603,14 +604,19 @@ io.on('connection', socket => {
     socket.emit('you', { id: p.id, team: p.team, money: p.money, hp: p.hp, alive: p.alive });
   });
 
+  // Match chat (Enter in game). Only once a match is running, one message
+  // per 2 seconds per player, control characters stripped, 120 chars.
   socket.on('chat', msg => {
     const room = roomOf(socket);
-    if(!room) return;
+    if(!room || room.phase === 'LOBBY') return;
     const p = room.players.get(socket.id);
     if(!p) return;
-    const text = String(msg || '').slice(0, 120);
-    if(!text.trim()) return;
-    io.to(room.code).emit('chat', { name: p.name, team: p.team, text });
+    const now = Date.now();
+    if(now - (p.lastChat || 0) < CHAT_COOLDOWN_MS) return;
+    const text = String(msg || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 120);
+    if(!text) return;
+    p.lastChat = now;
+    io.to(room.code).emit('chat', { name: p.name, team: p.team, text, dead: !p.alive });
   });
 
   socket.on('disconnect', () => {

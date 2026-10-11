@@ -169,15 +169,133 @@ function slotForGun(key){
   const c = GUNS[key].category;
   return c === 'melee' ? 1 : (c === 'pistols' ? 2 : 3);
 }
+// ── WEAPON SLOTS HUD ───────────────────────────────────────────────────────
+// Right side of the screen: a silhouette of each weapon you carry with its
+// slot number. The one in your hands is gold, with its name underneath.
+// Side-view weapon silhouettes, muzzle to the left, drawn in a 128 x 40 box.
+const GUN_ICONS = {
+  knife:
+    'M2 21 Q14 13 58 14 L60 14 L60 25 L20 25 Q8 25 2 21 Z' +            // blade
+    'M60 10 L65 10 L65 29 L60 29 Z' +                                    // guard
+    'M65 15 L104 14 Q110 14 110 19.5 Q110 25 104 25 L65 24 Z' +         // handle
+    'M108 15.5 L114 16 L114 23 L108 23.5 Z',                             // pommel
+  glock18:
+    'M6 9 L62 9 L62 18 L6 18 Z' +                                        // slide
+    'M4 11 L6 11 L6 16 L4 16 Z' +                                        // muzzle
+    'M14 18 L58 18 L58 22 L14 22 Z' +                                    // frame
+    'M42 22 L58 22 L66 38 L52 39 Z',                                     // grip
+  deagle:
+    'M2 8 L68 7 L70 18 L2 18 Z' +                                        // long slide
+    'M2 5 L8 5 L8 8 L2 8 Z' +                                            // front sight
+    'M58 4 L64 4 L64 7 L58 7 Z' +                                        // rear sight
+    'M14 18 L66 18 L66 23 L14 23 Z' +                                    // frame
+    'M50 23 L66 23 L74 39 L58 39 Z',                                     // grip
+  mac10:
+    'M4 13 L22 13 L22 17 L4 17 Z' +                                      // barrel
+    'M22 9 L66 9 L66 22 L22 22 Z' +                                      // box receiver
+    'M44 22 L56 22 L58 39 L46 39 Z' +                                    // grip + magazine
+    'M48 6 L84 6 L84 8 L48 8 Z M82 6 L86 6 L86 18 L82 18 Z',             // folded wire stock
+  mp5:
+    'M2 14 L16 14 L16 17 L2 17 Z' +                                      // barrel
+    'M16 11 Q16 10 18 10 L38 10 L38 19 L18 19 Q16 19 16 18 Z' +         // handguard
+    'M38 9 L80 9 L80 19 L38 19 Z' +                                      // receiver
+    'M52 19 L61 19 Q65 29 60 37 L52 35 Q56 28 52 19 Z' +                 // curved magazine
+    'M70 19 L78 19 L82 31 L75 32 Z' +                                    // grip
+    'M80 11 L114 11 L114 14 L80 14 Z M112 8 L118 8 L118 24 L112 24 Z',   // retractable stock
+  mp7:
+    'M4 13 L18 13 L18 16 L4 16 Z' +                                      // barrel
+    'M18 9 L64 9 L64 20 L18 20 Z' +                                      // body
+    'M24 20 L31 20 L31 32 L25 32 Z' +                                    // fore grip
+    'M44 20 L53 20 L55 39 L46 39 Z' +                                    // grip + magazine
+    'M64 11 L88 11 L88 14 L64 14 Z M86 8 L91 8 L91 21 L86 21 Z',         // stock
+  ump45:
+    'M2 14 L14 14 L14 17 L2 17 Z' +                                      // barrel
+    'M14 9 L72 9 L72 21 L14 21 Z' +                                      // polymer body
+    'M38 21 L47 21 L48 39 L39 39 Z' +                                    // straight magazine
+    'M58 21 L66 21 L70 32 L63 33 Z' +                                    // grip
+    'M72 11 L106 12 L108 24 L100 25 L94 18 L72 18 Z',                   // folding stock
+  ak47:
+    'M2 12 L30 12 L30 14.5 L2 14.5 Z' +                                  // barrel
+    'M7 8 L10 8 L10 12 L7 12 Z' +                                        // front sight
+    'M28 11 L54 11 L54 19 L30 19 Q28 19 28 17 Z' +                       // handguard
+    'M54 10 L88 10 L88 20 L54 20 Z' +                                    // receiver
+    'M54 7.5 L62 7.5 L62 10 L54 10 Z' +                                  // rear sight
+    'M58 20 L68 20 Q71 30 64 39 L56 36.5 Q62 29 58 20 Z' +               // banana magazine
+    'M78 20 L86 20 L90 32 L83 33 Z' +                                    // grip
+    'M88 10 L124 14 L126 27 L118 28 L88 19 Z',                           // stock
+  m4a1:
+    'M0 12 L24 12 L24 17.5 L0 17.5 Z' +                                  // suppressor
+    'M24 13.5 L32 13.5 L32 16 L24 16 Z' +                                // barrel
+    'M32 10 L58 10 L58 19 L32 19 Z' +                                    // handguard
+    'M58 9 L88 9 L88 19 L58 19 Z' +                                      // receiver
+    'M58 6 L84 6 L84 9 L58 9 Z' +                                        // top rail
+    'M64 19 L73 19 L75 35 L66 36 Z' +                                    // magazine
+    'M80 19 L88 19 L92 31 L85 32 Z' +                                    // grip
+    'M88 11 L102 11 L102 15 L88 15 Z' +                                  // buffer tube
+    'M100 8 L124 9 L124 25 L104 23 Z',                                   // stock
+  awp:
+    'M0 11 L5 11 L5 19 L0 19 Z' +                                        // muzzle brake
+    'M5 13.5 L46 13.5 L46 16.5 L5 16.5 Z' +                              // long barrel
+    'M46 11 L94 11 L94 20 L46 20 Z' +                                    // action
+    'M50 6 L56 3 L84 3 L90 6 L90 9 L84 7 L56 7 L50 9 Z' +               // scope
+    'M58 7 L62 7 L62 11 L58 11 Z M78 7 L82 7 L82 11 L78 11 Z' +          // scope mounts
+    'M70 20 L80 20 L80 27 L70 27 Z' +                                    // magazine
+    'M94 11 L126 12 L126 27 L114 28 L106 20 L94 20 Z',                   // thumbhole stock
+};
+// trigger guards, drawn as thin outlines over the body
+const GUN_ICON_GUARDS = {
+  glock18: 'M30 22 Q31 29 40 28 L42 22',
+  deagle:  'M36 23 Q38 31 48 29 L50 23',
+  mac10:   'M32 22 Q33 28 41 27 L44 22',
+  mp5:     'M62 19 Q63 25 69 24 L70 19',
+  mp7:     'M34 20 Q35 26 42 25 L44 20',
+  ump45:   'M49 21 Q50 27 56 26 L58 21',
+  ak47:    'M69 20 Q70 26 76 25 L78 20',
+  m4a1:    'M74 19 Q75 25 80 24 L80 19',
+  awp:     'M84 20 Q85 26 92 25 L94 20',
+};
+
+(function slotHudStyle(){
+  const css = document.createElement('style');
+  css.textContent = `
+  #cs-slots{gap:14px !important;align-items:flex-end}
+  .cs-slot{display:grid !important;grid-template-columns:auto 16px;column-gap:8px;align-items:start;
+    color:rgba(236,239,243,.78) !important;font-size:14px !important;letter-spacing:.4px}
+  .cs-slot .cs-ic{width:112px;height:35px;display:block;filter:drop-shadow(0 2px 3px rgba(0,0,0,.85))}
+  .cs-slot .cs-slot-name{grid-column:1;text-align:right;font-size:15px;font-weight:700;margin-top:3px;
+    color:#e8b54a;text-shadow:0 1px 3px rgba(0,0,0,.9);display:none;white-space:nowrap}
+  .cs-slot.active{color:#e8b54a !important}
+  .cs-slot.active .cs-slot-name{display:block}
+  .cs-slot.empty{opacity:.35}
+  .cs-slot .cs-slot-num{grid-column:2;grid-row:1;width:auto !important;height:auto !important;
+    line-height:1 !important;background:none !important;font-size:15px !important;font-weight:700;
+    color:rgba(236,239,243,.85) !important;text-shadow:0 1px 3px rgba(0,0,0,.9) !important}
+  .cs-slot.active .cs-slot-num{color:#e8b54a !important}
+  .cs-slot .cs-dash{width:112px;height:35px;display:flex;align-items:center;justify-content:flex-end;font-size:22px}`;
+  document.head.appendChild(css);
+})();
+function gunIconSVG(key){
+  const body = GUN_ICONS[key];
+  if(!body) return null;
+  const guard = GUN_ICON_GUARDS[key];
+  return '<svg class="cs-ic" viewBox="0 0 128 40" aria-hidden="true"><path fill="currentColor" d="' + body + '"/>' +
+         (guard ? '<path fill="none" stroke="currentColor" stroke-width="2.2" d="' + guard + '"/>' : '') + '</svg>';
+}
 function updateSlotUI(){
   for(const el of document.querySelectorAll('.cs-slot')){
     const s = +el.dataset.slot;
     const key = slots[s];
-    const nameEl = el.querySelector('.cs-slot-name');
-    if(s === 1){ nameEl.innerText = key ? GUNS[key].name : '—'; }
-    else nameEl.innerText = key ? GUNS[key].name : '—';
-    el.classList.toggle('active', s === activeSlot);
-    el.classList.toggle('empty', s !== 1 && !key);
+    // rebuild only when the weapon in this slot changes
+    if(el.dataset.key !== String(key)){
+      el.dataset.key = String(key);
+      const icon = key && gunIconSVG(key);
+      el.innerHTML = (icon || '<span class="cs-dash">\u2014</span>') +
+        '<span class="cs-slot-num">' + s + '</span>' +
+        '<span class="cs-slot-name"></span>';
+      el.querySelector('.cs-slot-name').textContent = key ? GUNS[key].name : '';
+    }
+    el.classList.toggle('active', s === activeSlot && !!key);
+    el.classList.toggle('empty', !key);
   }
 }
 
@@ -316,6 +434,7 @@ function syncAmmoIn(){                        // store -> globals
 
 // One reload path for both the R key and the auto-reload on empty.
 let _reloadTimer = null;
+let reloadStartedAt = 0, reloadDur = 0;   // read by the reload animation and HUD
 // Stop a reload in progress (weapon switch, death, new round).
 function cancelReload(){
   if(_reloadTimer){ clearTimeout(_reloadTimer); _reloadTimer = null; }
@@ -326,6 +445,7 @@ function startReload(){
   if(isReloading || gun.melee) return;
   if(ammo >= gun.maxAmmo || reserve <= 0) return;
   playReload(); isReloading = true;
+  reloadStartedAt = performance.now(); reloadDur = gun.reloadTime;
   document.getElementById('reload-msg').style.display = 'block';
   const key = selectedGunKey;
   _reloadTimer = setTimeout(() => {

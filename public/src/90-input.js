@@ -480,6 +480,8 @@ function _bhRebuildList(){
   if(typeof enemies !== 'undefined') for(const e of enemies) skipRoots.add(e);
   if(typeof _selfHolder !== 'undefined') skipRoots.add(_selfHolder);
   skipRoots.add(camera); skipRoots.add(_bhMesh);
+  // guns lying on the floor are not part of the map (and their models are huge)
+  if(typeof droppedGuns !== 'undefined') for(const dg of droppedGuns) if(dg.mesh) skipRoots.add(dg.mesh);
   const walk = (o, hidden) => {
     if(skipRoots.has(o)) return;
     if(o.userData && (o.userData.dynamic || o.userData.hp !== undefined || o.userData.isWeapon)) return;
@@ -502,17 +504,38 @@ function _bhRebuildList(){
   walk(scene, false);
   _bhListAt = performance.now();
 }
-// Build triangle indexes a few per frame in the background, biggest first is
-// not needed: the queue drains in a second or two after the map streams in.
+// Building a triangle index for a big model takes 20-80 ms in one go, which
+// is several frames' worth — done mid-fight it shows up as a random drop to
+// 30 fps. So large ones are only built when a hitch cannot matter: on the
+// title screen, in buy time / dead, or before you have entered the game.
+// During live play only small ones are built, one per frame at most.
+// The map is rescanned while it streams in (first 90 s), then left alone.
+const BH_SMALL_TRIS = 8000;
+const _bhBootAt = performance.now();
+let _bhScans = 0;
+function _bhCalm(){
+  if(!document.pointerLockElement) return true;                        // menus, title, tabbed out
+  if(typeof _titleShouldRun === 'function' && _titleShouldRun()) return true;
+  if(typeof netFrozen !== 'undefined' && netFrozen) return true;        // buy time, or dead
+  return false;
+}
+function _bhTris(g){ return (g.index ? g.index.count : g.attributes.position.count) / 3; }
 (function _bhBuildStep(){
   requestAnimationFrame(_bhBuildStep);
   if(!_bhBVH) return;
   const now = performance.now();
-  if(now - _bhListAt > 4000) _bhRebuildList();          // models stream in after boot
-  const t0 = now;
-  while(_bhBuildQ.length && performance.now() - t0 < 6){
-    const g = _bhBuildQ.shift();
+  if((now - _bhBootAt < 90000 || !_bhList.length) && now - _bhListAt > 4000){
+    if(_bhCalm() || _bhScans < 2){ _bhRebuildList(); _bhScans++; }
+  }
+  if(!_bhBuildQ.length) return;
+  const calm = _bhCalm();
+  const t0 = performance.now();
+  for(let i = 0; i < _bhBuildQ.length; i++){
+    const g = _bhBuildQ[i];
+    if(!calm && _bhTris(g) > BH_SMALL_TRIS) continue;                  // wait for a calm moment
+    _bhBuildQ.splice(i, 1); i--;
     try { if(!g.boundsTree) g.boundsTree = new _bhBVH.MeshBVH(g); } catch(e){}
+    if(!calm || performance.now() - t0 > 12) break;                    // one per frame in play
   }
 })();
 

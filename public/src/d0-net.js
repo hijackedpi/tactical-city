@@ -499,7 +499,9 @@ function netInit(){
   netSocket.on('kill', d => netKillFeed(d));
   netSocket.on('hitConfirm', d => netHitMarker(d));
   netSocket.on('matchEnd', d => netMatchEnd(d));
-  netSocket.on('chatSys', msg => netKillFeedRaw(msg));
+  // escaped: these carry player names, which must never be read as HTML
+  netSocket.on('chatSys', msg => netKillFeedRaw(netEsc(msg)));
+  netSocket.on('chat', d => netChatShow(d));
 }
 
 function netEnterRoom(res){
@@ -1056,3 +1058,154 @@ let _netLastSend = 0;
 })();
 
 console.log('net: ready — lobby overlay is up, or click "Play solo instead".');
+
+
+// ── MATCH CHAT ──────────────────────────────────────────────────────────────
+// Enter opens the box, Enter sends, Esc (or Enter on an empty box) cancels.
+// In a match or in solo play. Messages sit bottom-left and fade after a few seconds;
+// while the box is open the recent history stays visible.
+//
+// While it is open, key presses are captured here (before the game's own key
+// handlers) and typed into the box, so nothing you type moves you, buys or
+// reloads — and it works with the mouse still locked to the game, without
+// depending on keyboard focus. Everything a player typed is shown with
+// textContent, never as HTML.
+const NET_CHAT_MAX = 120;
+const NET_CHAT_KEEP_MS = 9000;
+const NET_CHAT_COOLDOWN_MS = 2000;      // matches the server: one message per 2 s
+let netChatLastSent = 0, netChatWarnT = 0;
+let netChatOpenNow = false, netChatText = '';
+(function netChatInit(){
+  const css = document.createElement('style');
+  css.textContent = `
+  #net-chat{position:fixed;left:20px;bottom:170px;z-index:185;width:min(440px,60vw);
+    font:15px/1.35 'Saira Condensed','Arial Narrow',sans-serif;pointer-events:none;display:none}
+  #net-chat-log{display:flex;flex-direction:column;gap:3px}
+  .net-chat-line{background:rgba(8,10,14,.55);padding:3px 9px;border-radius:3px;color:#e8eaee;
+    text-shadow:0 1px 2px rgba(0,0,0,.8);word-wrap:break-word;transition:opacity .6s}
+  .net-chat-line.old{opacity:0}
+  #net-chat.open .net-chat-line.old{opacity:.85}
+  .net-chat-line .n{font-weight:700;margin-right:6px}
+  .net-chat-line .n.t{color:#e0a35a} .net-chat-line .n.ct{color:#8fb6e0}
+  .net-chat-line .dead{color:#c9615a;font-size:12px;margin-right:4px}
+  #net-chat-input{display:none;margin-top:6px;min-height:1.35em;background:rgba(8,10,14,.82);
+    border:1px solid rgba(232,235,240,.45);border-radius:3px;color:#fff;padding:6px 9px;
+    white-space:pre-wrap;word-wrap:break-word}
+  #net-chat-input .ph{color:#8a919c}
+  #net-chat-input .warn{color:#e07a6e;font-weight:700}
+  #net-chat-input .caret{display:inline-block;width:1px;height:1.1em;background:#fff;vertical-align:-2px;
+    margin-left:1px;animation:netCaret 1s steps(1) infinite}
+  @keyframes netCaret{50%{opacity:0}}
+  #net-chat.open #net-chat-input{display:block}`;
+  document.head.appendChild(css);
+  const box = document.createElement('div'); box.id = 'net-chat';
+  box.innerHTML = '<div id="net-chat-log"></div><div id="net-chat-input"></div>';
+  document.body.appendChild(box);
+
+  // Capture phase on window: runs before every other key handler in the game.
+  const onKey = e => {
+    if(!netChatOpenNow){
+      if(e.type !== 'keydown' || e.key !== 'Enter' || e.repeat) return;
+      if(!netChatAllowed()) return;
+      if(!document.pointerLockElement) return;
+      const shop = document.getElementById('shop');
+      if(shop && shop.style.display === 'flex') return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      netChatOpen();
+      return;
+    }
+    // open: the game never sees these keys
+    e.stopImmediatePropagation();
+    if(e.type !== 'keydown') return;
+    if(e.ctrlKey || e.metaKey){ if(e.key.toLowerCase() !== 'v') e.preventDefault(); return; }
+    e.preventDefault();
+    if(e.key === 'Enter') netChatSend();
+    else if(e.key === 'Escape') netChatClose();
+    else if(e.key === 'Backspace') netChatText = netChatText.slice(0, -1);
+    else if(e.key.length === 1 && netChatText.length < NET_CHAT_MAX) netChatText += e.key;
+    netChatDraw();
+  };
+  window.addEventListener('keydown', onKey, true);
+  window.addEventListener('keyup', onKey, true);
+  window.addEventListener('keypress', e => { if(netChatOpenNow) e.stopImmediatePropagation(); }, true);
+  // Ctrl+V pastes into the box
+  window.addEventListener('paste', e => {
+    if(!netChatOpenNow) return;
+    const t = (e.clipboardData && e.clipboardData.getData('text')) || '';
+    netChatText = (netChatText + t.replace(/[\u0000-\u001f\u007f]/g, ' ')).slice(0, NET_CHAT_MAX);
+    netChatDraw(); e.preventDefault();
+  });
+  // leaving the match (or the game losing the mouse) hides / closes it
+  setInterval(() => {
+    const on = netChatAllowed();
+    box.style.display = on ? 'block' : 'none';
+    if(netChatOpenNow && (!on || !document.pointerLockElement)) netChatClose();
+  }, 300);
+})();
+
+// Chat works in a match, and in solo play. Not while sat in a multiplayer
+// room waiting for the match to start, and not on the title screen.
+function netChatAllowed(){
+  if(typeof netInMatch !== 'undefined' && netInMatch) return true;
+  if(typeof netRoomCode !== 'undefined' && netRoomCode) return false;      // in a room, match not started
+  if(typeof _titleShouldRun === 'function' && _titleShouldRun()) return false;
+  return true;                                                            // solo
+}
+function netChatMyName(){
+  const el = document.getElementById('net-name');
+  const v = el && el.value.trim();
+  if(v) return v.toUpperCase();
+  try { return (localStorage.getItem('alcazar.name') || 'YOU').toUpperCase(); } catch(e){ return 'YOU'; }
+}
+function netChatDraw(warn){
+  const el = document.getElementById('net-chat-input');
+  if(!el) return;
+  el.textContent = '';
+  if(warn){ const w = document.createElement('span'); w.className = 'warn'; w.textContent = warn + ' '; el.appendChild(w); }
+  if(netChatText){ el.appendChild(document.createTextNode(netChatText)); }
+  else { const ph = document.createElement('span'); ph.className = 'ph'; ph.textContent = 'Say to everyone…'; el.appendChild(ph); }
+  const c = document.createElement('span'); c.className = 'caret'; el.appendChild(c);
+}
+function netChatOpen(){
+  // let go of anything held, so you do not keep running while you type
+  if(typeof keys !== 'undefined') for(const k in keys) keys[k] = false;
+  netChatOpenNow = true; netChatText = '';
+  document.getElementById('net-chat').classList.add('open');
+  netChatDraw();
+}
+function netChatClose(){
+  netChatOpenNow = false; netChatText = '';
+  const box = document.getElementById('net-chat');
+  if(box) box.classList.remove('open');
+}
+function netChatSend(){
+  const text = netChatText.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, NET_CHAT_MAX);
+  if(!text){ netChatClose(); return; }
+  // 2-second cooldown: keep the box open with your text and show how long is left
+  const wait = NET_CHAT_COOLDOWN_MS - (performance.now() - netChatLastSent);
+  if(wait > 0){
+    netChatWarnT = performance.now();
+    netChatDraw('Wait ' + (wait / 1000).toFixed(1) + 's');
+    setTimeout(() => { if(netChatOpenNow && performance.now() - netChatWarnT >= 1400) netChatDraw(); }, 1500);
+    return;
+  }
+  if(netInMatch){ if(netSocket) netSocket.emit('chat', text); }
+  // solo: no server to relay to, so it simply shows in your own chat
+  else netChatShow({ name: netChatMyName(), team: (typeof selfTeamNow === 'function' ? selfTeamNow() : 't'), text });
+  netChatLastSent = performance.now();
+  netChatClose();
+}
+function netChatShow(d){
+  const log = document.getElementById('net-chat-log');
+  if(!log || !d) return;
+  const line = document.createElement('div'); line.className = 'net-chat-line';
+  if(d.dead){ const x = document.createElement('span'); x.className = 'dead'; x.textContent = '*DEAD*'; line.appendChild(x); }
+  const n = document.createElement('span');
+  n.className = 'n ' + (d.team === 'ct' ? 'ct' : 't');
+  n.textContent = String(d.name || '???') + ':';
+  const t = document.createElement('span'); t.textContent = String(d.text || '');
+  line.appendChild(n); line.appendChild(t);
+  log.appendChild(line);
+  while(log.children.length > 8) log.removeChild(log.firstChild);
+  setTimeout(() => line.classList.add('old'), NET_CHAT_KEEP_MS);
+}

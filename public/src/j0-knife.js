@@ -306,3 +306,32 @@ function knInPlay(){
 })(0);
 
 console.log('knife: viewmodel animation active (draw / idle / sprint / slash-backhand-stab)');
+
+// ── RELOAD ANIMATION (every gun) ────────────────────────────────────────────
+// Registered after a0-loop and the knife, so it adds on top of the pose a0-loop
+// writes each frame. The gun dips and rolls onto its side, tugs as the old
+// magazine comes out, kicks as the new one is slapped in, then comes back up.
+// The hands are children of the gun, so they follow. Purely visual.
+let _rlWasOn = false;
+(function reloadAnimFrame(){
+  requestAnimationFrame(reloadAnimFrame);
+  if(typeof playerGun === 'undefined' || !playerGun || selectedGunKey === 'knife') { _rlWasOn = false; return; }
+  const on = typeof isReloading !== 'undefined' && isReloading && reloadDur > 0;
+  if(!on){
+    if(_rlWasOn){ playerGun.rotation.set(0, 0, 0); _rlWasOn = false; }
+    return;
+  }
+  _rlWasOn = true;
+  const p = Math.max(0, Math.min(1, (performance.now() - reloadStartedAt) / reloadDur));
+  const ease = t => t * t * (3 - 2 * t);
+  // down over the first 22%, up over the last 20%
+  const d = p < 0.22 ? ease(p / 0.22) : (p > 0.80 ? ease((1 - p) / 0.20) : 1);
+  // a short pulse centred on t, width w
+  const bump = (t, w) => { const x = (p - t) / w; return Math.abs(x) < 1 ? Math.cos(x * Math.PI / 2) ** 2 : 0; };
+  const out = bump(0.36, 0.07), slap = bump(0.64, 0.06);
+  const side = (typeof viewSide !== 'undefined' ? viewSide : 1);
+  playerGun.position.x += 0.03 * d * side;
+  playerGun.position.y += -0.11 * d - 0.022 * out + 0.03 * slap;
+  playerGun.position.z += 0.05 * d;
+  playerGun.rotation.set(0.16 * d + 0.05 * slap, -0.10 * d * side, 0.62 * d * side + 0.06 * out * side);
+})();
