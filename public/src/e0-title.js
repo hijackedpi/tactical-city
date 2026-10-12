@@ -1026,252 +1026,608 @@ console.log('title: two-worlds backdrop (palace / overgrowth)');
 //  describe, so they cannot drift out of date the way hand-written docs do.
 // ════════════════════════════════════════════════════════════════════════════
 (function buildTitleModal(){
+  // ══════════════════════════════════════════════════════════════════════════
+  //  HOW TO PLAY  +  SETTINGS
+  //  One overlay (#tt-modal, which d0-net checks so the resume prompt stands
+  //  down while it is open), two separate screens. Each has a side menu and
+  //  its own sections. ttOpen('settings') opens Settings; any other name opens
+  //  How to play at that section ('basics', 'controls', 'weapons', 'round',
+  //  'money', 'maps'). Inventory is its own screen in m0-account.js.
+  // ══════════════════════════════════════════════════════════════════════════
 
   const style = document.createElement('style');
   style.textContent = `
-  #tt-modal{position:fixed;inset:0;z-index:420;display:none;align-items:center;
-    justify-content:center;background:rgba(6,8,12,.82);backdrop-filter:blur(7px);
-    font-family:'Stratum2','Arial Narrow','Segoe UI',sans-serif;color:#eee6d6}
-  #tt-modal.on{display:flex}
-  #tt-box{width:min(940px,94vw);height:min(80vh,760px);display:flex;flex-direction:column;
-    background:rgba(15,18,24,.96);border:1px solid rgba(217,178,90,.24);
-    border-top:2px solid #c98f4a;box-shadow:0 30px 90px rgba(0,0,0,.62)}
-  #tt-head{display:flex;align-items:center;gap:4px;padding:0 8px 0 22px;
-    border-bottom:1px solid rgba(217,178,90,.16);flex:0 0 auto;flex-wrap:wrap}
-  #tt-head .ttl{font-weight:800;font-size:17px;letter-spacing:.16em;text-transform:uppercase;
-    margin-right:14px;color:#f2e6cf;padding:15px 0}
-  .tt-tab{background:none;border:none;color:#8a7f6c;cursor:pointer;padding:16px 13px;
-    font:700 12px/1 inherit;letter-spacing:.13em;text-transform:uppercase;
-    border-bottom:2px solid transparent;transition:color .15s}
-  .tt-tab:hover{color:#d8cbb2}
-  .tt-tab.on{color:#e8c877;border-bottom-color:#c98f4a}
-  #tt-close{margin-left:auto;background:none;border:1px solid #333c48;color:#9aa3b0;
-    cursor:pointer;font:700 12px/1 inherit;letter-spacing:.12em;padding:9px 14px}
-  #tt-close:hover{color:#fff;border-color:#5a6577}
-  #tt-body{overflow-y:auto;padding:24px 26px 30px;flex:1 1 auto;line-height:1.6}
-  .tt-pane{display:none}
-  .tt-pane.on{display:block;animation:tFade .2s ease-out}
-  .tt-h{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#c98f4a;
-    font-weight:700;margin:26px 0 10px;padding-bottom:7px;border-bottom:1px solid rgba(217,178,90,.14)}
-  .tt-pane > .tt-h:first-child{margin-top:0}
-  .tt-p{max-width:74ch;color:#c9bda6;margin:0 0 13px;font-size:14.5px}
-  .tt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:7px 20px;margin-bottom:6px}
-  .tt-row{display:flex;align-items:center;gap:9px;font-size:14px;color:#ddd3bf;padding:3px 0}
-  .tt-row .lbl{color:#9c917f}
-  kbd.tt-k{display:inline-block;min-width:26px;text-align:center;padding:4px 7px;
-    background:#20262f;border:1px solid #39414d;border-bottom-width:2px;border-radius:3px;
-    font:700 11.5px/1 inherit;color:#e9dfc9;letter-spacing:.04em}
-  table.tt-t{border-collapse:collapse;width:100%;margin:4px 0 16px;font-size:13.5px}
-  table.tt-t th{text-align:left;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
-    color:#8a7f6c;font-weight:700;padding:8px 11px;background:rgba(255,255,255,.03)}
-  table.tt-t td{padding:7px 11px;border-top:1px solid rgba(255,255,255,.06);color:#d5cab4;
-    font-variant-numeric:tabular-nums}
-  table.tt-t tr:hover td{background:rgba(217,178,90,.05)}
-  .tt-good{color:#7ec98f}.tt-bad{color:#e08a7e}.tt-gold{color:#e8c877}
-  .tt-t-col{color:#e0a35a;font-weight:700}.tt-ct-col{color:#7fa8d8;font-weight:700}
-  .tt-note{border-left:2px solid #c98f4a;background:rgba(201,143,74,.07);
-    padding:11px 15px;margin:14px 0;font-size:13.5px;color:#cdbfa5;max-width:74ch}
-  .tt-map-wrap{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
-  .tt-legend{font-size:13.5px;color:#c9bda6;min-width:210px;flex:1}
-  .tt-legend div{display:flex;align-items:center;gap:9px;padding:4px 0}
-  .tt-legend i{width:12px;height:12px;flex:0 0 auto;border-radius:2px;display:block}
-  #tt-body .set-list{max-width:600px;margin-left:0 !important;margin-right:auto !important}
+  #tt-modal{position:fixed;inset:0;z-index:420;display:none;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 40%,rgba(18,22,30,.78),rgba(4,6,9,.93));backdrop-filter:blur(9px);
+    font-family:var(--tt-font);color:var(--tt-cream)}
+  #tt-modal.on{display:flex;animation:hpIn .22s ease-out}
+  @keyframes hpIn{from{opacity:0}to{opacity:1}}
+  @keyframes hpRise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  /* transform only: content must never be stuck invisible if an animation stalls */
+  @keyframes hpSlide{from{transform:translateY(6px)}to{transform:none}}
+  #hp-box{position:relative;width:min(1140px,95vw);height:min(86vh,820px);display:flex;
+    background:linear-gradient(180deg,rgba(20,24,32,.97),rgba(13,16,22,.98));
+    border:1px solid rgba(255,255,255,.07);box-shadow:0 40px 120px rgba(0,0,0,.7);animation:hpRise .3s ease-out}
+  #hp-box::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;z-index:2;
+    background:linear-gradient(90deg,var(--tt-t),var(--tt-gold-hi) 50%,var(--tt-ct))}
+
+  /* side menu */
+  #hp-side{width:250px;flex:0 0 auto;display:flex;flex-direction:column;padding:28px 0 18px;
+    background:rgba(0,0,0,.22);border-right:1px solid rgba(255,255,255,.06)}
+  #hp-kick{font:700 11px/1 var(--tt-font);letter-spacing:.34em;text-transform:uppercase;color:var(--tt-gold);padding:0 26px}
+  #hp-title{font:900 34px/.95 var(--tt-font);letter-spacing:.04em;text-transform:uppercase;color:var(--tt-cream);
+    padding:8px 26px 22px;font-style:italic}
+  #hp-nav{display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex:1}
+  .hp-nav{display:flex;align-items:center;gap:13px;background:none;border:none;cursor:pointer;text-align:left;
+    padding:12px 26px;color:#8f98a6;font:700 14px/1.1 var(--tt-font);letter-spacing:.16em;text-transform:uppercase;
+    border-left:3px solid transparent;transition:color .15s,background .15s}
+  .hp-nav svg{width:18px;height:18px;flex:0 0 auto;opacity:.75}
+  .hp-nav small{display:block;font:500 11.5px/1.2 var(--tt-font);letter-spacing:.04em;text-transform:none;color:#6c7380;margin-top:3px}
+  .hp-nav:hover{color:var(--tt-cream);background:rgba(255,255,255,.03)}
+  .hp-nav.on{color:var(--tt-gold-hi);border-left-color:var(--tt-gold);background:linear-gradient(90deg,rgba(220,162,76,.12),rgba(220,162,76,0))}
+  .hp-nav.on svg{opacity:1}
+  .hp-nav.on small{color:#a8977a}
+  #hp-foot{padding:14px 26px 0;font:600 11.5px/1.4 var(--tt-font);color:#6c7380;letter-spacing:.06em}
+  #hp-foot kbd{font:700 10.5px/1 var(--tt-font);padding:3px 6px;border:1px solid #3a424e;border-bottom-width:2px;color:#b9b2a4;border-radius:3px}
+
+  /* main column */
+  #hp-main{flex:1;display:flex;flex-direction:column;min-width:0}
+  #hp-top{display:flex;align-items:flex-end;gap:16px;padding:26px 34px 18px;border-bottom:1px solid rgba(255,255,255,.06)}
+  #hp-top h2{margin:0;font:800 26px/1 var(--tt-font);letter-spacing:.14em;text-transform:uppercase;color:var(--tt-cream)}
+  #hp-top p{margin:7px 0 0;font:500 14px/1.4 var(--tt-font);color:#9a917f;letter-spacing:.02em}
+  #hp-top-r{margin-left:auto;display:flex;gap:10px;align-items:center}
+  #tt-close{width:40px;height:40px;display:grid;place-items:center;background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.1);color:#b9b2a4;cursor:pointer;font:400 24px/1 sans-serif;transition:all .15s}
+  #tt-close:hover{color:#fff;border-color:var(--tt-gold);background:rgba(220,162,76,.12)}
+  #hp-body{flex:1;overflow-y:auto;padding:26px 34px 40px;scrollbar-width:thin;scrollbar-color:#3a424e transparent}
+  .hp-sec{display:none}
+  .hp-sec.on{display:block;animation:hpSlide .25s ease-out}
+
+  .hp-h{display:flex;align-items:center;gap:12px;font:700 12px/1 var(--tt-font);letter-spacing:.26em;
+    text-transform:uppercase;color:var(--tt-gold);margin:30px 0 14px}
+  .hp-h::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(220,162,76,.3),rgba(220,162,76,0))}
+  .hp-sec > .hp-h:first-child{margin-top:0}
+  .hp-p{font:500 15px/1.6 var(--tt-font);color:#c4bba9;margin:0 0 14px;max-width:72ch;letter-spacing:.01em}
+  .hp-p b,.hp-p strong{color:var(--tt-cream)}
+  .hp-note{display:flex;gap:12px;align-items:flex-start;border:1px solid rgba(220,162,76,.22);
+    background:rgba(220,162,76,.06);padding:13px 16px;margin:18px 0 0;font:500 14px/1.5 var(--tt-font);color:#cdbfa5;max-width:80ch}
+  .hp-note::before{content:'!';flex:0 0 auto;width:20px;height:20px;display:grid;place-items:center;
+    background:var(--tt-gold);color:#15100a;font:900 13px/1 var(--tt-font);margin-top:1px}
+  .hp-t{color:var(--tt-t);font-weight:700}.hp-ct{color:var(--tt-ct);font-weight:700}
+  .hp-gold{color:var(--tt-gold-hi)}.hp-good{color:#7ec98f}
+
+  /* basics */
+  .hp-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .hp-step{position:relative;padding:20px 20px 18px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);overflow:hidden}
+  .hp-step i{position:absolute;right:12px;top:4px;font:900 italic 64px/1 var(--tt-font);color:rgba(255,255,255,.05)}
+  .hp-step b{display:block;font:800 19px/1 var(--tt-font);letter-spacing:.16em;text-transform:uppercase;color:var(--tt-gold-hi);margin-bottom:9px}
+  .hp-step span{font:500 14px/1.5 var(--tt-font);color:#bdb4a2}
+  .hp-facts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .hp-fact{padding:14px 16px;border-left:3px solid var(--tt-gold);background:rgba(255,255,255,.025)}
+  .hp-fact b{display:block;font:800 28px/1 var(--tt-font);color:var(--tt-cream);font-variant-numeric:tabular-nums}
+  .hp-fact span{display:block;margin-top:6px;font:700 11px/1.2 var(--tt-font);letter-spacing:.18em;text-transform:uppercase;color:#8f98a6}
+  .hp-sides{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .hp-side{padding:16px 18px;background:rgba(255,255,255,.025);border-top:3px solid}
+  .hp-side.t{border-color:var(--tt-t)} .hp-side.ct{border-color:var(--tt-ct)}
+  .hp-side b{font:800 16px/1 var(--tt-font);letter-spacing:.18em;text-transform:uppercase}
+  .hp-side.t b{color:var(--tt-t)} .hp-side.ct b{color:var(--tt-ct)}
+  .hp-side p{margin:8px 0 0;font:500 14px/1.5 var(--tt-font);color:#bdb4a2}
+
+  /* controls */
+  .hp-kgroups{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+  .hp-kg{padding:18px 18px 14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}
+  .hp-kg h4{margin:0 0 14px;font:700 11px/1 var(--tt-font);letter-spacing:.26em;text-transform:uppercase;color:#8f98a6}
+  .hp-kr{display:flex;align-items:center;gap:12px;padding:6px 0;font:600 14.5px/1.2 var(--tt-font);color:#d8cfbd}
+  .hp-kr .ks{display:flex;gap:5px;flex:0 0 96px}
+  .hp-kr .d{flex:1;min-width:0}
+  .hp-kr .d small{color:#7a8290;font-size:13px}
+  kbd.hp-k{display:inline-grid;place-items:center;min-width:34px;height:34px;padding:0 9px;
+    background:linear-gradient(180deg,#2a313b,#1d2229);border:1px solid #3e4652;border-bottom:3px solid #12161b;border-radius:4px;
+    font:800 13px/1 var(--tt-font);color:var(--tt-cream);letter-spacing:.04em;box-shadow:0 2px 0 rgba(0,0,0,.3)}
+  kbd.hp-k.wide{min-width:78px}
+  kbd.hp-k.gold{border-color:rgba(220,162,76,.6);color:var(--tt-gold-hi)}
+  .hp-wasd{display:grid;grid-template-columns:repeat(3,38px);grid-template-rows:38px 38px;gap:5px;margin:2px 0 12px}
+  .hp-wasd kbd{min-width:0;height:auto}
+  .hp-wasd kbd:nth-child(1){grid-column:2;grid-row:1}
+  .hp-wasd kbd:nth-child(2){grid-column:1;grid-row:2}
+  .hp-wasd kbd:nth-child(3){grid-column:2;grid-row:2}
+  .hp-wasd kbd:nth-child(4){grid-column:3;grid-row:2}
+  .hp-mouse{display:flex;gap:16px;align-items:center;margin-bottom:10px}
+  .hp-mouse svg{width:54px;height:78px;flex:0 0 auto}
+  .hp-mouse div{font:600 14px/1.9 var(--tt-font);color:#d8cfbd}
+  .hp-mouse em{font-style:normal;color:var(--tt-gold-hi);font-weight:800;margin-right:6px}
+
+  /* weapons */
+  .hp-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .hp-chip{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);color:#9a917f;cursor:pointer;
+    padding:8px 15px;font:700 12px/1 var(--tt-font);letter-spacing:.16em;text-transform:uppercase;transition:all .15s}
+  .hp-chip:hover{color:var(--tt-cream);border-color:rgba(220,162,76,.4)}
+  .hp-chip.on{background:var(--tt-gold);color:#15100a;border-color:var(--tt-gold)}
+  .hp-guns{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+  .hp-gun{padding:14px 16px 15px;background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.07);transition:border-color .15s,transform .15s}
+  .hp-gun:hover{border-color:rgba(220,162,76,.45);transform:translateY(-2px)}
+  .hp-gun-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .hp-gun-top b{font:800 16px/1 var(--tt-font);letter-spacing:.12em;color:var(--tt-cream)}
+  .hp-gun-top span{font:800 15px/1 var(--tt-font);color:var(--tt-gold-hi);font-variant-numeric:tabular-nums}
+  .hp-gun-cat{font:700 10.5px/1 var(--tt-font);letter-spacing:.2em;text-transform:uppercase;color:#7a8290;margin-top:5px}
+  .hp-gun-ic{height:58px;display:flex;align-items:center;justify-content:center;color:#d8cbb2;margin:6px 0 8px}
+  .hp-gun-ic svg{width:150px;height:46px}
+  .hp-bar{display:grid;grid-template-columns:78px 1fr 40px;align-items:center;gap:9px;margin-top:6px;
+    font:700 10.5px/1 var(--tt-font);letter-spacing:.14em;text-transform:uppercase;color:#8f98a6}
+  .hp-bar i{display:block;height:5px;background:rgba(255,255,255,.08);position:relative;overflow:hidden}
+  .hp-bar i u{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#b9853e,var(--tt-gold-hi))}
+  .hp-bar em{font-style:normal;color:#d8cfbd;text-align:right;letter-spacing:.02em;font-size:12px;font-variant-numeric:tabular-nums}
+  .hp-gun-foot{display:flex;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06);
+    font:600 12.5px/1 var(--tt-font);color:#9a917f;letter-spacing:.04em}
+  .hp-gun-foot b{color:var(--tt-cream)}
+
+  /* round */
+  .hp-tl{display:flex;gap:4px;margin:6px 0 10px}
+  .hp-tl > div{position:relative;padding:16px 18px;background:rgba(255,255,255,.03);border-top:3px solid}
+  .hp-tl b{display:block;font:800 17px/1 var(--tt-font);letter-spacing:.16em;text-transform:uppercase}
+  .hp-tl em{display:block;font:800 30px/1.1 var(--tt-font);font-style:normal;color:var(--tt-cream);margin:6px 0 4px;font-variant-numeric:tabular-nums}
+  .hp-tl span{font:500 13.5px/1.45 var(--tt-font);color:#b3aa98}
+  .hp-wins{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .hp-win{padding:16px 18px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}
+  .hp-win svg{width:26px;height:26px;color:var(--tt-gold-hi);margin-bottom:8px}
+  .hp-win b{display:block;font:800 14px/1.2 var(--tt-font);letter-spacing:.12em;text-transform:uppercase;color:var(--tt-cream);margin-bottom:6px}
+  .hp-win span{font:500 13.5px/1.45 var(--tt-font);color:#b3aa98}
+
+  /* money */
+  .hp-loss{display:flex;align-items:flex-end;gap:10px;height:150px;padding:0 4px;margin:4px 0 6px;border-bottom:1px solid rgba(255,255,255,.1)}
+  .hp-loss div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+  .hp-loss u{display:block;width:100%;background:linear-gradient(180deg,var(--tt-gold-hi),#9b6d2e);min-height:4px}
+  .hp-loss div.win u{background:linear-gradient(180deg,#9fe0ad,#3f8a51)}
+  .hp-loss b{font:800 15px/1 var(--tt-font);color:var(--tt-cream);margin-bottom:7px;font-variant-numeric:tabular-nums}
+  .hp-loss-x{display:flex;gap:10px;padding:0 4px}
+  .hp-loss-x span{flex:1;text-align:center;font:700 10.5px/1.3 var(--tt-font);letter-spacing:.12em;text-transform:uppercase;color:#8f98a6;padding-top:7px}
+  .hp-kills{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+  .hp-kill{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;background:rgba(255,255,255,.025);
+    font:700 13px/1 var(--tt-font);letter-spacing:.1em;color:#d8cfbd}
+  .hp-kill b{color:var(--tt-gold-hi);font-variant-numeric:tabular-nums}
+
+  /* maps */
+  .hp-maptabs{display:flex;gap:10px;margin-bottom:18px}
+  .hp-maptab{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);
+    padding:8px 16px 8px 8px;cursor:pointer;color:#9a917f;font:800 15px/1 var(--tt-font);letter-spacing:.16em;text-transform:uppercase}
+  .hp-maptab:hover{color:var(--tt-cream)}
+  .hp-maptab.on{border-color:var(--tt-gold);color:var(--tt-gold-hi);background:rgba(220,162,76,.08)}
+  .hp-maptab em{display:block;font:700 10px/1 var(--tt-font);font-style:normal;letter-spacing:.2em;color:#7ec98f;margin-top:5px}
+  .hp-map{display:none;gap:28px;align-items:flex-start;flex-wrap:wrap}
+  .hp-map.on{display:flex;animation:hpSlide .25s ease-out}
+  .hp-map-plan{padding:12px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.07)}
+  .hp-legend{flex:1;min-width:260px}
+  .hp-legend div{display:flex;gap:11px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);font:500 14px/1.45 var(--tt-font);color:#c4bba9}
+  .hp-legend i{width:13px;height:13px;flex:0 0 auto;margin-top:4px}
+  .hp-legend strong{color:var(--tt-cream)}
+
+  /* settings */
+  .hp-set-head{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:6px}
+  .hp-presets{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:6px}
+  .hp-preset{position:relative;text-align:left;cursor:pointer;padding:15px 16px 14px;background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.09);color:#b3aa98;transition:all .15s}
+  .hp-preset:hover{border-color:rgba(220,162,76,.45);color:var(--tt-cream)}
+  .hp-preset b{display:block;font:800 18px/1 var(--tt-font);letter-spacing:.16em;color:var(--tt-cream)}
+  .hp-preset span{display:block;margin-top:7px;font:500 12.5px/1.4 var(--tt-font)}
+  .hp-preset u{display:flex;gap:3px;margin-top:11px}
+  .hp-preset u i{flex:1;height:4px;background:rgba(255,255,255,.1)}
+  .hp-preset u i.f{background:var(--tt-gold)}
+  .hp-preset.on{border-color:var(--tt-gold);background:linear-gradient(180deg,rgba(220,162,76,.16),rgba(220,162,76,.04))}
+  .hp-preset.on::after{content:'\\2713';position:absolute;top:10px;right:12px;color:var(--tt-gold-hi);font:900 14px/1 sans-serif}
+  .hp-custom{font:700 11px/1 var(--tt-font);letter-spacing:.2em;text-transform:uppercase;color:#7a8290;padding:6px 10px;border:1px dashed #3a424e}
+  .hp-custom.on{color:var(--tt-gold-hi);border-color:rgba(220,162,76,.55)}
+  .hp-srow{display:flex;align-items:center;gap:20px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+  .hp-srow:last-child{border-bottom:none}
+  .hp-srow-l{flex:1;min-width:0}
+  .hp-srow-l b{display:block;font:800 15px/1 var(--tt-font);letter-spacing:.14em;text-transform:uppercase;color:var(--tt-cream)}
+  .hp-srow-l span{display:block;margin-top:6px;font:500 13.5px/1.4 var(--tt-font);color:#8f98a6}
+  .hp-seg{display:flex;flex:0 0 auto;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.08);padding:3px;gap:2px;flex-wrap:wrap;justify-content:flex-end;max-width:440px}
+  .hp-seg button{background:none;border:none;cursor:pointer;color:#8f98a6;padding:9px 13px;min-width:46px;
+    font:700 12.5px/1 var(--tt-font);letter-spacing:.1em;text-transform:uppercase;transition:all .12s}
+  .hp-seg button:hover{color:var(--tt-cream);background:rgba(255,255,255,.05)}
+  .hp-seg button.on{background:var(--tt-gold);color:#15100a}
+  .hp-swatch{display:flex;gap:8px;flex:0 0 auto;align-items:center}
+  .hp-swatch button{width:34px;height:34px;cursor:pointer;border:2px solid rgba(255,255,255,.12);background:#11151b;display:grid;place-items:center;transition:all .12s}
+  .hp-swatch button:hover{border-color:rgba(255,255,255,.4)}
+  .hp-swatch button.on{border-color:var(--tt-gold-hi);box-shadow:0 0 0 2px rgba(220,162,76,.3)}
+  .hp-swatch svg{width:22px;height:22px}
+  .hp-xprev{width:64px;height:64px;flex:0 0 auto;display:grid;place-items:center;
+    background:radial-gradient(circle,#4b5563 0%,#1f252d 70%);border:1px solid rgba(255,255,255,.1);margin-left:8px}
+  .hp-xprev svg{width:30px;height:30px}
+  .hp-card{padding:4px 20px;background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.06)}
+  .hp-reset{background:none;border:1px solid rgba(255,255,255,.14);color:#9a917f;cursor:pointer;padding:10px 15px;
+    font:700 11.5px/1 var(--tt-font);letter-spacing:.18em;text-transform:uppercase;transition:all .15s}
+  .hp-reset:hover{color:#ffb0a3;border-color:rgba(224,120,100,.55)}
+  .hp-saved{font:700 11px/1 var(--tt-font);letter-spacing:.2em;text-transform:uppercase;color:#7ec98f;opacity:0;transition:opacity .3s}
+  .hp-saved.on{opacity:1}
+
+  @media (max-width:860px){
+    #hp-box{flex-direction:column;height:92vh}
+    #hp-side{width:auto;padding:16px 0 0;border-right:none;border-bottom:1px solid rgba(255,255,255,.06)}
+    #hp-title{font-size:24px;padding-bottom:10px} #hp-foot{display:none}
+    #hp-nav{flex-direction:row;overflow-x:auto}
+    .hp-nav{border-left:none;border-bottom:3px solid transparent;padding:10px 14px;white-space:nowrap}
+    .hp-nav.on{border-bottom-color:var(--tt-gold)} .hp-nav small{display:none}
+    #hp-top{padding:16px 18px 12px} #hp-body{padding:18px 18px 30px}
+    .hp-steps,.hp-wins{grid-template-columns:1fr} .hp-facts,.hp-presets{grid-template-columns:repeat(2,1fr)}
+    .hp-sides{grid-template-columns:1fr} .hp-tl{flex-direction:column}
+    .hp-srow{flex-direction:column;align-items:flex-start;gap:10px}
+    #hp-box{width:96vw;height:94vh;height:94dvh}
+    #hp-main,#hp-body{min-height:0}
+    #hp-top{align-items:flex-start} #hp-top h2{font-size:21px} #hp-top p{font-size:13px}
+    #hp-top-r{flex-direction:column-reverse;align-items:flex-end;gap:6px} .hp-saved{display:none}
+    .hp-reset{padding:7px 9px;font-size:10.5px}
+    .hp-seg{max-width:100%;justify-content:flex-start} .hp-seg button{padding:9px 10px;min-width:0}
+    .hp-maptabs{flex-wrap:wrap} .hp-map.on{flex-direction:column}
+  }
   `;
   document.head.appendChild(style);
 
-  // ── reference tables, generated from the live config ──────────────────────
-  const gunRows = Object.keys(GUNS)
-    .sort((a,b) => GUNS[a].order - GUNS[b].order)
-    .map(k => {
-      const g = GUNS[k];
-      const kill = { knife:1500, glock18:300, deagle:300, mac10:600, mp5:600,
-                     mp7:600, ump45:600, ak47:300, m4a1:300, awp:100 }[k] || 300;
-      return '<tr><td>' + g.name + '</td>' +
-        '<td>' + (g.price ? '$' + g.price.toLocaleString() : '<span class="tt-good">free</span>') + '</td>' +
-        '<td>' + g.damage + '</td>' +
-        '<td>' + (g.melee ? '&mdash;' : g.maxAmmo + ' + ' + ((g.spareMags||0) * g.ammo)) + '</td>' +
-        '<td>' + g.range + '</td>' +
-        '<td class="tt-gold">$' + kill + '</td></tr>';
-    }).join('');
+  // ── icons (stroke, 24 box) ────────────────────────────────────────────────
+  const I = p => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>';
+  const IC = {
+    basics:   I('<circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/>'),
+    controls: I('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
+    weapons:  I('<path d="M3 10h13l2-2h3v4h-4l-1 2h-4l-1 4H8l1-4H3z"/>'),
+    round:    I('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
+    money:    I('<path d="M12 2v20M17 6.5C17 4.6 14.8 3.5 12 3.5S7 4.8 7 7s2 3 5 3.5 5 1.5 5 3.7-2.2 3.3-5 3.3-5-1.1-5-3"/>'),
+    maps:     I('<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>'),
+    graphics: I('<rect x="3" y="4" width="18" height="13" rx="1"/><path d="M8 21h8M12 17v4"/>'),
+    perf:     I('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
+    input:    I('<rect x="6" y="2" width="12" height="20" rx="6"/><path d="M12 6v4"/>'),
+    audio:    I('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>'),
+    hud:      I('<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'),
+    skull:    I('<path d="M12 3a8 8 0 0 0-5 14v3h10v-3a8 8 0 0 0-5-14z"/><circle cx="9" cy="11" r="1.5"/><circle cx="15" cy="11" r="1.5"/>'),
+    clock:    I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>'),
+    shield:   I('<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/>'),
+  };
 
-  // Keys are arrays, not space-separated strings: "Left click" is ONE key, but
-  // W/A/S/D are four, and splitting on spaces cannot tell those apart.
-  const KEYS = [
-    [['W','A','S','D'],'Move'], [['Space'],'Jump'], [['Mouse'],'Aim'],
-    [['Left click'],'Fire'], [['Right click'],'Scope (AWP only)'],
-    [['R'],'Reload'], [['1'],'Knife'], [['2'],'Pistol'], [['3'],'Primary weapon'],
-    [['B'],'Buy menu (buy time only)'], [['Tab'],'Hold for scoreboard'],
-    [['V'],'Third person'], [['Esc'],'Release the mouse'],
-    [['F3'],'Performance stats'], [['F4'],'Cycle quality preset'],
-  ].map(([keys,d]) =>
-    '<div class="tt-row">' +
-    keys.map(k => '<kbd class="tt-k">' + k + '</kbd>').join(' ') +
-    '<span class="lbl">' + d + '</span></div>').join('');
+  // ── data, read from the live config ──────────────────────────────────────
+  const KILL = { knife:1500, glock18:300, deagle:300, mac10:600, mp5:600, mp7:600, ump45:600, ak47:300, m4a1:300, awp:100 };
+  const CAT_NAME = { melee:'Melee', pistols:'Pistol', smgs:'SMG', rifles:'Rifle', snipers:'Sniper' };
+  const gunKeys = Object.keys(GUNS).sort((a,b) => GUNS[a].order - GUNS[b].order);
+  const fired = gunKeys.filter(k => !GUNS[k].melee);
+  const maxRpm = Math.max(...fired.map(k => 60000 / GUNS[k].fireInterval));
+  const bar = (label, frac, val) =>
+    '<div class="hp-bar"><span>' + label + '</span><i><u style="width:' + Math.round(Math.max(.04, Math.min(1, frac)) * 100) + '%"></u></i><em>' + val + '</em></div>';
+  const gunCard = k => {
+    const g = GUNS[k];
+    const move = (typeof GUN_MOVE === 'object' && GUN_MOVE[k]) || 1;
+    const rpm = Math.round(60000 / g.fireInterval);
+    const head = g.zoneDamage ? g.zoneDamage.head : g.damage;
+    const icon = (typeof gunIconSVG === 'function' && gunIconSVG(k)) || '';
+    return '<div class="hp-gun" data-cat="' + g.category + '">' +
+      '<div class="hp-gun-top"><b>' + g.name + '</b><span>' + (g.price ? '$' + g.price.toLocaleString() : 'FREE') + '</span></div>' +
+      '<div class="hp-gun-cat">' + (CAT_NAME[g.category] || g.category) + (g.rpm && !g.melee ? ' &middot; ' + g.rpm : '') + '</div>' +
+      '<div class="hp-gun-ic">' + icon + '</div>' +
+      bar('Damage', g.damage / 100, g.damage) +
+      (g.melee ? bar('Range', .06, '&mdash;') : bar('Fire rate', rpm / maxRpm, rpm)) +
+      (g.melee ? '' : bar('Accuracy', 1 - (g.spread || 0) / 0.03, Math.round((1 - (g.spread || 0) / 0.03) * 100))) +
+      bar('Mobility', (move - .7) / .3, Math.round(move * 100) + '%') +
+      '<div class="hp-gun-foot"><span>' + (g.melee ? 'Always carried' : 'Mag <b>' + g.maxAmmo + '</b> &middot; Head <b>' + head + '</b>') +
+      '</span><span>Kill <b class="hp-gold">$' + (KILL[k] || 300) + '</b></span></div></div>';
+  };
 
-  // World coords -> a 200x200 top-down plan. +z is north, so it maps to -y.
-  const px = x => ((x + 47) / 94 * 200).toFixed(1);
-  const py = z => ((47 - z) / 94 * 200).toFixed(1);
-  const box = (x0,z0,x1,z1,fill,stroke) =>
-    `<rect x="${px(x0)}" y="${py(z1)}" width="${(px(x1)-px(x0)).toFixed(1)}" height="${(py(z0)-py(z1)).toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="1"/>`;
+  const key = (k, cls) => '<kbd class="hp-k' + (cls ? ' ' + cls : '') + '">' + k + '</kbd>';
+  const krow = (keys, d) => '<div class="hp-kr"><span class="ks">' + keys.map(k => Array.isArray(k) ? key(k[0], k[1]) : key(k)).join('') + '</span><span class="d">' + d + '</span></div>';
 
-  const MAP_PANE = (MAP_ID === 'overgrowth') ? `
-        <div class="tt-h">Overgrowth</div>
-        <p class="tt-p">Temple ruins swallowed by jungle, 90 by 90 units. Deliberately
-          <strong>asymmetric</strong>, with <strong>diagonal spawns</strong>: Attack in the south-west
-          corner, Defence in the north-east. Each quarter plays differently, and each team
-          starts nearer to one side. A river runs the full width through mid.</p>
-        <div class="tt-map-wrap">
-          ${ttPlanSVG('overgrowth', 330)}
-          <div class="tt-legend">
-            <div><i style="background:#e0a35a"></i> <strong class="tt-t-col">Attack spawn</strong> &mdash; south-west corner</div>
-            <div><i style="background:#6fa3dc"></i> <strong class="tt-ct-col">Defence spawn</strong> &mdash; north-east corner, by the temple</div>
-            <div><i style="background:#5b5c4a"></i> <strong>North-west plains</strong> &mdash; open ground around the colossus, with a long ruin wall and stone blocks for cover. Long sightlines: rifles and the AWP. Closest to Attack.</div>
-            <div><i style="background:#5b5c4a"></i> <strong>South-east warren</strong> &mdash; packed ruins, narrow alleys and a torch-lit tunnel. Close range: SMGs. Closest to Defence.</div>
-            <div><i style="background:#c9b27a"></i> <strong>Mid</strong> &mdash; the tower at the centre, where the diagonal routes meet. About equally far from both spawns.</div>
-            <p class="tt-p" style="margin-top:14px;font-size:13.5px">
-              Each team can reach its own side first, so the fight usually starts over
-              <strong>mid</strong>. Whoever holds it can rotate to either side faster.</p>
+  const LOSS = [1400, 1900, 2400, 2900, 3400];
+  const lossBars = '<div class="win"><b>$3,250</b><u style="height:' + (3250 / 3400 * 100).toFixed(0) + '%"></u></div>' +
+    LOSS.map(v => '<div><b>$' + v.toLocaleString() + '</b><u style="height:' + (v / 3400 * 100).toFixed(0) + '%"></u></div>').join('');
+
+  const mapLegend = {
+    alcazar: `
+      <p class="hp-p">A walled palace compound, 94 by 94. The layout is <strong>diagonal, not mirrored</strong>:
+        spawns and the two open courts alternate around the four corners, so each team starts near one court and far from the other.</p>
+      <div><i style="background:#e0a35a"></i><span><strong class="hp-t">Attack spawn</strong> &mdash; north-west</span></div>
+      <div><i style="background:#7fa8d8"></i><span><strong class="hp-ct">Defence spawn</strong> &mdash; south-east</span></div>
+      <div><i style="background:#6a5a40"></i><span><strong>Great Court</strong> &mdash; north-east. Attack gets there first.</span></div>
+      <div><i style="background:#6a5a40"></i><span><strong>Bazaar Court</strong> &mdash; south-west. Defence gets there first.</span></div>
+      <div><i style="background:#5d4a2c"></i><span><strong>Curtain wall</strong> &mdash; the hard edge of the map.</span></div>
+      <div class="hp-note">Whoever holds mid can rotate to either court faster than the other team.</div>`,
+    overgrowth: `
+      <p class="hp-p">Temple ruins swallowed by jungle, 90 by 90. Deliberately <strong>asymmetric</strong> with diagonal spawns,
+        and a river running the full width through mid.</p>
+      <div><i style="background:#e0a35a"></i><span><strong class="hp-t">Attack spawn</strong> &mdash; south-west</span></div>
+      <div><i style="background:#6fa3dc"></i><span><strong class="hp-ct">Defence spawn</strong> &mdash; north-east, by the temple</span></div>
+      <div><i style="background:#5b5c4a"></i><span><strong>North-west plains</strong> &mdash; open ground around the colossus. Long sightlines: rifles and the AWP.</span></div>
+      <div><i style="background:#5b5c4a"></i><span><strong>South-east warren</strong> &mdash; packed ruins, alleys and a torch-lit tunnel. Close range: SMGs.</span></div>
+      <div><i style="background:#c9b27a"></i><span><strong>Mid</strong> &mdash; the tower where the diagonal routes meet.</span></div>
+      <div class="hp-note">Each team reaches its own side first, so the fight usually starts over mid.</div>`,
+  };
+  const mapIds = Object.keys(MAPS);
+
+  // ── HOW TO PLAY ──────────────────────────────────────────────────────────
+  const HOW = [
+    { id:'basics',   label:'Basics',   sub:'What the game is',      title:'The basics',  lead:'Two teams, one round at a time. Buy, fight, and be the last team standing.', html:`
+      <div class="hp-steps">
+        <div class="hp-step"><i>1</i><b>Buy</b><span>15 seconds frozen in spawn. Press <kbd class="hp-k" style="height:24px;min-width:24px">B</kbd> and spend your money on a weapon.</span></div>
+        <div class="hp-step"><i>2</i><b>Fight</b><span>1:55 on the clock. Move as a team, take map control, trade kills.</span></div>
+        <div class="hp-step"><i>3</i><b>Win</b><span>Wipe the other team, or have more players alive when time runs out.</span></div>
+      </div>
+      <div class="hp-h">At a glance</div>
+      <div class="hp-facts">
+        <div class="hp-fact"><b>5v5</b><span>Up to 10 players</span></div>
+        <div class="hp-fact"><b>8</b><span>Round wins to take it</span></div>
+        <div class="hp-fact"><b>7</b><span>Rounds, then sides swap</span></div>
+        <div class="hp-fact"><b>100</b><span>Health, no armour</span></div>
+      </div>
+      <div class="hp-h">The two sides</div>
+      <div class="hp-sides">
+        <div class="hp-side t"><b>Attack &middot; T</b><p>Starts in one corner of the map. Pushes out and takes the fight to Defence.</p></div>
+        <div class="hp-side ct"><b>Defence &middot; CT</b><p>Starts in the opposite corner. Holds angles. A dead tie on the clock goes to Defence.</p></div>
+      </div>
+      <div class="hp-note">Dying is not respawning. You spectate until the round ends, so trading your life for one kill is rarely worth it.</div>` },
+
+    { id:'controls', label:'Controls', sub:'Keys and mouse',        title:'Controls',    lead:'Everything is on the keyboard and mouse. Esc gives you the cursor back.', html:`
+      <div class="hp-kgroups">
+        <div class="hp-kg"><h4>Movement</h4>
+          <div class="hp-wasd">${key('W')}${key('A')}${key('S')}${key('D')}</div>
+          ${krow([['Space','wide']], 'Jump')}
+        </div>
+        <div class="hp-kg"><h4>Combat</h4>
+          <div class="hp-mouse">
+            <svg viewBox="0 0 54 78" fill="none" stroke="#7a8290" stroke-width="2"><rect x="2" y="2" width="50" height="74" rx="25"/>
+              <path d="M27 2v28M2 30h50"/><path d="M4 28V22A23 23 0 0 1 26 3v25z" fill="rgba(220,162,76,.55)" stroke="none"/>
+              <path d="M50 28V22A23 23 0 0 0 28 3v25z" fill="rgba(111,163,220,.45)" stroke="none"/></svg>
+            <div><div><em>Left</em>Fire</div><div><em style="color:var(--tt-ct)">Right</em>Scope (AWP)</div><div><em style="color:#c4bba9">Move</em>Aim</div></div>
           </div>
-        </div>        </div>` : `
-        <div class="tt-h">Palace</div>
-        <p class="tt-p">A walled palace compound, 94 by 94 units. The layout is
-          <strong>diagonal, not mirrored</strong>: the two spawns and two open courts alternate
-          around the four corners, so each team begins near one court and far from the other.</p>
-        <div class="tt-map-wrap">
-          ${ttPlanSVG('alcazar', 330)}
-          <div class="tt-legend">
-            <div><i style="background:#e0a35a"></i> <strong class="tt-t-col">Attack spawn</strong> &mdash; north-west</div>
-            <div><i style="background:#7fa8d8"></i> <strong class="tt-ct-col">Defence spawn</strong> &mdash; south-east</div>
-            <div><i style="background:#6a5a40"></i> <strong>Great Court</strong> &mdash; north-east</div>
-            <div><i style="background:#6a5a40"></i> <strong>Bazaar Court</strong> &mdash; south-west</div>
-            <div><i style="background:#5d4a2c"></i> Curtain wall &mdash; the hard edge of the map</div>
-            <p class="tt-p" style="margin-top:14px;font-size:13.5px">
-              Attack reaches the Great Court quickly and the Bazaar the long way round;
-              Defence is the reverse. Whoever holds <strong>mid</strong> can rotate to either
-              side faster than the other team can.</p>
-          </div>
-        </div>`;
+          ${krow(['R'], 'Reload')}
+        </div>
+        <div class="hp-kg"><h4>Weapons</h4>
+          ${krow(['1'], 'Knife')}${krow(['2'], 'Pistol')}${krow(['3'], 'Primary')}
+          ${krow([['B','gold']], 'Buy menu <small>(buy time)</small>')}
+        </div>
+        <div class="hp-kg"><h4>Team &amp; view</h4>
+          ${krow([['Enter','wide']], 'Chat')}${krow([['Tab','wide']], 'Hold for scoreboard')}
+          ${krow(['V'], 'Third person')}${krow([['Esc','wide']], 'Release the mouse')}
+        </div>
+        <div class="hp-kg"><h4>Performance</h4>
+          ${krow(['F3'], 'Performance stats')}${krow(['F4'], 'Cycle quality preset')}
+        </div>
+      </div>` },
 
+    { id:'weapons',  label:'Weapons',  sub:'Prices and stats',      title:'Weapons',     lead:'You always carry a knife and a pistol. One primary goes in slot 3, and you lose it when you die.', html:`
+      <div class="hp-chips">
+        <button class="hp-chip on" data-f="all">All</button>
+        ${['pistols','smgs','rifles','snipers','melee'].map(c => '<button class="hp-chip" data-f="' + c + '">' + ({pistols:'Pistols',smgs:'SMGs',rifles:'Rifles',snipers:'Sniper',melee:'Melee'})[c] + '</button>').join('')}
+      </div>
+      <div class="hp-guns">${gunKeys.map(gunCard).join('')}</div>
+      <div class="hp-note">Mobility is your running speed with the weapon out, compared with the knife. The AWP drops to 70% while scoped.</div>` },
+
+    { id:'round',    label:'The round', sub:'Phases and winning',   title:'The round',   lead:'Every round runs the same three phases, then straight into the next buy.', html:`
+      <div class="hp-tl">
+        <div style="flex:15;border-color:var(--tt-gold)"><b class="hp-gold">Buy</b><em>0:15</em><span>Frozen in spawn. Shop open. Look around, plan.</span></div>
+        <div style="flex:40;border-color:#e07a5f"><b style="color:#f0a08a">Live</b><em>1:55</em><span>The round is running. Last team standing wins it.</span></div>
+        <div style="flex:12;border-color:#7ec98f"><b class="hp-good">Over</b><em>0:05</em><span>Result and payouts.</span></div>
+      </div>
+      <div class="hp-h">Ways to win a round</div>
+      <div class="hp-wins">
+        <div class="hp-win">${IC.skull}<b>Elimination</b><span>Take out every player on the other team.</span></div>
+        <div class="hp-win">${IC.clock}<b>Time</b><span>When the clock hits zero, the team with more players alive wins.</span></div>
+        <div class="hp-win">${IC.shield}<b>Tie</b><span>Same number alive on the clock? <strong class="hp-ct">Defence</strong> takes it.</span></div>
+      </div>
+      <div class="hp-h">The match</div>
+      <p class="hp-p">First to <strong>8 round wins</strong> takes the match. After <strong>7 rounds</strong> the sides swap and
+        everyone's money resets to $800, so both teams play both corners.</p>` },
+
+    { id:'money',    label:'Economy',  sub:'How you earn',          title:'Economy',     lead:'Money carries between rounds. You keep it when you die; you only lose the gun.', html:`
+      <div class="hp-facts">
+        <div class="hp-fact"><b>$800</b><span>Start of each half</span></div>
+        <div class="hp-fact"><b>$16,000</b><span>Most you can hold</span></div>
+        <div class="hp-fact" style="border-color:#7ec98f"><b>+$3,250</b><span>Round win</span></div>
+        <div class="hp-fact"><b>$100&ndash;1,500</b><span>Per kill, by weapon</span></div>
+      </div>
+      <div class="hp-h">Round payout</div>
+      <div class="hp-loss">${lossBars}</div>
+      <div class="hp-loss-x"><span style="color:#7ec98f">Win</span><span>1 loss</span><span>2 losses</span><span>3 losses</span><span>4 losses</span><span>5+ losses</span></div>
+      <div class="hp-note">The loss bonus climbs every round you lose in a row and resets the moment you win. That is what makes a cheap save round worth it.</div>
+      <div class="hp-h">Kill rewards</div>
+      <div class="hp-kills">${gunKeys.map(k => '<div class="hp-kill"><span>' + GUNS[k].name + '</span><b>$' + (KILL[k] || 300).toLocaleString() + '</b></div>').join('')}</div>
+      <p class="hp-p" style="margin-top:14px">The AWP pays the least and the knife the most. The safest weapon barely pays; the riskiest pays for a full buy.</p>` },
+
+    { id:'maps',     label:'Maps',     sub:mapIds.length + ' battlegrounds', title:'Maps', lead:'Both maps use diagonal spawns, so neither side has a mirror of the other.', html:`
+      <div class="hp-maptabs">${mapIds.map(id =>
+        '<button class="hp-maptab' + (id === MAP_ID ? ' on' : '') + '" data-map="' + id + '">' + ttPlanSVG(id, 40, false) +
+        '<span>' + MAPS[id].name + (id === MAP_ID ? '<em>Loaded</em>' : '') + '</span></button>').join('')}</div>
+      ${mapIds.map(id => '<div class="hp-map' + (id === MAP_ID ? ' on' : '') + '" data-map="' + id + '">' +
+        '<div class="hp-map-plan">' + ttPlanSVG(id, 340) + '</div>' +
+        '<div class="hp-legend">' + (mapLegend[id] || '<p class="hp-p">' + MAPS[id].blurb + '</p>') + '</div></div>').join('')}` },
+  ];
+
+  // ── SETTINGS ─────────────────────────────────────────────────────────────
+  const DESC = {
+    scale:     ['Render scale', 'The biggest frame-rate lever. 75% draws about half the pixels of 100%.'],
+    shadows:   ['Shadows', 'Soft looks best. Off is the fastest.'],
+    adaptive:  ['Adaptive resolution', 'Lowers render scale for a moment when frames run late. Never goes above Render scale.'],
+    fpstarget: ['FPS target', 'The frame rate adaptive resolution tries to hold. Match your screen.'],
+    stats:     ['Stats overlay', 'Detailed performance numbers in the corner. Same as F3.'],
+    sens:      ['Mouse sensitivity', 'How far the view turns for each mouse movement.'],
+    fov:       ['Field of view', 'Wider shows more at the edges of the screen.'],
+    volume:    ['Master volume', 'Every sound in the game: guns, footsteps, the UI.'],
+    viewmodel: ['Weapon hand', 'Which side your gun is held on, or hide it.'],
+    crosshair: ['Crosshair colour', 'Pick whatever stands out best against the map.'],
+  };
+  const PRESET_INFO = {
+    LOW:    ['Fastest. 50% scale, no shadows.', 1],
+    MEDIUM: ['75% scale, hard shadows.', 2],
+    HIGH:   ['85% scale, soft shadows.', 3],
+    ULTRA:  ['Full resolution, everything on.', 4],
+  };
+  const DEFAULTS = { quality:3, scale:4, shadows:2, fov:1, sens:2, volume:4, viewmodel:2, crosshair:0, stats:0, adaptive:1, fpstarget:1 };
+  const SET_GROUPS = [
+    { id:'graphics', label:'Graphics',    sub:'Quality and resolution', keys:['scale','shadows'], presets:true,
+      lead:'Pick a preset, or tune render scale and shadows yourself.' },
+    { id:'perf',     label:'Performance', sub:'Frame rate tools',       keys:['adaptive','fpstarget','stats'],
+      lead:'Tools that keep the frame rate steady.' },
+    { id:'input',    label:'Mouse & view', sub:'Aim and field of view', keys:['sens','fov'],
+      lead:'How aiming feels and how much you can see.' },
+    { id:'audio',    label:'Audio',       sub:'Volume',                 keys:['volume'],
+      lead:'Sound levels.' },
+    { id:'hud',      label:'HUD',         sub:'Crosshair and weapon',   keys:['crosshair','viewmodel'],
+      lead:'What sits on your screen while you play.' },
+  ];
+  const XCOL = (typeof XHAIR === 'object') ? XHAIR : { RED:'#ff2b2b', GREEN:'#39ff6a', CYAN:'#3fe4ff', WHITE:'#ffffff', AMBER:'#ffc23d' };
+  const xSVG = c => '<svg viewBox="0 0 30 30"><path d="M15 3v8M15 19v8M3 15h8M19 15h8" stroke="' + c + '" stroke-width="2.6" stroke-linecap="square"/><circle cx="15" cy="15" r="1.4" fill="' + c + '"/></svg>';
+
+  function settingRow(k){
+    const s = SET[k]; if(!s) return '';
+    const [name, desc] = DESC[k] || [s.label, ''];
+    let ctl;
+    if(k === 'crosshair'){
+      ctl = '<div class="hp-swatch">' + s.opts.map((o, i) =>
+        '<button type="button" title="' + o + '" data-k="' + k + '" data-i="' + i + '" class="' + (i === s.i ? 'on' : '') + '" style="background:' + (XCOL[o] || '#fff') + '22">' +
+        '<span style="width:14px;height:14px;background:' + (XCOL[o] || '#fff') + ';display:block"></span></button>').join('') +
+        '<div class="hp-xprev">' + xSVG(XCOL[s.opts[s.i]] || '#fff') + '</div></div>';
+    } else {
+      ctl = '<div class="hp-seg">' + s.opts.map((o, i) =>
+        '<button type="button" data-k="' + k + '" data-i="' + i + '" class="' + (i === s.i ? 'on' : '') + '">' + o + '</button>').join('') + '</div>';
+    }
+    return '<div class="hp-srow"><div class="hp-srow-l"><b>' + name + '</b><span>' + desc + '</span></div>' + ctl + '</div>';
+  }
+  function settingsGroupHTML(g){
+    let h = '';
+    if(g.presets){
+      const q = setVal('quality');
+      h += '<div class="hp-set-head"><div class="hp-h" style="margin:0;flex:1">Preset</div>' +
+           '<span class="hp-custom' + (q === 'CUSTOM' ? ' on' : '') + '">Custom' + (q === 'CUSTOM' ? ' &middot; active' : '') + '</span></div>' +
+           '<div class="hp-presets">' + Object.keys(PRESET_INFO).map(p =>
+             '<button type="button" class="hp-preset' + (q === p ? ' on' : '') + '" data-preset="' + p + '"><b>' + p + '</b><span>' + PRESET_INFO[p][0] + '</span>' +
+             '<u>' + [1,2,3,4].map(n => '<i class="' + (n <= PRESET_INFO[p][1] ? 'f' : '') + '"></i>').join('') + '</u></button>').join('') +
+           '</div><div class="hp-h">Fine tune</div>';
+    }
+    h += '<div class="hp-card">' + g.keys.map(settingRow).join('') + '</div>';
+    return h;
+  }
+
+  // ── markup ───────────────────────────────────────────────────────────────
   const modal = document.createElement('div');
   modal.id = 'tt-modal';
   modal.innerHTML = `
-   <div id="tt-box">
-    <div id="tt-head">
-      <span class="ttl">Tactical City</span>
-      <button class="tt-tab on" data-p="controls">Controls</button>
-      <button class="tt-tab" data-p="round">The round</button>
-      <button class="tt-tab" data-p="money">Money</button>
-      <button class="tt-tab" data-p="map">The map</button>
-      <button class="tt-tab" data-p="settings">Settings</button>
-      <button id="tt-close">Close</button>
-    </div>
-    <div id="tt-body">
-
-      <div class="tt-pane on" data-p="controls">
-        <div class="tt-h">Controls</div>
-        <div class="tt-grid">${KEYS}</div>
-        <div class="tt-h">Weapons</div>
-        <p class="tt-p">You always carry a knife and a pistol. A primary goes in slot 3.
-          Buy during buy time with <kbd class="tt-k">B</kbd>. Die and you lose your primary,
-          so most rounds start with a decision about what you can afford.</p>
-        <table class="tt-t">
-          <tr><th>Weapon</th><th>Price</th><th>Damage</th><th>Ammo</th><th>Range</th><th>Reward / kill</th></tr>
-          ${gunRows}
-        </table>
-        <div class="tt-note">The AWP kill reward is deliberately low and the knife's is
-          the highest in the game. That is the trade: the safest weapon barely pays,
-          and the most dangerous one pays for a full buy.</div>
+   <div id="hp-box" role="dialog" aria-modal="true">
+    <aside id="hp-side">
+      <div id="hp-kick">Tactical City</div>
+      <div id="hp-title">How to play</div>
+      <nav id="hp-nav"></nav>
+      <div id="hp-foot"><kbd>Esc</kbd> to close</div>
+    </aside>
+    <div id="hp-main">
+      <div id="hp-top">
+        <div><h2 id="hp-h2"></h2><p id="hp-lead"></p></div>
+        <div id="hp-top-r"><span class="hp-saved" id="hp-saved">Saved</span>
+          <button type="button" class="hp-reset" id="hp-reset" style="display:none">Reset all</button>
+          <button type="button" id="tt-close" aria-label="Close">&times;</button></div>
       </div>
-
-      <div class="tt-pane" data-p="round">
-        <div class="tt-h">How a match runs</div>
-        <p class="tt-p">Two teams, up to ten players. <strong class="tt-t-col">Attack</strong>
-          starts in the north-west corner, <strong class="tt-ct-col">Defence</strong> in the
-          south-east. First team to <strong>8 round wins</strong> takes the match, and sides
-          swap once <strong>7 rounds</strong> have been played, so both halves are played
-          from both corners.</p>
-        <table class="tt-t">
-          <tr><th>Phase</th><th>Length</th><th>What happens</th></tr>
-          <tr><td class="tt-gold">Buy</td><td>15s</td><td>Frozen in spawn. Shop open. You can look around but not move.</td></tr>
-          <tr><td class="tt-gold">Live</td><td>1:55</td><td>Round is running. Last team standing wins it.</td></tr>
-          <tr><td class="tt-gold">Round over</td><td>5s</td><td>Result and payouts, then straight into the next buy.</td></tr>
-        </table>
-        <div class="tt-h">Winning a round</div>
-        <div class="tt-row"><span class="tt-good">&#9656;</span><span>Eliminate every player on the other team.</span></div>
-        <div class="tt-row"><span class="tt-good">&#9656;</span><span>Or hold more players alive than they do when the clock runs out.</span></div>
-        <div class="tt-row"><span class="lbl">&#9656;</span><span>A dead tie on the clock goes to Defence.</span></div>
-        <div class="tt-note">Death is not respawn. Once you are down you spectate until the
-          round ends, so trading your life for one kill is rarely worth it.</div>
-      </div>
-
-      <div class="tt-pane" data-p="money">
-        <div class="tt-h">The economy</div>
-        <p class="tt-p">Money carries between rounds and resets to $800 at the swap.
-          It is capped at $16,000. You keep your money when you die &mdash; you only lose
-          the gun, which is what makes losing an expensive rifle hurt.</p>
-        <table class="tt-t">
-          <tr><th>Event</th><th>Payout</th></tr>
-          <tr><td>Start of each half</td><td class="tt-gold">$800</td></tr>
-          <tr><td>Win a round</td><td class="tt-good">+$3,250</td></tr>
-          <tr><td>Lose 1 round in a row</td><td>+$1,400</td></tr>
-          <tr><td>Lose 2 in a row</td><td>+$1,900</td></tr>
-          <tr><td>Lose 3 in a row</td><td>+$2,400</td></tr>
-          <tr><td>Lose 4 in a row</td><td>+$2,900</td></tr>
-          <tr><td>Lose 5 or more</td><td>+$3,400</td></tr>
-          <tr><td>Kill</td><td class="tt-gold">$100 &ndash; $1,500 by weapon</td></tr>
-        </table>
-        <div class="tt-note">The loss bonus climbs the longer you lose, and resets the
-          moment you win one. That is what makes a save round worth playing: go cheap
-          now, and the round after next you can afford everything.</div>
-      </div>
-
-      <div class="tt-pane" data-p="map">${MAP_PANE}</div>
-
-      <div class="tt-pane" data-p="settings">
-        <div class="tt-h">Settings</div>
-        <p class="tt-p">Every option here changes real engine state and is remembered
-          between sessions. <strong>Render scale</strong> is by far the strongest lever if
-          the frame rate is low &mdash; pixels scale with the square, so 75% draws barely
-          over half the work. Changing any individual option switches Quality to Custom.</p>
-        <div id="tt-set-host"></div>
-      </div>
-
+      <div id="hp-body"></div>
     </div>
    </div>`;
   document.body.appendChild(modal);
 
-  // Move b0-menu's live settings list in, rather than rebuilding it. Its
-  // renderSettings() finds the node by id, so everything keeps working.
-  const host = modal.querySelector('#tt-set-host');
-  const setList = document.getElementById('set-list');
-  if(host && setList){
-    host.appendChild(setList);
+  const $ = s => modal.querySelector(s);
+  let mode = 'how', section = 'basics';
+
+  function sections(){ return mode === 'how' ? HOW : SET_GROUPS; }
+
+  function render(){
+    const list = sections();
+    $('#hp-title').textContent = mode === 'how' ? 'How to play' : 'Settings';
+    $('#hp-reset').style.display = mode === 'set' ? '' : 'none';
+    $('#hp-nav').innerHTML = list.map(s =>
+      '<button type="button" class="hp-nav' + (s.id === section ? ' on' : '') + '" data-s="' + s.id + '">' +
+      (IC[s.id] || '') + '<span>' + s.label + '<small>' + s.sub + '</small></span></button>').join('');
+    const cur = list.find(s => s.id === section) || list[0];
+    section = cur.id;
+    $('#hp-h2').textContent = cur.title || cur.label;
+    $('#hp-lead').textContent = cur.lead || '';
+    $('#hp-body').innerHTML = '<div class="hp-sec on">' + (mode === 'how' ? cur.html : settingsGroupHTML(cur)) + '</div>';
+    $('#hp-body').scrollTop = 0;
+  }
+  // settings re-render that keeps the scroll position
+  function refreshSettings(){
+    if(mode !== 'set' || !modal.classList.contains('on')) return;
+    const st = $('#hp-body').scrollTop;
+    const cur = SET_GROUPS.find(s => s.id === section);
+    if(cur) $('#hp-body').firstChild.innerHTML = settingsGroupHTML(cur);
+    $('#hp-body').scrollTop = st;
+  }
+  let _savedT = 0;
+  function flashSaved(){
+    const el = $('#hp-saved'); el.classList.add('on');
+    clearTimeout(_savedT); _savedT = setTimeout(() => el.classList.remove('on'), 1100);
+  }
+  function setOption(k, i){
+    const s = SET[k]; if(!s || i < 0 || i >= s.opts.length) return;
+    s.i = i;
+    if(k === 'scale' || k === 'shadows') SET.quality.i = SET.quality.opts.indexOf('CUSTOM');
+    applySetting(k);
+    saveSettings();
+    if(typeof renderSettings === 'function') renderSettings();   // keeps everything in step
+    flashSaved();
+  }
+
+  $('#hp-nav').addEventListener('click', e => {
+    const b = e.target.closest('.hp-nav'); if(!b) return;
+    section = b.dataset.s; render();
+  });
+  $('#hp-body').addEventListener('click', e => {
+    const opt = e.target.closest('[data-k][data-i]');
+    if(opt){ setOption(opt.dataset.k, +opt.dataset.i); return; }
+    const pre = e.target.closest('[data-preset]');
+    if(pre){ setOption('quality', SET.quality.opts.indexOf(pre.dataset.preset)); return; }
+    const chip = e.target.closest('.hp-chip');
+    if(chip){
+      modal.querySelectorAll('.hp-chip').forEach(c => c.classList.toggle('on', c === chip));
+      modal.querySelectorAll('.hp-gun').forEach(g => g.style.display = (chip.dataset.f === 'all' || g.dataset.cat === chip.dataset.f) ? '' : 'none');
+      return;
+    }
+    const mt = e.target.closest('.hp-maptab');
+    if(mt){
+      modal.querySelectorAll('.hp-maptab').forEach(t => t.classList.toggle('on', t === mt));
+      modal.querySelectorAll('.hp-map').forEach(m => m.classList.toggle('on', m.dataset.map === mt.dataset.map));
+    }
+  });
+  $('#hp-reset').addEventListener('click', () => {
+    for(const k in DEFAULTS) if(SET[k]) SET[k].i = DEFAULTS[k];
+    for(const s of SETTINGS) if(s.key !== 'quality') applySetting(s.key);
+    applySetting('quality');
+    saveSettings();
     if(typeof renderSettings === 'function') renderSettings();
+    flashSaved();
+  });
+
+  // b0-menu's renderSettings() runs whenever a setting changes elsewhere (F4
+  // cycles quality). Wrap it so this screen follows along.
+  if(typeof renderSettings === 'function'){
+    const _base = renderSettings;
+    renderSettings = function(){ _base(); refreshSettings(); };
   }
 
-  const panes = [...modal.querySelectorAll('.tt-pane')];
-  const tabs  = [...modal.querySelectorAll('.tt-tab')];
-  function show(name){
-    tabs.forEach(t => t.classList.toggle('on', t.dataset.p === name));
-    panes.forEach(p => p.classList.toggle('on', p.dataset.p === name));
-    modal.querySelector('#tt-body').scrollTop = 0;
+  const HOW_IDS = HOW.map(s => s.id);
+  function open(name){
+    if(name === 'inventory'){ if(typeof invOpen === 'function') invOpen(); return; }
+    if(name === 'settings' || SET_GROUPS.some(g => g.id === name)){
+      mode = 'set'; section = name === 'settings' ? 'graphics' : name;
+    } else {
+      mode = 'how';
+      section = name === 'map' ? 'maps' : (HOW_IDS.includes(name) ? name : 'basics');
+    }
+    render();
+    modal.classList.add('on');
+    if(typeof netUpdateResume === 'function') netUpdateResume();
   }
-  tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.p)));
-
-  function open(name){ modal.classList.add('on'); show(name || 'controls');
-    if(typeof netUpdateResume === 'function') netUpdateResume(); }
-  function close(){ modal.classList.remove('on');
-    // the resume overlay stands down while the modal is open, so re-evaluate
-    if(typeof netUpdateResume === 'function') netUpdateResume(); }
-  modal.querySelector('#tt-close').addEventListener('click', close);
+  function close(){
+    modal.classList.remove('on');
+    if(typeof netUpdateResume === 'function') netUpdateResume();
+  }
+  $('#tt-close').addEventListener('click', close);
   modal.addEventListener('click', e => { if(e.target === modal) close(); });
   addEventListener('keydown', e => {
     if(e.code === 'Escape' && modal.classList.contains('on')) close();
   });
   window.ttOpen = open;
+  window.ttClose = close;
 
   // ── entry points ──────────────────────────────────────────────────────────
-  // The lobby had no way to reach either of these at all.
   const panel = document.querySelector('#net-lobby #net-panel');
   if(panel){
     const row = document.createElement('div');
@@ -1281,18 +1637,17 @@ console.log('title: two-worlds backdrop (palace / overgrowth)');
       '<button class="net-btn ghost" id="tt-open-tut" style="flex:1">How to play</button>' +
       '<button class="net-btn ghost" id="tt-open-set" style="flex:1">Settings</button>';
     panel.appendChild(row);
-    row.querySelector('#tt-open-tut').addEventListener('click', () => open('controls'));
+    row.querySelector('#tt-open-tut').addEventListener('click', () => open('basics'));
     row.querySelector('#tt-open-set').addEventListener('click', () => open('settings'));
   }
 
-  // Point the solo screen's buttons at the same modal, so there is one version
-  // of each rather than two that can drift apart.
+  // The solo screen's buttons point at the same screens.
   const bs = document.getElementById('btn-settings');
   const bt = document.getElementById('btn-tutorial');
   if(bs){ const c = bs.cloneNode(true); bs.replaceWith(c);
           c.addEventListener('click', () => open('settings')); }
   if(bt){ const c = bt.cloneNode(true); bt.replaceWith(c);
-          c.addEventListener('click', () => open('controls')); }
+          c.addEventListener('click', () => open('basics')); }
 })();
 
 

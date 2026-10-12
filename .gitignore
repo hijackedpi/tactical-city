@@ -1,2 +1,4 @@
 node_modules/
 .DS_Store
+# accounts + session secret (created by server.js at runtime)
+data/

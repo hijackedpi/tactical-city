@@ -51,6 +51,184 @@ app.use(express.static(path.join(__dirname, 'public'), {
   },
 }));
 
+// ── ACCOUNTS (Google sign-in) ────────────────────────────────────────────────
+// The browser gets a Google ID token from Google's own sign-in button. We check
+// that token with Google (no npm package needed: Node's built-in fetch asks
+// Google's tokeninfo endpoint), create or look up the account, and hand the
+// browser a signed session cookie that lasts 180 days — so the next visit from
+// the same Google account is signed in with no click at all.
+//
+// SET THIS: your OAuth Client ID from console.cloud.google.com (Credentials ->
+// OAuth client ID -> Web application). Either paste it here or set the
+// GOOGLE_CLIENT_ID environment variable on Render.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com';
+const GOOGLE_READY = /\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID) && !/^PASTE_/.test(GOOGLE_CLIENT_ID);
+
+const fs     = require('fs');
+const crypto = require('crypto');
+const DATA_DIR      = path.join(__dirname, 'data');
+const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
+const SECRET_FILE   = path.join(DATA_DIR, 'secret.txt');
+const SESSION_DAYS  = 180;
+const COOKIE_NAME   = 'tc_session';
+
+// Guns that can hold a skin, and the skins that exist. 'default' is always
+// allowed. Add skins here AND in public/src/10-config.js GUN_SKINS; the server
+// list is only used to refuse bogus loadouts.
+const SKIN_GUNS = ['knife','glock18','deagle','mac10','mp5','mp7','ump45','ak47','m4a1','awp'];
+const SKIN_IDS  = {
+  glock18: ['neonspirit', 'sunrisefade'],
+  deagle: ['codewhite', 'violetblaze'],
+  mac10: ['wildcat', 'duskfade'],
+  mp5: ['crimsondots', 'aciddrip'],
+  mp7: ['raceday', 'iceblue'],
+  ump45: ['doodlemech', 'redracer'],
+  ak47: ['ivorycrane', 'toonriot'],
+  m4a1: ['petalstorm', 'shatter'],
+  awp: ['oilslick', 'codechrome'],
+};
+
+try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch(e){}
+function loadSecret(){
+  if(process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  try { const s = fs.readFileSync(SECRET_FILE, 'utf8').trim(); if(s.length >= 32) return s; } catch(e){}
+  const s = crypto.randomBytes(32).toString('hex');
+  try { fs.writeFileSync(SECRET_FILE, s); } catch(e){}
+  return s;
+}
+const SESSION_SECRET = loadSecret();
+
+let accounts = {};
+try { accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, 'utf8')).accounts || {}; }
+catch(e){ accounts = {}; }
+let _saveTimer = null;
+function saveAccounts(){
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    try { fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify({ accounts }, null, 1)); }
+    catch(e){ console.warn('could not save accounts:', e.message); }
+  }, 300);
+}
+function defaultLoadout(){ const o = {}; for(const g of SKIN_GUNS) o[g] = 'default'; return o; }
+function publicAccount(a){
+  if(!a) return null;
+  return { id: a.id, name: a.name, avatar: a.avatar, loadout: Object.assign(defaultLoadout(), a.loadout || {}),
+           inventory: a.inventory || [], createdAt: a.createdAt };
+}
+
+// session cookie: base64(json) + '.' + hmac
+function signSession(payload){
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig  = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  return body + '.' + sig;
+}
+function readSession(token){
+  if(!token || typeof token !== 'string') return null;
+  const i = token.lastIndexOf('.');
+  if(i < 0) return null;
+  const body = token.slice(0, i), sig = token.slice(i + 1);
+  const want = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  if(sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null;
+  try {
+    const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if(!p.sub || !p.exp || Date.now() > p.exp) return null;
+    return p;
+  } catch(e){ return null; }
+}
+function parseCookies(header){
+  const out = {};
+  for(const part of String(header || '').split(';')){
+    const i = part.indexOf('=');
+    if(i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+function accountFromCookieHeader(header){
+  const sess = readSession(parseCookies(header)[COOKIE_NAME]);
+  return sess ? accounts[sess.sub] || null : null;
+}
+function isHttps(req){
+  return req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0] === 'https';
+}
+function setSessionCookie(req, res, sub){
+  const token = signSession({ sub, exp: Date.now() + SESSION_DAYS * 86400000 });
+  res.setHeader('Set-Cookie', COOKIE_NAME + '=' + token + '; Path=/; HttpOnly; SameSite=Lax; Max-Age=' +
+                (SESSION_DAYS * 86400) + (isHttps(req) ? '; Secure' : ''));
+}
+
+app.use(express.json({ limit: '16kb' }));
+
+app.get('/auth/config', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ clientId: GOOGLE_READY ? GOOGLE_CLIENT_ID : null });
+});
+
+app.get('/auth/me', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const a = accountFromCookieHeader(req.headers.cookie);
+  if(a){ a.lastSeen = Date.now(); saveAccounts(); }
+  res.json({ account: publicAccount(a) });
+});
+
+app.post('/auth/google', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if(!GOOGLE_READY) return res.status(503).json({ error: 'Google sign-in is not set up on this server yet.' });
+  const credential = req.body && req.body.credential;
+  if(typeof credential !== 'string' || credential.length > 4096) return res.status(400).json({ error: 'Bad request.' });
+  let info;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential));
+    if(!r.ok) return res.status(401).json({ error: 'Google rejected that sign-in.' });
+    info = await r.json();
+  } catch(e){ return res.status(502).json({ error: 'Could not reach Google.' }); }
+  if(info.aud !== GOOGLE_CLIENT_ID || !info.sub) return res.status(401).json({ error: 'Sign-in was for a different app.' });
+  if(info.exp && Number(info.exp) * 1000 < Date.now()) return res.status(401).json({ error: 'Sign-in expired, try again.' });
+
+  let a = accounts[info.sub];
+  const google = { name: info.given_name || info.name || 'PLAYER', avatar: info.picture || '', email: info.email || '' };
+  if(!a){
+    a = accounts[info.sub] = { id: info.sub, name: cleanName(google.name), avatar: google.avatar, email: google.email,
+                               createdAt: Date.now(), loadout: defaultLoadout(), inventory: [] };
+    console.log('new account:', a.name);
+  } else {
+    a.avatar = google.avatar || a.avatar;         // picture can change; the chosen name stays
+  }
+  a.lastSeen = Date.now();
+  saveAccounts();
+  setSessionCookie(req, res, a.id);
+  res.json({ account: publicAccount(a) });
+});
+
+app.post('/auth/logout', (req, res) => {
+  res.setHeader('Set-Cookie', COOKIE_NAME + '=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+  res.json({ ok: true });
+});
+
+// The name box on the title screen also renames the account.
+app.post('/api/name', (req, res) => {
+  const a = accountFromCookieHeader(req.headers.cookie);
+  if(!a) return res.status(401).json({ error: 'Not signed in.' });
+  a.name = cleanName(req.body && req.body.name);
+  saveAccounts();
+  res.json({ account: publicAccount(a) });
+});
+
+app.post('/api/loadout', (req, res) => {
+  const a = accountFromCookieHeader(req.headers.cookie);
+  if(!a) return res.status(401).json({ error: 'Not signed in.' });
+  const want = (req.body && req.body.loadout) || {};
+  const lo = Object.assign(defaultLoadout(), a.loadout || {});
+  for(const gun of SKIN_GUNS){
+    const id = want[gun];
+    if(typeof id !== 'string') continue;
+    const ok = id === 'default' || ((SKIN_IDS[gun] || []).includes(id) && (a.inventory || []).includes(gun + ':' + id));
+    if(ok) lo[gun] = id;
+  }
+  a.loadout = lo;
+  saveAccounts();
+  res.json({ account: publicAccount(a) });
+});
+
 // ── RULES ───────────────────────────────────────────────────────────────────
 const MAX_PLAYERS   = 10;      // 5v5
 // Map keys the client knows (MAPS in public/src/10-config.js). A room keeps
@@ -413,6 +591,9 @@ function cleanName(n){
 }
 
 io.on('connection', socket => {
+  // Signed-in players carry their account on the socket (cookie rides along
+  // with the websocket handshake). Guests simply have none.
+  socket.data.account = accountFromCookieHeader(socket.handshake.headers.cookie);
 
   // Accepts either a bare name (the original shape) or {name, isPublic}, so an
   // older client keeps working and simply gets a private room.

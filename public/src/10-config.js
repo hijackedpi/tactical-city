@@ -89,17 +89,77 @@ for(const k in GUNS) GUNS[k].bulletSpeed *= BULLET_SPEED_MULT;
 // are trivial to change; anything missing simply never appears in the hand and
 // logs a warning rather than breaking the game.
 const WEAPON_FILES = {
-  knife:   'Meshy_AI_knife_0807085337_texture.glb',
-  glock18: 'Meshy_AI_glock18_0807085448_texture.glb',
-  deagle:  'Meshy_AI_dessert_eagle_0807085803_texture.glb',
-  mac10:   'Meshy_AI_mac10_0807085434_texture.glb',
-  mp5:     'Meshy_AI_mp5_0807085408_texture.glb',
-  mp7:     'Meshy_AI_mp7_0807085345_texture.glb',
-  ump45:   'Meshy_AI_UMP_0807085429_texture.glb',
-  ak47:    'Meshy_AI_AK_47_rifle_0807085442_texture.glb',
-  m4a1:    'Meshy_AI_M4A1_0807085437_texture.glb',
-  awp:     'Meshy_AI_sniper_0807085425_texture.glb',
+  knife:   'Meshy_AI_knife_1012115741_texture.glb',
+  glock18: 'Meshy_AI_A_glock_18_gun_that_i_1012122251_texture.glb',
+  deagle:  'Meshy_AI_dessert_eagle_1012115721_texture.glb',
+  mac10:   'Meshy_AI_mac10_1012115655_texture.glb',
+  mp5:     'Meshy_AI_mp5_1012115747_texture.glb',
+  mp7:     'Meshy_AI_mp7_1012115753_texture.glb',
+  ump45:   'Meshy_AI_UMP_1012115727_texture.glb',
+  ak47:    'Meshy_AI_ak47_1012115706_texture.glb',
+  m4a1:    'Meshy_AI_M4A1_1012115715_texture.glb',
+  awp:     'Meshy_AI_sniper_1012115733_texture.glb',
 };
+
+// ── SKINS ───────────────────────────────────────────────────────────────────
+// A skin is just another GLB for the same gun, kept in public/gunskins/. Add
+// one here (and its id to SKIN_IDS in server.js) and it shows up in the
+// Inventory. Players see every skin; ones they do not own are locked (preview
+// only). The loadout — which skin each gun wears — is saved on the account.
+// Tiers, lowest to highest: issued, field, elite, apex.
+const SKIN_TIERS = {
+  issued: { name:'Issued', color:'#9fb0c4' },
+  field:  { name:'Field',  color:'#4b69ff' },
+  elite:  { name:'Elite',  color:'#8847ff' },
+  apex:   { name:'Apex',   color:'#eb4b4b' },
+};
+const GUN_SKINS = {
+  glock18: {
+    neonspirit:  { name:'Neon Spirit',  file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1012143420_texture.glb', tier:'apex' },
+    sunrisefade: { name:'Sunrise Fade', file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1012143424_texture.glb', tier:'elite' },
+  },
+  deagle: {
+    codewhite:   { name:'Code White',   file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1012143429_texture.glb', tier:'apex' },
+    violetblaze: { name:'Violet Blaze', file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1012143434_texture.glb', tier:'elite' },
+  },
+  mac10: {
+    wildcat:     { name:'Wild Cat',     file:'gunskins/Meshy_AI_Meshy_AI_mac10_101213_1012143441_texture.glb', tier:'elite' },
+    duskfade:    { name:'Dusk Fade',    file:'gunskins/Meshy_AI_Meshy_AI_mac10_101213_1012143445_texture.glb', tier:'field' },
+  },
+  mp5: {
+    crimsondots: { name:'Crimson Dots', file:'gunskins/Meshy_AI_mp5_1012143524_texture.glb', tier:'issued' },
+    aciddrip:    { name:'Acid Drip',    file:'gunskins/Meshy_AI_mp5_1012143529_texture.glb', tier:'field' },
+  },
+  mp7: {
+    raceday:     { name:'Race Day',     file:'gunskins/Meshy_AI_mp7_1012143642_texture.glb', tier:'elite' },
+    iceblue:     { name:'Ice Blue',     file:'gunskins/Meshy_AI_mp7_1012143650_texture.glb', tier:'field' },
+  },
+  ump45: {
+    doodlemech:  { name:'Doodle Mech',  file:'gunskins/Meshy_AI_UMP_1012143537_texture.glb', tier:'elite' },
+    redracer:    { name:'Red Racer',    file:'gunskins/Meshy_AI_UMP_1012143623_texture.glb', tier:'field' },
+  },
+  ak47: {
+    ivorycrane:  { name:'Ivory Crane',  file:'gunskins/Meshy_AI_ak47_1012143501_texture.glb', tier:'apex' },
+    toonriot:    { name:'Toon Riot',    file:'gunskins/Meshy_AI_ak47_1012143507_texture.glb', tier:'elite' },
+  },
+  m4a1: {
+    petalstorm:  { name:'Petal Storm',  file:'gunskins/Meshy_AI_M4A1_1012143451_texture.glb', tier:'apex' },
+    shatter:     { name:'Shatter',      file:'gunskins/Meshy_AI_M4A1_1012143456_texture.glb', tier:'elite' },
+  },
+  awp: {
+    oilslick:    { name:'Oil Slick',    file:'gunskins/Meshy_AI_sniper_1012143512_texture.glb', tier:'elite' },
+    codechrome:  { name:'Code Chrome',  file:'gunskins/Meshy_AI_sniper_1012143517_texture.glb', tier:'apex' },
+  },
+};
+let playerLoadout = {};                     // gun key -> skin id ('default' = base model)
+function gunSkinFor(key){
+  const id = playerLoadout[key];
+  return (id && id !== 'default' && GUN_SKINS[key] && GUN_SKINS[key][id]) || null;
+}
+function gunFileFor(key){
+  const skin = gunSkinFor(key);
+  return (skin && skin.file) || WEAPON_FILES[key];
+}
 
 // Target length of the weapon's longest axis in world units. The loader scales
 // each model to hit this, so it does not matter what scale it was exported at.

@@ -596,7 +596,7 @@ function loadBullet(){
 
 function loadWeapon(key, onReady){
   if(gunModels[key]){ onReady && onReady(gunModels[key]); return; }
-  const file = WEAPON_FILES[key];
+  const file = (typeof gunFileFor === 'function') ? gunFileFor(key) : WEAPON_FILES[key];
   if(!file){ onReady && onReady(null); return; }
   if(_gunLoading[key]){ _gunLoading[key].push(onReady); return; }
   _gunLoading[key] = [onReady];
