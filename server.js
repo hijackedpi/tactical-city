@@ -78,15 +78,15 @@ const COOKIE_NAME   = 'tc_session';
 // list is only used to refuse bogus loadouts.
 const SKIN_GUNS = ['knife','glock18','deagle','mac10','mp5','mp7','ump45','ak47','m4a1','awp'];
 const SKIN_IDS  = {
-  glock18: ['neonspirit', 'sunrisefade'],
-  deagle: ['codewhite', 'violetblaze'],
+  glock18: ['neonspirit', 'sunrisefade', 'nightskyline', 'moonrabbit'],
+  deagle: ['codewhite', 'violetblaze', 'jadetide', 'crimsontide'],
   mac10: ['wildcat', 'duskfade'],
   mp5: ['crimsondots', 'aciddrip'],
-  mp7: ['raceday', 'iceblue'],
+  mp7: ['raceday', 'iceblue', 'sunsetfade', 'acidswirl'],
   ump45: ['doodlemech', 'redracer'],
-  ak47: ['ivorycrane', 'toonriot'],
-  m4a1: ['petalstorm', 'shatter'],
-  awp: ['oilslick', 'codechrome'],
+  ak47: ['ivorycrane', 'toonriot', 'orbit', 'cyancircuit'],
+  m4a1: ['petalstorm', 'shatter', 'codeivory', 'junglefever'],
+  awp: ['oilslick', 'codechrome', 'orbit', 'neonbeast'],
 };
 
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch(e){}
@@ -113,7 +113,8 @@ function saveAccounts(){
 function defaultLoadout(){ const o = {}; for(const g of SKIN_GUNS) o[g] = 'default'; return o; }
 function publicAccount(a){
   if(!a) return null;
-  return { id: a.id, name: a.name, username: a.username || null, avatar: a.avatar, loadout: Object.assign(defaultLoadout(), a.loadout || {}),
+  return { id: a.id, name: a.name, username: a.username || null, avatar: a.avatar, tokens: a.tokens || 0,
+           loadout: Object.assign(defaultLoadout(), a.loadout || {}),
            inventory: a.inventory || [], createdAt: a.createdAt };
 }
 
@@ -257,6 +258,102 @@ app.post('/auth/google', async (req, res) => {
   saveAccounts();
   setSessionCookie(req, res, a.id);
   res.json({ account: publicAccount(a) });
+});
+
+// A short-lived signed ticket. The game's live connection was opened before
+// the player signed in, so it cannot see the new cookie; the page fetches this
+// and hands it to the socket ('auth') to say who it now belongs to.
+app.get('/auth/ticket', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const a = accountFromCookieHeader(req.headers.cookie);
+  res.json({ ticket: a ? signSession({ sub: a.id, exp: Date.now() + 60000 }) : null });
+});
+
+// ── TOKENS ──────────────────────────────────────────────────────────────────
+// The game's currency, for weapon cases later. Earned only in online matches,
+// only by signed-in players, and only counted here on the server:
+//   playtime   TOKENS_PER_MIN for every minute you are in a running match
+//   win        TOKENS_WIN for being on the winning side when the match ends
+// A daily cap stops anyone farming with a second account in an empty lobby.
+const TOKENS_PER_MIN   = Number(process.env.TOKENS_PER_MIN) || 5;
+const TOKENS_WIN       = 100;
+const TOKENS_DAILY_CAP = 1500;
+function tokenDay(){ return new Date().toISOString().slice(0, 10); }
+function creditTokens(a, n){
+  if(!a || n <= 0) return { got: 0, capped: false };
+  const d = tokenDay();
+  if(!a.tokenDay || a.tokenDay.d !== d) a.tokenDay = { d, n: 0 };
+  const got = Math.min(n, Math.max(0, TOKENS_DAILY_CAP - a.tokenDay.n));
+  a.tokens = (a.tokens || 0) + got;
+  a.tokenDay.n += got;
+  if(got) saveAccounts();
+  return { got, capped: got < n };
+}
+
+// ── WEAPON CASES ────────────────────────────────────────────────────────────
+// Like CS2: every case holds skins from every case rarity, and the roll picks a
+// RARITY first (fixed odds, below), then one skin of that rarity at random.
+// The roll happens here on the server with a crypto RNG, never in the browser.
+const CASE_ODDS = { field: 65, elite: 23, prime: 8, apex: 4 };     // percent, adds up to 100
+const CASE_TIERS = ['field', 'elite', 'prime', 'apex'];
+// Unboxing a skin you already own pays Tokens back instead.
+const DUPLICATE_REFUND = { field: 25, elite: 60, prime: 150, apex: 400 };
+const CASES = {
+  palace: { name: 'Revolution Case', price: 250, color: '#e0a35a', items: {
+    field: ['deagle:crimsontide', 'ump45:redracer'],
+    elite: ['glock18:sunrisefade', 'mac10:wildcat', 'ump45:doodlemech', 'm4a1:junglefever'],
+    prime: ['m4a1:codeivory'],
+    apex:  ['deagle:codewhite', 'awp:codechrome', 'ak47:ivorycrane'] } },
+  overgrowth: { name: 'Chromic Case', price: 250, color: '#4caf7a', items: {
+    field: ['deagle:jadetide', 'mp5:aciddrip'],
+    elite: ['glock18:nightskyline', 'mp7:raceday', 'ak47:toonriot', 'awp:oilslick'],
+    prime: ['ak47:cyancircuit'],
+    apex:  ['glock18:moonrabbit', 'm4a1:petalstorm'] } },
+  neon: { name: 'Neon Case', price: 250, color: '#8847ff', items: {
+    field: ['mac10:duskfade', 'mp7:iceblue'],
+    elite: ['deagle:violetblaze', 'mp7:sunsetfade', 'm4a1:shatter'],
+    prime: ['mp7:acidswirl', 'awp:neonbeast'],
+    apex:  ['glock18:neonspirit', 'ak47:orbit', 'awp:orbit'] } },
+};
+function rollCase(c){
+  // only rarities this case actually has, odds re-scaled to 100%
+  const tiers = CASE_TIERS.filter(t => (c.items[t] || []).length);
+  const total = tiers.reduce((n, t) => n + CASE_ODDS[t], 0);
+  let r = crypto.randomInt(0, 1e9) / 1e9 * total;
+  let tier = tiers[0];
+  for(const t of tiers){ if(r < CASE_ODDS[t]){ tier = t; break; } r -= CASE_ODDS[t]; }
+  const list = c.items[tier];
+  const [gun, id] = list[crypto.randomInt(0, list.length)].split(':');
+  return { gun, id, tier };
+}
+app.get('/api/cases', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ odds: CASE_ODDS, refund: DUPLICATE_REFUND,
+             cases: Object.keys(CASES).map(id => ({ id, name: CASES[id].name, price: CASES[id].price,
+                                                     color: CASES[id].color, items: CASES[id].items })) });
+});
+const _caseCooldown = new Map();
+app.post('/api/case/open', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const a = accountFromCookieHeader(req.headers.cookie);
+  if(!a) return res.status(401).json({ error: 'Sign in to open cases.' });
+  const c = CASES[req.body && req.body.case];
+  if(!c) return res.status(400).json({ error: 'No such case.' });
+  const now = Date.now();
+  if(now - (_caseCooldown.get(a.id) || 0) < 1500) return res.status(429).json({ error: 'Slow down a moment.' });
+  if((a.tokens || 0) < c.price) return res.status(400).json({ error: 'Not enough Tokens.' });
+  _caseCooldown.set(a.id, now);
+  a.tokens -= c.price;
+  const item = rollCase(c);
+  const key = item.gun + ':' + item.id;
+  a.inventory = a.inventory || [];
+  const duplicate = a.inventory.includes(key);
+  const refund = duplicate ? (DUPLICATE_REFUND[item.tier] || 0) : 0;
+  if(duplicate) a.tokens += refund; else a.inventory.push(key);
+  a.unboxed = (a.unboxed || 0) + 1;
+  saveAccounts();
+  console.log('case', a.name, c.name, '->', key, item.tier, duplicate ? '(dup)' : '');
+  res.json({ item, duplicate, refund, account: publicAccount(a) });
 });
 
 app.post('/auth/logout', (req, res) => {
@@ -441,6 +538,7 @@ function makePlayer(id, name, team){
     weapon: 'glock18',
     x: 0, y: 1.7, z: 0, yaw: 0, pitch: 0,
     moving: false,
+    playMs: 0,                       // time in a running match, for Tokens
     lastHitAt: 0,
     hitTokens: HIT_BURST,
   };
@@ -470,6 +568,7 @@ function rosterOf(room){
   return [...room.players.values()].map(p => ({
     id: p.id, name: p.name, team: p.team, alive: p.alive, hp: p.hp,
     kills: p.kills, deaths: p.deaths, money: p.money, weapon: p.weapon,
+    skins: p.skins || {},
   }));
 }
 
@@ -506,6 +605,8 @@ function broadcastPhase(room){
 }
 
 function tick(room){
+  if(room.phase === 'LIVE' || room.phase === 'BUY' || room.phase === 'ROUND_END')
+    for(const p of room.players.values()) p.playMs += TICK_MS;
   if(room.phase === 'LIVE' || room.phase === 'BUY')
     io.to(room.code).emit('snap', { t: Date.now(), p: snapshotOf(room) });
 }
@@ -529,6 +630,7 @@ function startMatch(room){
   for(const p of room.players.values()){
     p.money = START_MONEY;
     p.kills = 0; p.deaths = 0;
+    p.playMs = 0;
     Object.assign(p, freshStats());
   }
   beginBuy(room);
@@ -638,6 +740,30 @@ function endMatch(room, winner){
   setPhase(room, 'MATCH_END', 0, () => {});
   io.to(room.code).emit('matchEnd', { winner, score: room.score, roster: rosterOf(room),
                                       rounds: room.round, stats: statsOf(room) });
+  for(const p of room.players.values()) settleTokens(p, p.team === winner);
+}
+// The skins a player has equipped (only the non-default ones), for everyone
+// else's screen. Re-checked against ownership so a tampered save shows nothing.
+function equippedSkins(a){
+  const out = {};
+  if(!a || !a.loadout) return out;
+  for(const gun of SKIN_GUNS){
+    const id = a.loadout[gun];
+    if(id && id !== 'default' && (SKIN_IDS[gun] || []).includes(id) && (a.inventory || []).includes(gun + ':' + id)) out[gun] = id;
+  }
+  return out;
+}
+// Turn a player's match time (and a win) into Tokens, and tell them. Guests are
+// told what they would have earned, so signing in has an obvious payoff.
+function settleTokens(p, won, account){
+  const play = Math.floor(p.playMs / 60000 * TOKENS_PER_MIN);
+  const win  = won ? TOKENS_WIN : 0;
+  p.playMs = 0;
+  const sock = io.sockets.sockets.get(p.id);
+  const a = account || (sock && sock.data.account) || null;
+  if(!a){ if(sock) sock.emit('tokens', { guest: true, play, win }); return; }
+  const r = creditTokens(a, play + win);
+  if(sock) sock.emit('tokens', { play, win, got: r.got, capped: r.capped, balance: a.tokens, cap: TOKENS_DAILY_CAP });
 }
 
 // ── CONNECTIONS ─────────────────────────────────────────────────────────────
@@ -654,6 +780,10 @@ io.on('connection', socket => {
   // Signed-in players carry their account on the socket (cookie rides along
   // with the websocket handshake). Guests simply have none.
   socket.data.account = accountFromCookieHeader(socket.handshake.headers.cookie);
+  socket.on('auth', ticket => {
+    const sess = (typeof ticket === 'string') ? readSession(ticket) : null;
+    socket.data.account = sess ? (accounts[sess.sub] || null) : null;
+  });
 
   // Accepts either a bare name (the original shape) or {name, isPublic}, so an
   // older client keeps working and simply gets a private room.
@@ -691,6 +821,7 @@ io.on('connection', socket => {
   function joinRoom(socket, room, name, cb){
     const team = pickTeam(room);
     const p = makePlayer(socket.id, name, team);
+    p.skins = equippedSkins(socket.data.account);
     // Drop-in mid-match: you sit out until the next round rather than appearing
     // in the middle of a live one.
     if(room.phase === 'BUY'){ p.alive = true; p.hp = 100; p.inRound = true; }
@@ -864,6 +995,7 @@ io.on('connection', socket => {
     const room = roomOf(socket);
     if(!room) return;
     const p = room.players.get(socket.id);
+    if(p && room.phase !== 'LOBBY' && room.phase !== 'MATCH_END') settleTokens(p, false, socket.data.account);
     room.players.delete(socket.id);
     if(p) io.to(room.code).emit('chatSys', p.name + ' left');
 

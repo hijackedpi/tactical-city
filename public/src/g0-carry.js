@@ -250,7 +250,9 @@ function tpSolveArm(armPivot, forePivot, sx, sy, sz, tx, ty, tz, side){
 const _tpQ = new THREE.Quaternion(), _tpE = new THREE.Euler();
 const _tpOff = new THREE.Vector3(), _tpSup = new THREE.Vector3();
 
-function tpAttach(obj, key){
+// skinId: the skin THIS body's owner has on `key` ('default' for none). Left
+// out (your own third-person body) it means "whatever you have equipped".
+function tpAttach(obj, key, skinId){
   const ud = obj.userData;
   if(!ud || !ud.handR || !ud.foreR || !ud.rigBody) return false;   // not our rig
 
@@ -261,8 +263,17 @@ function tpAttach(obj, key){
   const len   = TP_LEN[key] || 0.6;
 
   let gun = null;
-  if(typeof gunModels !== 'undefined' && gunModels[key]){
-    gun = gunModels[key].clone();
+  let proto = (typeof gunModels !== 'undefined') ? gunModels[key] : null;
+  if(skinId && typeof weaponVariantNow === 'function'){
+    const v = weaponVariantNow(key, skinId);
+    if(v) proto = v;
+    else if(typeof loadWeaponVariant === 'function'){
+      // not downloaded yet: show the gun now, swap the skin in when it lands
+      loadWeaponVariant(key, skinId, () => { if(obj.userData) obj.userData._tpKey = null; });
+    }
+  }
+  if(proto){
+    gun = proto.clone();
     // gunModels IS the live viewmodel holder, so this clone carries f0-hands'
     // first-person gloves. Left on, every remote player would be holding a gun
     // with a second pair of hands already welded to it.
@@ -316,7 +327,7 @@ function tpAttach(obj, key){
   }
 
   ud._tpGun = gun;
-  ud._tpKey = key;
+  ud._tpKey = skinId ? key + '|' + skinId : key;
   ud._tpStyle = style;
   ud._tpSupport = style.support == null ? null : _tpSup.clone();
   return true;
@@ -342,16 +353,27 @@ function tpPose(ud){
 }
 
 // ── FRAME ───────────────────────────────────────────────────────────────────
+let _tpRosterSeen = null;
 (function tpFrame(){
   requestAnimationFrame(tpFrame);
   if(typeof netRemote === 'undefined' || typeof netRoster === 'undefined') return;
+
+  // Fetch everyone's skins as soon as the roster arrives (in the lobby), so a
+  // model is not being downloaded and parsed in the middle of a gunfight.
+  if(netRoster !== _tpRosterSeen){
+    _tpRosterSeen = netRoster;
+    if(typeof loadWeaponVariant === 'function')
+      for(const p of netRoster) if(p.id !== (typeof netMyId !== 'undefined' ? netMyId : null))
+        for(const k in (p.skins || {})) loadWeaponVariant(k, p.skins[k]);
+  }
 
   for(const [id, r] of netRemote){
     const obj = r.obj;
     if(!obj || !obj.userData || !obj.userData.handR) continue;
     const info = netRoster.find(p => p.id === id);
     const key  = (info && info.weapon) || 'glock18';
-    if(obj.userData._tpKey !== key && !tpAttach(obj, key)) continue;
+    const skin = (info && info.skins && info.skins[key]) || 'default';
+    if(obj.userData._tpKey !== key + '|' + skin && !tpAttach(obj, key, skin)) continue;
     tpPose(obj.userData);
   }
 })();

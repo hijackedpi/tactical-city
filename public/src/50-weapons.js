@@ -628,6 +628,54 @@ function preloadWeapons(){
   })();
 }
 
+// ── A GUN IN SOMEONE ELSE'S SKIN ────────────────────────────────────────────
+// gunModels holds YOUR guns, in the skins you have equipped. Other players can
+// carry different skins, so their models are loaded separately, once per skin
+// file, and shared by everyone using that skin. skinId 'default' is the base
+// model. The turn of each variant is copied from your own model of the same
+// gun so every version faces the same way.
+const _gunVariants = {};          // file -> fitted model, or an array of waiting callbacks
+function weaponFileFor(key, skinId){
+  const s = skinId && skinId !== 'default' && typeof GUN_SKINS === 'object' && GUN_SKINS[key] && GUN_SKINS[key][skinId];
+  return s ? s.file : WEAPON_FILES[key];
+}
+// The model for `key` in `skinId` if it is already loaded, else null.
+function weaponVariantNow(key, skinId){
+  const file = weaponFileFor(key, skinId);
+  const mine = (typeof gunFileFor === 'function') ? gunFileFor(key) : WEAPON_FILES[key];
+  if(file === mine) return gunModels[key] || null;
+  const v = _gunVariants[file];
+  return (v && !Array.isArray(v)) ? v : null;
+}
+function loadWeaponVariant(key, skinId, cb){
+  cb = cb || (() => {});
+  const file = weaponFileFor(key, skinId);
+  loadWeapon(key, base => {
+    const mine = (typeof gunFileFor === 'function') ? gunFileFor(key) : WEAPON_FILES[key];
+    if(!file || file === mine){ cb(base); return; }
+    const done = m => {
+      const a = base && base.userData.spin, b = m && m.userData.spin;
+      if(a && b) b.rotation.copy(a.rotation);
+      cb(m || base);
+    };
+    const v = _gunVariants[file];
+    if(v && !Array.isArray(v)){ done(v); return; }
+    if(Array.isArray(v)){ v.push(done); return; }
+    _gunVariants[file] = [done];
+    _weaponLoader.load(file, g => {
+      const fitted = fitWeaponModel(g.scene, key);
+      const waiting = _gunVariants[file];
+      _gunVariants[file] = fitted;
+      for(const d of waiting) d(fitted);
+    }, undefined, err => {
+      console.warn('skin failed to load:', key, skinId, file, err && err.message);
+      const waiting = _gunVariants[file];
+      delete _gunVariants[file];
+      for(const d of waiting) d(null);
+    });
+  });
+}
+
 // ── VIEWMODEL ADJUST MODE (F6) ──────────────────────────────────────────────
 // The fit is automatic, but a whole export batch usually shares one convention,
 // so a single rotation normally corrects every weapon at once. GLOBAL mode
