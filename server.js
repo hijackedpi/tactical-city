@@ -112,7 +112,7 @@ function saveAccounts(){
 function defaultLoadout(){ const o = {}; for(const g of SKIN_GUNS) o[g] = 'default'; return o; }
 function publicAccount(a){
   if(!a) return null;
-  return { id: a.id, name: a.name, avatar: a.avatar, loadout: Object.assign(defaultLoadout(), a.loadout || {}),
+  return { id: a.id, name: a.name, username: a.username || null, avatar: a.avatar, loadout: Object.assign(defaultLoadout(), a.loadout || {}),
            inventory: a.inventory || [], createdAt: a.createdAt };
 }
 
@@ -157,6 +157,65 @@ function setSessionCookie(req, res, sub){
 }
 
 app.use(express.json({ limit: '16kb' }));
+app.set('trust proxy', 1);                 // Render sits in front: req.ip is the player's IP
+
+// ── TACTICAL CITY ACCOUNTS (username + password, like Steam) ────────────────
+// Passwords are never stored: only a salted scrypt hash. Usernames are unique
+// ignoring case. Logging in sets the same 180-day session cookie as above, so
+// you stay signed in on that browser until you sign out.
+const USERNAME_RE = /^[A-Za-z0-9_]{3,16}$/;
+function hashPassword(pw, salt){
+  return crypto.scryptSync(pw, salt, 64).toString('hex');
+}
+function findByUsername(u){
+  const k = String(u || '').toLowerCase();
+  for(const id in accounts) if(accounts[id].username && accounts[id].username.toLowerCase() === k) return accounts[id];
+  return null;
+}
+// Brute-force guard: 12 tries per IP per 10 minutes for log in / sign up.
+const _authTries = new Map();
+function authLimited(req){
+  const now = Date.now(), ip = req.ip || 'x';
+  let t = _authTries.get(ip);
+  if(!t || now > t.reset){ t = { n: 0, reset: now + 10 * 60000 }; _authTries.set(ip, t); }
+  t.n++;
+  if(_authTries.size > 5000) for(const [k, v] of _authTries) if(now > v.reset) _authTries.delete(k);
+  return t.n > 12;
+}
+
+app.post('/auth/register', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if(authLimited(req)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes.' });
+  const username = String((req.body && req.body.username) || '').trim();
+  const password = String((req.body && req.body.password) || '');
+  if(!USERNAME_RE.test(username)) return res.status(400).json({ error: 'Username must be 3-16 letters, numbers or _.' });
+  if(password.length < 6)   return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  if(password.length > 128) return res.status(400).json({ error: 'Password is too long.' });
+  if(findByUsername(username)) return res.status(409).json({ error: 'That username is taken.' });
+  const id = 'u_' + crypto.randomBytes(9).toString('base64url');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const a = accounts[id] = { id, username, name: cleanName(username), avatar: '', salt, pass: hashPassword(password, salt),
+                             createdAt: Date.now(), lastSeen: Date.now(), loadout: defaultLoadout(), inventory: [] };
+  console.log('new account:', username);
+  saveAccounts();
+  setSessionCookie(req, res, a.id);
+  res.json({ account: publicAccount(a) });
+});
+
+app.post('/auth/login', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if(authLimited(req)) return res.status(429).json({ error: 'Too many tries. Wait a few minutes.' });
+  const a = findByUsername(req.body && req.body.username);
+  const password = String((req.body && req.body.password) || '');
+  const bad = () => res.status(401).json({ error: 'Wrong username or password.' });
+  if(!a || !a.pass || password.length > 128) return bad();
+  const got = Buffer.from(hashPassword(password, a.salt), 'hex'), want = Buffer.from(a.pass, 'hex');
+  if(got.length !== want.length || !crypto.timingSafeEqual(got, want)) return bad();
+  a.lastSeen = Date.now();
+  saveAccounts();
+  setSessionCookie(req, res, a.id);
+  res.json({ account: publicAccount(a) });
+});
 
 app.get('/auth/config', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');

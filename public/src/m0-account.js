@@ -42,6 +42,41 @@ const ACCT_GUNS = ['knife','glock18','deagle','mac10','mp5','mp7','ump45','ak47'
   #acct-bar .acct-hint{font:500 12.5px/1.4 var(--tt-font,sans-serif);color:#8f98a6;flex:1;min-width:0}
   #acct-bar .acct-hint b{color:#d8cbb2}
 
+  /* sign-in window (Steam-style): username + password, or Google */
+  #al-modal{position:fixed;inset:0;z-index:430;display:none;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 40%,rgba(18,22,30,.8),rgba(4,6,9,.94));backdrop-filter:blur(8px);
+    font-family:var(--tt-font,sans-serif);color:var(--tt-cream,#f4ecdc)}
+  #al-modal.on{display:flex}
+  #al-box{position:relative;width:min(420px,92vw);background:linear-gradient(180deg,rgba(20,24,32,.98),rgba(13,16,22,.99));
+    border:1px solid rgba(255,255,255,.08);box-shadow:0 40px 120px rgba(0,0,0,.7);padding:30px 32px 26px}
+  #al-box::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;
+    background:linear-gradient(90deg,var(--tt-t,#e0a35a),var(--tt-gold-hi,#f5d68d) 50%,var(--tt-ct,#6fa3dc))}
+  #al-x{position:absolute;top:12px;right:12px;width:34px;height:34px;display:grid;place-items:center;background:none;
+    border:1px solid rgba(255,255,255,.1);color:#9aa3b0;cursor:pointer;font:400 20px/1 sans-serif}
+  #al-x:hover{color:#fff;border-color:var(--tt-gold,#dca24c)}
+  #al-k{font:700 11px/1 var(--tt-font,sans-serif);letter-spacing:.34em;text-transform:uppercase;color:var(--tt-gold,#dca24c)}
+  #al-t{font:900 italic 30px/1 var(--tt-font,sans-serif);letter-spacing:.04em;text-transform:uppercase;margin:8px 0 20px}
+  .al-tabs{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:20px}
+  .al-tab{background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;padding:11px 0 10px;color:#8f98a6;
+    font:800 13px/1 var(--tt-font,sans-serif);letter-spacing:.18em;text-transform:uppercase;margin-bottom:-1px}
+  .al-tab.on{color:var(--tt-gold-hi,#f5d68d);border-bottom-color:var(--tt-gold,#dca24c)}
+  .al-f{display:block;margin-bottom:13px}
+  .al-f span{display:block;font:700 11px/1 var(--tt-font,sans-serif);letter-spacing:.2em;text-transform:uppercase;color:#8f98a6;margin-bottom:7px}
+  .al-f input{width:100%;box-sizing:border-box;background:#0b0e14;border:1px solid #2c3441;color:#f4ecdc;padding:12px 13px;
+    font:600 15px/1 var(--tt-font,sans-serif);letter-spacing:.04em;outline:none}
+  .al-f input:focus{border-color:var(--tt-gold,#dca24c)}
+  .al-f small{display:block;margin-top:6px;font:500 12px/1.3 var(--tt-font,sans-serif);color:#6c7380}
+  #al-err{min-height:18px;font:600 13px/1.4 var(--tt-font,sans-serif);color:#ff9a8a;margin:2px 0 10px}
+  #al-go{width:100%;padding:14px;border:none;cursor:pointer;background:linear-gradient(180deg,#f3d387,#cf9a43);color:#1d1408;
+    font:800 15px/1 var(--tt-font,sans-serif);letter-spacing:.22em;text-transform:uppercase}
+  #al-go:hover{filter:brightness(1.08)} #al-go:disabled{opacity:.6;cursor:wait}
+  #al-or{display:flex;align-items:center;gap:12px;margin:20px 0 14px;font:700 11px/1 var(--tt-font,sans-serif);letter-spacing:.24em;
+    text-transform:uppercase;color:#6c7380}
+  #al-or::before,#al-or::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.1)}
+  #al-google{display:flex;justify-content:center;min-height:44px}
+  #al-foot{margin-top:16px;text-align:center;font:500 12.5px/1.45 var(--tt-font,sans-serif);color:#6c7380}
+  #acct-bar .acct-btn.big{padding:10px 16px;font-size:12px}
+
   /* inventory: its own screen */
   #inv-screen{position:fixed;inset:0;z-index:421;display:none;flex-direction:column;font-family:var(--tt-font,sans-serif);color:#f4ecdc;
     background:radial-gradient(ellipse 70% 60% at 50% 45%,#1d2430 0%,#0d1117 62%,#07090c 100%)}
@@ -205,14 +240,14 @@ function acctSyncName(){
 }
 
 // ── GOOGLE ──────────────────────────────────────────────────────────────────
-let _gClientId = null, _gLoaded = false, _gInit = false;
+let _gClientId = null, _gLoaded = false, _gInit = false, _gFailed = false;
 function acctLoadGoogle(cb){
   if(_gLoaded){ cb(); return; }
   const s = document.createElement('script');
   s.src = 'https://accounts.google.com/gsi/client';
   s.async = true; s.defer = true;
   s.onload = () => { _gLoaded = true; cb(); };
-  s.onerror = () => { _acctState = 'gfail'; if(!acctUser) acctRenderBar(); };
+  s.onerror = () => { _gFailed = true; acctRenderLoginGoogle(); };
   document.head.appendChild(s);
 }
 function acctGoogleInit(){
@@ -226,15 +261,16 @@ function acctGoogleInit(){
       try {
         const j = await acctFetch('/auth/google', { credential: resp.credential });
         acctSetUser(j.account);
-      } catch(e){ acctRenderBar(e.message); }
+        acctCloseLogin();
+      } catch(e){ acctLoginError(e.message); }
     },
   });
 }
-function acctRenderGoogleButton(host){
+function acctRenderGoogleButton(host, text){
   if(!host || !_gInit) return;
   host.innerHTML = '';
   google.accounts.id.renderButton(host, { theme: 'filled_black', size: 'large', shape: 'rectangular',
-                                          text: 'signin_with', logo_alignment: 'left', width: 230 });
+                                          text: text || 'continue_with', logo_alignment: 'left', width: 300 });
 }
 function acctSignOut(){
   acctFetch('/auth/logout', {}).catch(() => {});
@@ -243,7 +279,7 @@ function acctSignOut(){
 }
 
 // ── TITLE SCREEN BAR ────────────────────────────────────────────────────────
-let _acctState = 'loading';            // loading | noserver | nokey | ready
+let _acctState = 'loading';            // loading | noserver | ready
 function acctAvatarHTML(a){
   const initial = (a.name || '?').charAt(0).toUpperCase();
   return '<span class="acct-av">' + (a.avatar
@@ -263,23 +299,115 @@ function acctRenderBar(err){
     bar.querySelector('#acct-out').addEventListener('click', acctSignOut);
     return;
   }
-  if(err){
-    bar.innerHTML = '<span class="acct-hint"><b>Sign-in failed.</b> ' + err.replace(/</g, '&lt;') + '</span><div id="acct-gbtn"></div>';
-    acctRenderGoogleButton(bar.querySelector('#acct-gbtn'));
+  if(_acctState === 'noserver'){
+    bar.innerHTML = '<span class="acct-hint">Accounts need the game server (<b>node server.js</b>). Playing as a guest.</span>';
     return;
   }
-  if(_acctState === 'ready'){
-    bar.innerHTML = '<span class="acct-hint"><b>Sign in</b> to keep your name and loadout on every device.</span><div id="acct-gbtn"></div>';
-    acctRenderGoogleButton(bar.querySelector('#acct-gbtn'));
-  } else if(_acctState === 'nokey'){
-    bar.innerHTML = '<span class="acct-hint"><b>Accounts not set up yet.</b> Add your Google Client ID in server.js.</span>';
-  } else if(_acctState === 'gfail'){
-    bar.innerHTML = '<span class="acct-hint"><b>Google sign-in could not load</b> (ad-blocker?). Playing as a guest.</span>';
-  } else if(_acctState === 'noserver'){
-    bar.innerHTML = '<span class="acct-hint">Sign-in needs the game server (<b>node server.js</b>). Playing as a guest.</span>';
-  } else {
+  if(_acctState === 'loading'){
     bar.innerHTML = '<span class="acct-hint">Checking sign-in&hellip;</span>';
+    return;
   }
+  bar.innerHTML =
+    '<button type="button" class="acct-btn gold big" id="acct-login" style="flex:1">Sign in</button>' +
+    '<button type="button" class="acct-btn big" id="acct-join" style="flex:1">Create account</button>';
+  bar.querySelector('#acct-login').addEventListener('click', () => acctOpenLogin('login'));
+  bar.querySelector('#acct-join').addEventListener('click', () => acctOpenLogin('join'));
+}
+
+// ── SIGN-IN WINDOW ──────────────────────────────────────────────────────────
+// Like Steam: a Tactical City account with a username and password, or
+// "Continue with Google" (that one shows once GOOGLE_CLIENT_ID is set on the
+// server). Either way the session cookie keeps you signed in on that browser.
+let _alMode = 'login';
+function acctBuildLogin(){
+  if(document.getElementById('al-modal')) return;
+  const m = document.createElement('div');
+  m.id = 'al-modal';
+  m.innerHTML = `
+    <div id="al-box" role="dialog" aria-modal="true">
+      <button type="button" id="al-x" aria-label="Close">&times;</button>
+      <div id="al-k">Tactical City</div>
+      <div id="al-t">Account</div>
+      <div class="al-tabs">
+        <button type="button" class="al-tab" data-m="login">Sign in</button>
+        <button type="button" class="al-tab" data-m="join">Create account</button>
+      </div>
+      <form id="al-form" autocomplete="on" novalidate>
+        <label class="al-f"><span>Username</span><input id="al-user" name="username" maxlength="16" autocomplete="username" spellcheck="false"></label>
+        <label class="al-f"><span>Password</span><input id="al-pass" name="password" type="password" maxlength="128"></label>
+        <label class="al-f" id="al-pass2-row"><span>Confirm password</span><input id="al-pass2" type="password" maxlength="128" autocomplete="new-password"></label>
+        <div id="al-err"></div>
+        <button type="submit" id="al-go">Sign in</button>
+      </form>
+      <div id="al-gwrap"><div id="al-or">or</div><div id="al-google"></div></div>
+      <div id="al-foot"></div>
+    </div>`;
+  document.body.appendChild(m);
+  m.querySelector('#al-x').addEventListener('click', acctCloseLogin);
+  m.addEventListener('click', e => { if(e.target === m) acctCloseLogin(); });
+  m.querySelectorAll('.al-tab').forEach(t => t.addEventListener('click', () => acctLoginMode(t.dataset.m)));
+  // typing here must not reach the game's hotkeys (B, V, Tab...)
+  m.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if(e.code === 'Escape') acctCloseLogin();
+  });
+  m.querySelector('#al-form').addEventListener('submit', e => { e.preventDefault(); acctLoginSubmit(); });
+}
+function acctLoginMode(mode){
+  _alMode = mode;
+  const m = document.getElementById('al-modal');
+  m.querySelectorAll('.al-tab').forEach(t => t.classList.toggle('on', t.dataset.m === mode));
+  const join = mode === 'join';
+  m.querySelector('#al-pass2-row').style.display = join ? '' : 'none';
+  m.querySelector('#al-pass').autocomplete = join ? 'new-password' : 'current-password';
+  m.querySelector('#al-go').textContent = join ? 'Create account' : 'Sign in';
+  m.querySelector('#al-foot').innerHTML = join
+    ? '3&ndash;16 letters, numbers or _. Password at least 6 characters.'
+    : 'New here? <a href="#" id="al-sw" style="color:var(--tt-gold-hi,#f5d68d)">Create an account</a>';
+  const sw = m.querySelector('#al-sw');
+  if(sw) sw.addEventListener('click', e => { e.preventDefault(); acctLoginMode('join'); });
+  acctLoginError('');
+  acctRenderLoginGoogle();
+}
+function acctRenderLoginGoogle(){
+  const w = document.getElementById('al-gwrap');
+  if(!w) return;
+  const show = !!_gClientId && !_gFailed;
+  w.style.display = show ? '' : 'none';
+  if(show && _gInit) acctRenderGoogleButton(w.querySelector('#al-google'), _alMode === 'join' ? 'signup_with' : 'continue_with');
+}
+function acctLoginError(msg){
+  const e = document.getElementById('al-err');
+  if(e) e.textContent = msg || '';
+}
+function acctOpenLogin(mode){
+  acctBuildLogin();
+  acctLoginMode(mode || 'login');
+  document.getElementById('al-modal').classList.add('on');
+  setTimeout(() => { const u = document.getElementById('al-user'); if(u) u.focus(); }, 30);
+}
+function acctCloseLogin(){
+  const m = document.getElementById('al-modal');
+  if(m) m.classList.remove('on');
+}
+window.acctOpenLogin = acctOpenLogin;
+async function acctLoginSubmit(){
+  const $ = id => document.getElementById(id);
+  const username = $('al-user').value.trim(), password = $('al-pass').value;
+  if(!username || !password) return acctLoginError('Enter a username and password.');
+  if(_alMode === 'join'){
+    if(!/^[A-Za-z0-9_]{3,16}$/.test(username)) return acctLoginError('Username must be 3-16 letters, numbers or _.');
+    if(password.length < 6) return acctLoginError('Password must be at least 6 characters.');
+    if(password !== $('al-pass2').value) return acctLoginError('Passwords do not match.');
+  }
+  $('al-go').disabled = true;
+  try {
+    const j = await acctFetch(_alMode === 'join' ? '/auth/register' : '/auth/login', { username, password });
+    acctSetUser(j.account);
+    $('al-pass').value = ''; $('al-pass2').value = '';
+    acctCloseLogin();
+  } catch(e){ acctLoginError(e.message); }
+  finally { $('al-go').disabled = false; }
 }
 
 function acctBuildBar(){
@@ -509,8 +637,11 @@ function acctRenderInventory(){
   if(acctUser){
     who.innerHTML = acctAvatarHTML(acctUser) + '<span><b>' + invEsc(acctUser.name) + '</b><em>Loadout saved to your account</em></span>';
   } else {
-    who.innerHTML = '<span><b>Guest</b><em>Sign in to save a loadout</em></span><div id="acct-gbtn2"></div>';
-    acctRenderGoogleButton(who.querySelector('#acct-gbtn2'));
+    who.innerHTML = '<span><b>Guest</b><em>Sign in to save a loadout</em></span>' +
+      (_acctState === 'ready' ? '<button type="button" class="acct-btn gold big" id="inv-login" style="background:transparent;color:var(--tt-gold-hi,#f5d68d);' +
+        'border:1px solid rgba(220,162,76,.5);cursor:pointer;padding:10px 16px;font:800 12px/1 var(--tt-font,sans-serif);letter-spacing:.16em;text-transform:uppercase">Sign in</button>' : '');
+    const il = who.querySelector('#inv-login');
+    if(il) il.addEventListener('click', () => acctOpenLogin('login'));
   }
 
   // list
@@ -556,7 +687,7 @@ function acctRenderInventory(){
   let act;
   if(prev.id === cur)       act = '<div class="st ok">Equipped</div>';
   else if(!prev.owned)      act = '<div class="st">' + LOCK + 'Locked</div><p>You do not own this skin yet. Preview only.</p>';
-  else if(!acctUser)        act = '<div class="st">Sign in to equip</div>';
+  else if(!acctUser)        act = '<div class="st">Sign in to equip</div>';   // (not reachable until skins can be owned)
   else                      act = '<button type="button" class="eq" id="inv-equip">Equip ' + invEsc(prev.name) + '</button>';
 
   el.querySelector('#inv-skins').innerHTML =
@@ -589,24 +720,21 @@ function acctRenderInventory(){
     let cfg;
     try { cfg = await acctFetch('/auth/config'); }
     catch(e){ _acctState = 'noserver'; acctRenderBar(); return; }
-    if(!cfg.clientId){ _acctState = 'nokey'; acctRenderBar(); return; }
-    _gClientId = cfg.clientId;
+    _acctState = 'ready';
+    _gClientId = cfg.clientId || null;
 
     // already signed in from a previous visit? (session cookie)
     let me = null;
     try { me = (await acctFetch('/auth/me')).account; } catch(e){}
-
-    // Signed in by cookie: show it now, Google's script is only needed to
-    // sign in again later (so an ad-blocker eating it changes nothing here).
     if(me) acctSetUser(me);
-    acctLoadGoogle(() => {
+    else { acctRenderBar(); acctRenderInventory(); }
+
+    // Google is an extra way in, only when the server has a Client ID
+    if(_gClientId) acctLoadGoogle(() => {
       acctGoogleInit();
-      _acctState = 'ready';
-      if(acctUser) return;
-      acctRenderBar();
-      acctRenderInventory();
+      acctRenderLoginGoogle();
       // One Tap: a returning Google account is offered with a single tap
-      try { google.accounts.id.prompt(); } catch(e){}
+      if(!acctUser) try { google.accounts.id.prompt(); } catch(e){}
     });
   })();
 })();
