@@ -61,7 +61,8 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // SET THIS: your OAuth Client ID from console.cloud.google.com (Credentials ->
 // OAuth client ID -> Web application). Either paste it here or set the
 // GOOGLE_CLIENT_ID environment variable on Render.
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com';
+// (A Client ID is public by design: it only names the app to Google. It is not a secret.)
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '827591281576-sua24lgirp5r2j29lp11kq835trha890.apps.googleusercontent.com';
 const GOOGLE_READY = /\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID) && !/^PASTE_/.test(GOOGLE_CLIENT_ID);
 
 const fs     = require('fs');
