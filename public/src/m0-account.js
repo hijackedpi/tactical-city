@@ -178,6 +178,62 @@ const ACCT_GUNS = ['knife','glock18','deagle','mac10','mp5','mp7','ump45','ak47'
   .co-win .nm{margin-top:8px;font:900 italic 34px/1.05 var(--tt-font,sans-serif);text-transform:uppercase;letter-spacing:.03em}
   .co-win .gn{margin-top:6px;font:700 13px/1 var(--tt-font,sans-serif);letter-spacing:.2em;text-transform:uppercase;color:#a99c84}
   .co-win .dup{margin-top:14px;font:700 14px/1.4 var(--tt-font,sans-serif);color:var(--tt-gold-hi,#f5d68d)}
+  /* unboxing: intro, reel motion, reveal */
+  .co-intro{height:260px;display:grid;place-items:center;margin-top:24px}
+  .co-case{width:230px;height:172px;animation:coShake 1s ease-in both;filter:drop-shadow(0 0 26px var(--c))}
+  .co-case svg{width:100%;height:100%}
+  @keyframes coShake{0%{transform:scale(.7)}18%{transform:scale(1)}30%{transform:rotate(-4deg)}40%{transform:rotate(5deg)}
+    50%{transform:rotate(-7deg)}60%{transform:rotate(8deg) scale(1.03)}70%{transform:rotate(-5deg) scale(1.06)}80%{transform:rotate(0) scale(1.1)}
+    100%{transform:scale(1.5);opacity:0;filter:blur(4px) drop-shadow(0 0 80px var(--c))}}
+  .reel .co-item{transition:transform .12s ease-out,box-shadow .12s}
+  .reel .co-item::after{content:'';position:absolute;left:0;right:0;bottom:0;height:46%;pointer-events:none;
+    background:linear-gradient(0deg,color-mix(in srgb,var(--c) 42%,transparent),transparent)}
+  .reel .co-item.hot{transform:translateY(-4px) scale(1.06);box-shadow:0 8px 24px rgba(0,0,0,.5)}
+  .reel .co-item.won{transform:scale(1.13);box-shadow:0 0 34px var(--c),0 0 0 2px var(--c);z-index:2;animation:coWon 1.1s ease-out}
+  @keyframes coWon{0%{filter:brightness(2.4)}100%{filter:none}}
+  .reel-mark.land{animation:coMark .7s ease-out}
+  @keyframes coMark{0%{box-shadow:0 0 40px 10px rgba(245,214,141,1)}100%{box-shadow:0 0 14px rgba(245,214,141,.8)}}
+  .co-flash{position:fixed;inset:0;pointer-events:none;z-index:3;
+    background:radial-gradient(circle at 50% 32%,color-mix(in srgb,var(--c) 85%,white),transparent 62%);animation:coFlash 1s ease-out forwards}
+  @keyframes coFlash{from{opacity:.8}to{opacity:0}}
+  .co-fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:4}
+  .co-win .big{position:relative;overflow:hidden}
+  .co-win .big > :not(.rays){position:relative}
+  .co-win .rays{position:absolute;left:50%;top:38%;width:1000px;height:1000px;margin:-500px 0 0 -500px;pointer-events:none;opacity:.6;
+    background:repeating-conic-gradient(from 0deg,color-mix(in srgb,var(--c) 34%,transparent) 0 7deg,transparent 7deg 18deg);
+    -webkit-mask:radial-gradient(circle,#000 6%,transparent 52%);mask:radial-gradient(circle,#000 6%,transparent 52%);animation:coSpin 16s linear infinite}
+  @keyframes coSpin{to{transform:rotate(360deg)}}
+  .co-win .co-3d{height:190px;display:flex;align-items:center;justify-content:center}
+  .co-win .co-3d canvas{position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity .4s}
+  .co-win .co-3d.ready canvas{opacity:1}
+  .co-win .co-3d.ready .ic{opacity:0}
+  .co-win .co-3d .ic{transition:opacity .3s}
+  .co-win .big.apex{box-shadow:0 0 60px color-mix(in srgb,var(--c) 45%,transparent)}
+
+  /* daily quests */
+  .st-quests{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:30px}
+  .st-quest{position:relative;display:flex;gap:16px;padding:18px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+    border-left:3px solid #5d6470}
+  .st-quest.ready{border-left-color:var(--tt-gold,#dca24c);background:linear-gradient(90deg,rgba(220,162,76,.12),rgba(255,255,255,.02))}
+  .st-quest.claimed{opacity:.6}
+  .st-quest .qi{flex:0 0 auto;width:46px;height:46px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.14);color:#c9bda6}
+  .st-quest.ready .qi{border-color:rgba(220,162,76,.6);color:var(--tt-gold-hi,#f5d68d)}
+  .st-quest .qi svg{width:24px;height:24px}
+  .st-quest .qb{flex:1;min-width:0}
+  .st-quest .qb b{display:block;font:800 16px/1 var(--tt-font,sans-serif);letter-spacing:.14em;text-transform:uppercase}
+  .st-quest .qb span{display:block;margin-top:6px;font:600 13px/1.4 var(--tt-font,sans-serif);color:#8f98a6}
+  .st-quest .qs{margin-top:10px;font:800 11.5px/1 var(--tt-font,sans-serif);letter-spacing:.18em;text-transform:uppercase;color:#8f98a6}
+  .st-quest.ready .qs{color:var(--tt-gold-hi,#f5d68d)}
+  .st-quest.claimed .qs{color:#7ec98f}
+  .st-quest .qpick{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .st-quest .qpick button{display:flex;align-items:center;gap:7px;padding:8px 11px;cursor:pointer;background:rgba(0,0,0,.3);
+    border:1px solid var(--c);color:#f4ecdc;font:800 11.5px/1 var(--tt-font,sans-serif);letter-spacing:.1em;text-transform:uppercase}
+  .st-quest .qpick button:hover{background:color-mix(in srgb,var(--c) 25%,transparent)}
+  .st-quest .qpick i{width:9px;height:9px;background:var(--c);display:block}
+  .st-reset{font:700 11px/1 var(--tt-font,sans-serif);letter-spacing:.16em;text-transform:uppercase;color:#6c7380;margin-left:auto}
+  #tt-open-store{position:relative}
+  #tt-open-store .qdot{position:absolute;top:8px;right:12px;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;display:grid;place-items:center;
+    background:#eb4b4b;color:#fff;font:800 12px/1 var(--tt-font,sans-serif);border-radius:11px;box-shadow:0 0 0 2px #0d1117}
 
   /* inventory: its own screen */
   #inv-screen{position:fixed;inset:0;z-index:421;display:none;flex-direction:column;font-family:var(--tt-font,sans-serif);color:#f4ecdc;
@@ -315,7 +371,11 @@ function acctHookSocket(){
   if(_sockHooked || typeof netSocket === 'undefined' || !netSocket) return;
   _sockHooked = true;
   netSocket.on('tokens', d => {
-    if(d && !d.guest && acctUser){ acctUser.tokens = d.balance; acctRenderBar(); storeRender(); }
+    if(d && !d.guest && acctUser){
+      acctUser.tokens = d.balance;
+      if(d.quests) acctUser.quests = d.quests;
+      acctRenderBar(); storeRender(); questBadge();
+    }
     acctShowTokenSummary(d);
   });
 }
@@ -345,6 +405,7 @@ function acctSetUser(a){
   acctUser = a || null;
   acctSyncSocket();
   storeRender();
+  questBadge();
   playerLoadout = acctUser ? Object.assign({}, acctUser.loadout) : {};
   acctRenderBar();
   acctRenderInventory();
@@ -892,6 +953,7 @@ function storeBuild(){
   el.querySelector('#st-body').addEventListener('click', e => {
     const v = e.target.closest('[data-view]'); if(v) return caseShowContents(v.dataset.view);
     const o = e.target.closest('[data-open]'); if(o) return caseOpen(o.dataset.open);
+    const q = e.target.closest('[data-claim]'); if(q) return questClaim(q.dataset.claim, q.dataset.case);
   });
   addEventListener('keydown', e => {
     if(e.code !== 'Escape') return;
@@ -903,6 +965,48 @@ function storeBuild(){
 function caseArt(c){
   return '<svg viewBox="0 0 120 90" fill="none" stroke="' + c + '" stroke-width="3"><rect x="10" y="22" width="100" height="58" rx="5" fill="rgba(0,0,0,.35)"/>' +
     '<path d="M10 40h100M48 22v-8h24v8"/><rect x="52" y="34" width="16" height="12" rx="2" fill="' + c + '"/></svg>';
+}
+const QUESTS = [
+  { id: 'login', name: 'Log in',      desc: 'Sign in to Tactical City today.',
+    ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>' },
+  { id: 'win',   name: 'Win a match', desc: 'Win an online match (not solo or training).',
+    ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>' },
+];
+function questsReady(){
+  const q = acctUser && acctUser.quests;
+  return q ? QUESTS.filter(x => q[x.id] && q[x.id].done && !q[x.id].claimed).length : 0;
+}
+// red count on the Store button when a free case is waiting
+function questBadge(){
+  const b = document.getElementById('tt-open-store');
+  if(!b) return;
+  let dot = b.querySelector('.qdot');
+  const n = questsReady();
+  if(!n){ if(dot) dot.remove(); return; }
+  if(!dot){ dot = document.createElement('span'); dot.className = 'qdot'; b.appendChild(dot); }
+  dot.textContent = n;
+}
+function questResetIn(){
+  const now = new Date(), next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  const m = Math.max(0, Math.round((next - now) / 60000));
+  return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+}
+function questsHTML(){
+  let h = '<div class="st-h">Daily quests<span class="st-reset">New quests in ' + questResetIn() + '</span></div>';
+  if(!acctUser) return h + '<div class="st-note" style="margin:0 0 30px">Sign in to do daily quests. Each one gives you a free case of your choice.</div>';
+  const q = acctUser.quests || {};
+  return h + '<div class="st-quests">' + QUESTS.map(x => {
+    const st = q[x.id] || {};
+    const cls = st.claimed ? 'claimed' : st.done ? 'ready' : '';
+    let tail;
+    if(st.claimed) tail = '<div class="qs">&#10003; Claimed &middot; back tomorrow</div>';
+    else if(st.done) tail = '<div class="qs">Complete &middot; pick your free case</div>' +
+      (_cases ? '<div class="qpick">' + _cases.map(c =>
+        '<button type="button" style="--c:' + c.color + '" data-claim="' + x.id + '" data-case="' + c.id + '"><i></i>' + invEsc(c.name) + '</button>').join('') + '</div>' : '');
+    else tail = '<div class="qs">Not done yet &middot; reward: 1 free case</div>';
+    return '<div class="st-quest ' + cls + '"><div class="qi">' + x.ic + '</div><div class="qb"><b>' + x.name + '</b><span>' +
+      x.desc + '</span>' + tail + '</div></div>';
+  }).join('') + '</div>';
 }
 function storeRender(){
   const el = document.getElementById('store-screen');
@@ -930,7 +1034,7 @@ function storeRender(){
   const odds = _caseOdds ? ['field','elite','prime','apex'].map(t => {
     const ti = SKIN_TIERS[t]; return '<div style="border-left-color:' + ti.color + '"><b style="color:' + ti.color + '">' + _caseOdds[t] + '%</b><span>' + ti.name + '</span></div>';
   }).join('') : '';
-  el.querySelector('#st-body').innerHTML =
+  el.querySelector('#st-body').innerHTML = questsHTML() +
     '<div class="st-h">Weapon cases</div>' + cases +
     (odds ? '<div class="st-h">Drop odds (every case)</div><div class="st-earn">' + odds + '</div>' : '') +
     '<div class="st-h" style="margin-top:30px">How to earn Tokens</div><div class="st-earn">' +
@@ -998,76 +1102,235 @@ function caseShowContents(id){
       ? '<button type="button" class="st-btn go" data-co-open="' + c.id + '">Open for ' + fmtTok(c.price) + ' Tokens</button>' : '') + '</div>';
   ov.classList.add('on');
 }
-async function caseOpen(id){
+function caseOpen(id){
   const c = caseById(id); if(!c || !acctUser) return;
+  caseRun(c, () => acctFetch('/api/case/open', { case: id }), 'Opening');
+}
+function questClaim(q, caseId){
+  const c = caseById(caseId); if(!c || !acctUser) return;
+  caseRun(c, () => acctFetch('/api/quest/claim', { quest: q, case: caseId }), 'Free case');
+}
+async function caseRun(c, fetcher, label){
   const ov = caseOverlay();
   if(ov.dataset.spinning) return;
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const head = '<div class="co-k">' + invEsc(label || 'Opening') + '</div><div class="co-t">' + invEsc(c.name) + '</div>';
+
+  // 1. The case shakes and bursts open while the server makes the roll.
+  ov.innerHTML = head + '<div class="co-intro" style="--c:' + c.color + '"><div class="co-case">' + caseArt(c.color) + '</div></div>';
+  ov.classList.add('on');
+  ov.dataset.spinning = '1';
+  caseSfx('open');
   let res;
-  try { res = await acctFetch('/api/case/open', { case: id }); }
+  try { [res] = await Promise.all([fetcher(), new Promise(r => setTimeout(r, calm ? 200 : 950))]); }
   catch(e){
+    delete ov.dataset.spinning;
     ov.innerHTML = '<button type="button" class="co-x" aria-label="Close">&times;</button><div class="co-t" style="margin-top:20vh">' +
       invEsc(e.message) + '</div><div class="co-foot"><button type="button" class="st-btn ghost" data-co-close>Back</button></div>';
-    ov.classList.add('on'); return;
+    return;
   }
   const win = skinInfo(res.item.gun, res.item.id);
+  // start fetching the winner's 3D model now, so it is ready for the reveal
+  if(typeof loadWeaponVariant === 'function') loadWeaponVariant(win.gun, win.id);
 
-  // Build the strip: random filler drawn with the case's own odds, the real
-  // result placed near the end, a few more after it so the strip runs past.
+  // 2. The strip: filler drawn with the case's own odds, the real result near
+  // the end. Half the time a rarer skin sits right after a common win, the
+  // near miss that makes the last second of a CS2 roll worth watching.
+  const pickTier = tier => { const l = c.items[tier]; const [g, i] = l[(Math.random() * l.length) | 0].split(':'); return skinInfo(g, i); };
   const pick = () => {
     let r = Math.random() * 100, tier = 'field';
     for(const t of ['field','elite','prime','apex']){ if(!(c.items[t] || []).length) continue; if(r < _caseOdds[t]){ tier = t; break; } r -= _caseOdds[t]; tier = t; }
-    const l = c.items[tier]; const [g, i] = l[(Math.random() * l.length) | 0].split(':'); return skinInfo(g, i);
+    return pickTier(tier);
   };
-  const N = 56, WIN_AT = 48, CARD = 170 + 8;
+  const N = 60, WIN_AT = 50, CARD = 170 + 8;
   const strip = []; for(let i = 0; i < N; i++) strip.push(i === WIN_AT ? win : pick());
-  ov.innerHTML = '<div class="co-k">Opening</div><div class="co-t">' + invEsc(c.name) + '</div>' +
-    '<div class="reel-wrap"><div class="reel-mark"></div><div class="reel">' + strip.map(it => itemCard(it)).join('') + '</div></div>' +
-    '<div id="co-res"></div>';
-  ov.classList.add('on');
-  ov.dataset.spinning = '1';
-  const wrap = ov.querySelector('.reel-wrap'), reel = ov.querySelector('.reel');
+  const rare = ['apex','prime'].find(t => (c.items[t] || []).length && t !== res.item.tier);
+  if(rare && res.item.tier === 'field' && Math.random() < 0.5) strip[WIN_AT + (Math.random() < 0.5 ? 1 : -1)] = pickTier(rare);
+
+  ov.innerHTML = head + '<div class="reel-wrap"><div class="reel-mark"></div><div class="reel">' +
+    strip.map(it => itemCard(it)).join('') + '</div></div><div id="co-res"></div>';
+  const wrap = ov.querySelector('.reel-wrap'), reel = ov.querySelector('.reel'), mark = ov.querySelector('.reel-mark');
+  const cards = reel.children;
   const mid = wrap.clientWidth / 2;
-  // land somewhere inside the winning card, not always dead centre
-  const jitter = (Math.random() * 0.7 - 0.35) * 170;
+  const jitter = (Math.random() * 0.76 - 0.38) * 170;                 // not always dead centre
   const target = WIN_AT * CARD + 85 - mid + jitter;
-  const t0 = performance.now(), DUR = 6200;
-  const ease = t => 1 - Math.pow(1 - t, 4);
-  let lastCard = -1;
+  const over = calm ? 0 : 10 + Math.random() * 16;                    // run a hair past, then settle back
+  const DUR = calm ? 1800 : 7200, SETTLE = calm ? 0 : 420;
+  const easeOut = t => 1 - Math.pow(1 - t, 4.2);
+  const easeIO  = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const t0 = performance.now();
+  let lastCard = -1, lastX = 0, hot = null;
   (function step(now){
-    const t = Math.min(1, (now - t0) / DUR);
-    const x = target * ease(t);
+    const el = now - t0;
+    let x;
+    if(el < DUR) x = (target + over) * easeOut(el / DUR);
+    else x = target + over - over * easeIO(Math.min(1, (el - DUR) / Math.max(1, SETTLE)));
     reel.style.transform = 'translateX(' + (-x) + 'px)';
+    const v = Math.abs(x - lastX); lastX = x;
+    if(!calm) reel.style.filter = v > 6 ? 'blur(' + Math.min(2.6, v / 22).toFixed(2) + 'px)' : '';
     const card = Math.floor((x + mid) / CARD);
-    if(card !== lastCard){ lastCard = card; caseTick(); }
-    if(t < 1) return requestAnimationFrame(step);
-    delete ov.dataset.spinning;
-    acctSetUser(res.account);
-    const owned = (res.account.inventory || []).includes(win.gun + ':' + win.id);
-    const equipped = res.account.loadout && res.account.loadout[win.gun] === win.id;
-    ov.querySelector('#co-res').innerHTML = '<div class="co-win" style="--c:' + win.color + '"><div class="big">' +
-      '<div class="ic">' + ((typeof gunIconSVG === 'function' && gunIconSVG(win.gun)) || '') + '</div>' +
-      '<div class="tier" style="color:' + win.color + '">' + invEsc(win.tierName) + '</div>' +
-      '<div class="nm">' + invEsc(win.name) + '</div><div class="gn">' + invEsc(win.gunName) + '</div>' +
-      (res.duplicate ? '<div class="dup">Already owned &middot; +' + fmtTok(res.refund) + ' Tokens back</div>' : '') +
-      '</div><div class="co-foot">' +
-      (!res.duplicate && owned && !equipped ? '<button type="button" class="st-btn go" data-co-equip="' + win.gun + ':' + win.id + '">Equip</button>' : '') +
-      ((res.account.tokens || 0) >= c.price ? '<button type="button" class="st-btn ghost" data-co-open="' + c.id + '">Open another (' + fmtTok(c.price) + ')</button>' : '') +
-      '<button type="button" class="st-btn ghost" data-co-close>Done</button></div></div>';
-    caseTick(true);
+    if(card !== lastCard){
+      lastCard = card;
+      if(hot) hot.classList.remove('hot');
+      hot = cards[card] || null;
+      if(hot) hot.classList.add('hot');
+      if(el < DUR) caseSfx('tick', v);
+    }
+    if(el < DUR + SETTLE) return requestAnimationFrame(step);
+    reel.style.filter = '';
+    if(hot) hot.classList.remove('hot');
+    caseReveal(ov, c, res, win, cards[WIN_AT], mark, calm);
   })(t0);
 }
-// little click for each card that passes the marker (Web Audio, no files)
-let _caseAC = null;
-function caseTick(big){
+
+// 3. The reveal: the winning card lights up, a flash and a burst of particles
+// in its rarity colour (more of everything the rarer it is), and the skin
+// itself turning in 3D above its name.
+function caseReveal(ov, c, res, win, card, mark, calm){
+  delete ov.dataset.spinning;
+  acctSetUser(res.account);
+  if(card) card.classList.add('won');
+  if(mark) mark.classList.add('land');
+  const tier = res.item.tier;
+  caseSfx('reveal', tier);
+  if(!calm){
+    const f = document.createElement('div'); f.className = 'co-flash'; f.style.setProperty('--c', win.color);
+    ov.appendChild(f); setTimeout(() => f.remove(), 1100);
+    const r = card ? card.getBoundingClientRect() : { left: innerWidth / 2, top: 200, width: 0, height: 0 };
+    caseBurst(ov, r.left + r.width / 2, r.top + r.height / 2, win.color,
+              { field: 36, elite: 60, prime: 95, apex: 160 }[tier] || 40, tier === 'apex');
+  }
+  const owned = (res.account.inventory || []).includes(win.gun + ':' + win.id);
+  const equipped = res.account.loadout && res.account.loadout[win.gun] === win.id;
+  const res$ = ov.querySelector('#co-res');
+  res$.innerHTML = '<div class="co-win" style="--c:' + win.color + '"><div class="big ' + tier + '">' +
+    (tier === 'prime' || tier === 'apex' ? '<div class="rays"></div>' : '') +
+    '<div class="co-3d"><div class="ic">' + ((typeof gunIconSVG === 'function' && gunIconSVG(win.gun)) || '') + '</div></div>' +
+    '<div class="tier" style="color:' + win.color + '">' + invEsc(win.tierName) + '</div>' +
+    '<div class="nm">' + invEsc(win.name) + '</div><div class="gn">' + invEsc(win.gunName) + '</div>' +
+    (res.duplicate ? '<div class="dup">Already owned &middot; +' + fmtTok(res.refund) + ' Tokens back</div>' : '') +
+    '</div><div class="co-foot">' +
+    (!res.duplicate && owned && !equipped ? '<button type="button" class="st-btn go" data-co-equip="' + win.gun + ':' + win.id + '">Equip</button>' : '') +
+    ((res.account.tokens || 0) >= c.price ? '<button type="button" class="st-btn ghost" data-co-open="' + c.id + '">Open another (' + fmtTok(c.price) + ')</button>' : '') +
+    '<button type="button" class="st-btn ghost" data-co-close>Done</button></div></div>';
+  caseModel(res$.querySelector('.co-3d'), win.gun, win.id);
+  res$.scrollIntoView({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' });
+}
+
+// Particles: a short burst from the winning card, with gravity. Gold sparks
+// join in for Apex.
+function caseBurst(host, x, y, color, n, gold){
+  const cv = document.createElement('canvas');
+  cv.className = 'co-fx';
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  host.appendChild(cv);
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const cols = [color, color, '#ffffff'].concat(gold ? ['#f5d68d', '#ffcf4a'] : []);
+  const P = [];
+  for(let i = 0; i < n; i++){
+    const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * (gold ? 12 : 9);
+    P.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 4, s: 2 + Math.random() * 5, r: Math.random() * 6,
+             vr: (Math.random() - .5) * .4, c: cols[(Math.random() * cols.length) | 0], life: 1 });
+  }
+  const t0 = performance.now();
+  (function frame(now){
+    const t = (now - t0) / 1000;
+    g.clearRect(0, 0, innerWidth, innerHeight);
+    for(const p of P){
+      p.vy += 0.28; p.vx *= 0.985; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      p.life = Math.max(0, 1 - t / 2.4);
+      g.globalAlpha = p.life;
+      g.fillStyle = p.c;
+      g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); g.restore();
+    }
+    if(t < 2.4 && cv.isConnected) requestAnimationFrame(frame); else cv.remove();
+  })(t0);
+}
+
+// The skin itself, turning, in the result panel. One small renderer, made
+// on first use and reused; it only draws while its canvas is on screen.
+let _co3 = null;
+function caseModel(host, gun, id){
+  if(!host || typeof THREE !== 'object' || typeof loadWeaponVariant !== 'function') return;
   try {
-    _caseAC = _caseAC || new (window.AudioContext || window.webkitAudioContext)();
-    const o = _caseAC.createOscillator(), g = _caseAC.createGain();
-    o.type = big ? 'triangle' : 'square';
-    o.frequency.value = big ? 660 : 1800;
-    g.gain.setValueAtTime(big ? 0.12 : 0.025, _caseAC.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001, _caseAC.currentTime + (big ? 0.45 : 0.03));
-    o.connect(g).connect(_caseAC.destination);
-    o.start(); o.stop(_caseAC.currentTime + (big ? 0.5 : 0.04));
+    if(!_co3){
+      const cv = document.createElement('canvas');
+      const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+      r.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      r.outputColorSpace = THREE.SRGBColorSpace;
+      r.toneMapping = THREE.ACESFilmicToneMapping;
+      const sc = new THREE.Scene();
+      sc.add(new THREE.HemisphereLight(0xfff0d8, 0x141920, 1.3));
+      const k = new THREE.DirectionalLight(0xfff4e6, 2.6); k.position.set(2.5, 4, 5); sc.add(k);
+      const rim = new THREE.DirectionalLight(0x9ec0ff, 2.0); rim.position.set(-4, 2, -4); sc.add(rim);
+      const cam = new THREE.PerspectiveCamera(26, 2.4, 0.05, 50); cam.position.set(0, 0.2, 5.2); cam.lookAt(0, 0, 0);
+      const pivot = new THREE.Group(); sc.add(pivot);
+      _co3 = { r, sc, cam, pivot, cv, tok: 0, held: null };
+      import('three/addons/environments/RoomEnvironment.js').then(m => {
+        const pm = new THREE.PMREMGenerator(r); sc.environment = pm.fromScene(new m.RoomEnvironment(), 0.04).texture; pm.dispose();
+      }).catch(() => {});
+    }
+    const st = _co3, tok = ++st.tok;
+    host.appendChild(st.cv);
+    if(st.held){ st.pivot.remove(st.held); st.held = null; }
+    loadWeaponVariant(gun, id, fitted => {
+      if(tok !== st.tok || !fitted || !st.cv.isConnected) return;
+      const m = fitted.clone(true);
+      const hands = []; m.traverse(o => { if(o.name === 'viewHands') hands.push(o); });
+      for(const h of hands) h.parent && h.parent.remove(h);
+      m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1);
+      m.visible = true; m.traverse(o => { o.visible = true; });
+      const side = new THREE.Group(); side.add(m); side.rotation.y = Math.PI / 2;
+      const box = new THREE.Box3().setFromObject(side), size = new THREE.Vector3(), mid = new THREE.Vector3();
+      box.getSize(size); box.getCenter(mid); side.position.sub(mid);
+      const fit = new THREE.Group(); fit.add(side);
+      const cat = GUNS[gun] && GUNS[gun].category;
+      fit.scale.setScalar((cat === 'pistols' ? 1.7 : cat === 'melee' ? 1.9 : 2.9) / Math.max(size.x, size.y, size.z, 1e-6));
+      st.pivot.add(fit); st.held = fit;
+      host.classList.add('ready');
+      const t0 = performance.now();
+      (function spin(now){
+        if(tok !== st.tok || !st.cv.isConnected) return;
+        const w = st.cv.clientWidth || 440, h = st.cv.clientHeight || 190;
+        if(st.cv.width !== Math.round(w * st.r.getPixelRatio())){ st.r.setSize(w, h, false); st.cam.aspect = w / h; st.cam.updateProjectionMatrix(); }
+        const t = (now - t0) / 1000;
+        st.pivot.rotation.y = -0.9 + Math.min(1, t / 1.2) * 0.9 + Math.sin(t * 0.6) * 0.45;   // swings in, then sways
+        st.pivot.rotation.x = 0.08 + Math.sin(t * 0.9) * 0.04;
+        st.r.render(st.sc, st.cam);
+        requestAnimationFrame(spin);
+      })(t0);
+    });
+  } catch(e){ /* the icon stays */ }
+}
+
+// Sounds, made on the fly with Web Audio (no files).
+let _caseAC = null;
+function caseSfx(kind, arg){
+  try {
+    const ac = _caseAC = _caseAC || new (window.AudioContext || window.webkitAudioContext)();
+    const now = ac.currentTime;
+    const tone = (f, type, vol, at, len, to) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, now + at);
+      if(to) o.frequency.exponentialRampToValueAtTime(to, now + at + len);
+      g.gain.setValueAtTime(0.0001, now + at);
+      g.gain.exponentialRampToValueAtTime(vol, now + at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + at + len);
+      o.connect(g).connect(ac.destination); o.start(now + at); o.stop(now + at + len + 0.05);
+    };
+    if(kind === 'tick'){
+      // faster = lower and softer; the last slow clicks ring higher
+      const v = Math.min(1, (arg || 0) / 40);
+      tone(2400 - v * 900, 'square', 0.02 + (1 - v) * 0.03, 0, 0.035);
+    } else if(kind === 'open'){
+      tone(140, 'sine', 0.25, 0, 0.5, 60);                   // thump
+      tone(500, 'triangle', 0.05, 0.75, 0.25, 1400);         // lid pop
+    } else if(kind === 'reveal'){
+      const notes = { field: [523], elite: [523, 659], prime: [523, 659, 784], apex: [523, 659, 784, 1047, 1319] }[arg] || [523];
+      notes.forEach((f, i) => tone(f, 'triangle', 0.14, i * 0.09, 0.7));
+      if(arg === 'apex' || arg === 'prime') notes.forEach((f, i) => tone(f * 2, 'sine', 0.05, 0.05 + i * 0.09, 0.9));
+    }
   } catch(e){}
 }
 

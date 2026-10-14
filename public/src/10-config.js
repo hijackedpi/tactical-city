@@ -106,9 +106,8 @@ const WEAPON_FILES = {
 // one here (and its id to SKIN_IDS in server.js) and it shows up in the
 // Inventory. Players see every skin; ones they do not own are locked (preview
 // only). The loadout — which skin each gun wears — is saved on the account.
-// Tiers, lowest to highest: issued, field, elite, prime, apex.
+// Tiers, lowest to highest: field, elite, prime, apex.
 const SKIN_TIERS = {
-  issued: { name:'Issued', color:'#9fb0c4' },
   field:  { name:'Field',  color:'#4b69ff' },
   elite:  { name:'Elite',  color:'#8847ff' },
   prime:  { name:'Prime',  color:'#d32ce6' },
@@ -118,50 +117,72 @@ const GUN_SKINS = {
   glock18: {
     neonspirit:  { name:'Neo-Noir',     file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1012143420_texture.glb', tier:'apex' },
     sunrisefade: { name:'Fade',         file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1012143424_texture.glb', tier:'elite' },
-    nightskyline: { name:'Moonrise',     file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1013141844_texture.glb', tier:'elite' },
+    nightskyline: { name:'Moonrise',     file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1013141844_texture.glb', tier:'prime' },
     moonrabbit:  { name:'Umbral Rabbit', file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1013141853_texture.glb', tier:'apex' },
+    nucleargarden: { name:'Nuclear Garden', file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1014151809_texture.glb', tier:'field' },
+    coralbloom:  { name:'Coral Bloom',  file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1014151816_texture.glb', tier:'field' },
+    synthleaf:   { name:'Synth Leaf',   file:'gunskins/Meshy_AI_A_glock_18_gun_that_i_1014151822_texture.glb', tier:'field' },
   },
   deagle: {
     codewhite:   { name:'Printstream',  file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1012143429_texture.glb', tier:'apex' },
     violetblaze: { name:'Violet Blaze', file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1012143434_texture.glb', tier:'elite' },
-    jadetide:    { name:'Jade Tide',    file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1013141955_texture.glb', tier:'field' },
-    crimsontide: { name:'Sunset Storm 壱', file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1013142022_texture.glb', tier:'field' },
+    jadetide:    { name:'Jade Tide',    file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1013141955_texture.glb', tier:'prime' },
+    crimsontide: { name:'Sunset Storm 壱', file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1013142022_texture.glb', tier:'prime' },
+    mechaind:    { name:'Mecha Industries', file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1014151947_texture.glb', tier:'field' },
+    blaze:       { name:'Blaze',        file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1014151954_texture.glb', tier:'field' },
+    triggerdisc: { name:'Trigger Discipline', file:'gunskins/Meshy_AI_Meshy_AI_dessert_eagl_1014152006_texture.glb', tier:'field' },
   },
   mac10: {
     wildcat:     { name:'Stalker',      file:'gunskins/Meshy_AI_Meshy_AI_mac10_101213_1012143441_texture.glb', tier:'elite' },
-    duskfade:    { name:'Fade',         file:'gunskins/Meshy_AI_Meshy_AI_mac10_101213_1012143445_texture.glb', tier:'field' },
+    duskfade:    { name:'Fade',         file:'gunskins/Meshy_AI_Meshy_AI_mac10_101213_1012143445_texture.glb', tier:'prime' },
+    koigarden:   { name:'Koi Garden',   file:'gunskins/Meshy_AI_Meshy_AI_mac10_101213_1014152122_texture.glb', tier:'field' },
+    nucleargarden: { name:'Nuclear Garden', file:'gunskins/Meshy_AI_Meshy_AI_mac10_101213_1014152127_texture.glb', tier:'field' },
   },
   mp5: {
-    crimsondots: { name:'Crimson Dots', file:'gunskins/Meshy_AI_mp5_1012143524_texture.glb', tier:'issued' },
-    aciddrip:    { name:'Acid Drip',    file:'gunskins/Meshy_AI_mp5_1012143529_texture.glb', tier:'field' },
+    crimsondots: { name:'Crimson Dots', file:'gunskins/Meshy_AI_mp5_1012143524_texture.glb', tier:'elite' },
+    aciddrip:    { name:'Acid Drip',    file:'gunskins/Meshy_AI_mp5_1012143529_texture.glb', tier:'elite' },
+    labrats:     { name:'Lab Rats',     file:'gunskins/Meshy_AI_mp5_1014151930_texture.glb', tier:'field' },
+    nightcircuit: { name:'Night Circuit', file:'gunskins/Meshy_AI_mp5_1014151936_texture.glb', tier:'field' },
   },
   mp7: {
     raceday:     { name:'Bloodsport',   file:'gunskins/Meshy_AI_mp7_1012143642_texture.glb', tier:'elite' },
     iceblue:     { name:'Ice Blue',     file:'gunskins/Meshy_AI_mp7_1012143650_texture.glb', tier:'field' },
     sunsetfade:  { name:'Fade',         file:'gunskins/Meshy_AI_mp7_1013141859_texture.glb', tier:'elite' },
     acidswirl:   { name:'Neon Ply',     file:'gunskins/Meshy_AI_mp7_1013141907_texture.glb', tier:'prime' },
+    crimsoncamo: { name:'Crimson Camo', file:'gunskins/Meshy_AI_mp7_1014152016_texture.glb', tier:'field' },
+    powercore:   { name:'Powercore',    file:'gunskins/Meshy_AI_mp7_1014152050_texture.glb', tier:'field' },
   },
   ump45: {
-    doodlemech:  { name:'Motorized',    file:'gunskins/Meshy_AI_UMP_1012143537_texture.glb', tier:'elite' },
-    redracer:    { name:'Red Racer',    file:'gunskins/Meshy_AI_UMP_1012143623_texture.glb', tier:'field' },
+    doodlemech:  { name:'Motorized',    file:'gunskins/Meshy_AI_UMP_1012143537_texture.glb', tier:'prime' },
+    redracer:    { name:'Red Racer',    file:'gunskins/Meshy_AI_UMP_1012143623_texture.glb', tier:'elite' },
+    crimsoncamo: { name:'Crimson Camo', file:'gunskins/Meshy_AI_UMP_1014151901_texture.glb', tier:'field' },
+    blaze:       { name:'Blaze',        file:'gunskins/Meshy_AI_UMP_1014151909_texture.glb', tier:'field' },
   },
   ak47: {
     ivorycrane:  { name:'Crane Flight', file:'gunskins/Meshy_AI_ak47_1012143501_texture.glb', tier:'apex' },
-    toonriot:    { name:'Head Shot',    file:'gunskins/Meshy_AI_ak47_1012143507_texture.glb', tier:'elite' },
+    toonriot:    { name:'Head Shot',    file:'gunskins/Meshy_AI_ak47_1012143507_texture.glb', tier:'prime' },
     orbit:       { name:'Asiimov',      file:'gunskins/Meshy_AI_ak47_1013141826_texture.glb', tier:'apex' },
-    cyancircuit: { name:'Cyan Circuit', file:'gunskins/Meshy_AI_ak47_1013141833_texture.glb', tier:'prime' },
+    cyancircuit: { name:'Cyan Circuit', file:'gunskins/Meshy_AI_ak47_1013141833_texture.glb', tier:'elite' },
+    pointdisarray: { name:'Point Disarray', file:'gunskins/Meshy_AI_ak47_1014151721_texture.glb', tier:'field' },
+    olivepolycam: { name:'Olive Polycam', file:'gunskins/Meshy_AI_ak47_1014151728_texture.glb', tier:'field' },
+    desertcream: { name:'Desert Cream', file:'gunskins/Meshy_AI_ak47_1014151754_texture.glb', tier:'field' },
   },
   m4a1: {
     petalstorm:  { name:'Petal Storm',  file:'gunskins/Meshy_AI_M4A1_1012143451_texture.glb', tier:'apex' },
     shatter:     { name:'Shatter',      file:'gunskins/Meshy_AI_M4A1_1012143456_texture.glb', tier:'elite' },
     codeivory:   { name:'Printstream',  file:'gunskins/Meshy_AI_M4A1_1013141943_texture.glb', tier:'prime' },
     junglefever: { name:'Jungle Fever', file:'gunskins/Meshy_AI_M4A1_1013141949_texture.glb', tier:'elite' },
+    jungleshade: { name:'Jungle Shade', file:'gunskins/Meshy_AI_M4A1_1014151834_texture.glb', tier:'field' },
+    mechaind:    { name:'Mecha Industries', file:'gunskins/Meshy_AI_M4A1_1014151846_texture.glb', tier:'field' },
+    poseidon:    { name:'Poseidon',     file:'gunskins/Meshy_AI_M4A1_1014151853_texture.glb', tier:'field' },
   },
   awp: {
     oilslick:    { name:'Chromatic Aberration', file:'gunskins/Meshy_AI_sniper_1012143512_texture.glb', tier:'elite' },
     codechrome:  { name:'Printstream',  file:'gunskins/Meshy_AI_sniper_1012143517_texture.glb', tier:'apex' },
     orbit:       { name:'Asiimov',      file:'gunskins/Meshy_AI_sniper_1013141930_texture.glb', tier:'apex' },
     neonbeast:   { name:'Hyper Beast',  file:'gunskins/Meshy_AI_sniper_1013141937_texture.glb', tier:'prime' },
+    medusa:      { name:'Medusa',       file:'gunskins/Meshy_AI_sniper_1014152059_texture.glb', tier:'field' },
+    popawp:      { name:'POP AWP',      file:'gunskins/Meshy_AI_sniper_1014152106_texture.glb', tier:'field' },
   },
 };
 let playerLoadout = {};                     // gun key -> skin id ('default' = base model)

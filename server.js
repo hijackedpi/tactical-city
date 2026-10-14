@@ -78,15 +78,15 @@ const COOKIE_NAME   = 'tc_session';
 // list is only used to refuse bogus loadouts.
 const SKIN_GUNS = ['knife','glock18','deagle','mac10','mp5','mp7','ump45','ak47','m4a1','awp'];
 const SKIN_IDS  = {
-  glock18: ['neonspirit', 'sunrisefade', 'nightskyline', 'moonrabbit'],
-  deagle: ['codewhite', 'violetblaze', 'jadetide', 'crimsontide'],
-  mac10: ['wildcat', 'duskfade'],
-  mp5: ['crimsondots', 'aciddrip'],
-  mp7: ['raceday', 'iceblue', 'sunsetfade', 'acidswirl'],
-  ump45: ['doodlemech', 'redracer'],
-  ak47: ['ivorycrane', 'toonriot', 'orbit', 'cyancircuit'],
-  m4a1: ['petalstorm', 'shatter', 'codeivory', 'junglefever'],
-  awp: ['oilslick', 'codechrome', 'orbit', 'neonbeast'],
+  glock18: ['neonspirit', 'sunrisefade', 'nightskyline', 'moonrabbit', 'nucleargarden', 'coralbloom', 'synthleaf'],
+  deagle: ['codewhite', 'violetblaze', 'jadetide', 'crimsontide', 'mechaind', 'blaze', 'triggerdisc'],
+  mac10: ['wildcat', 'duskfade', 'koigarden', 'nucleargarden'],
+  mp5: ['crimsondots', 'aciddrip', 'labrats', 'nightcircuit'],
+  mp7: ['raceday', 'iceblue', 'sunsetfade', 'acidswirl', 'crimsoncamo', 'powercore'],
+  ump45: ['doodlemech', 'redracer', 'crimsoncamo', 'blaze'],
+  ak47: ['ivorycrane', 'toonriot', 'orbit', 'cyancircuit', 'pointdisarray', 'olivepolycam', 'desertcream'],
+  m4a1: ['petalstorm', 'shatter', 'codeivory', 'junglefever', 'jungleshade', 'mechaind', 'poseidon'],
+  awp: ['oilslick', 'codechrome', 'orbit', 'neonbeast', 'medusa', 'popawp'],
 };
 
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch(e){}
@@ -115,7 +115,25 @@ function publicAccount(a){
   if(!a) return null;
   return { id: a.id, name: a.name, username: a.username || null, avatar: a.avatar, tokens: a.tokens || 0,
            loadout: Object.assign(defaultLoadout(), a.loadout || {}),
-           inventory: a.inventory || [], createdAt: a.createdAt };
+           inventory: a.inventory || [], createdAt: a.createdAt, quests: questState(a) };
+}
+
+// ── DAILY QUESTS ────────────────────────────────────────────────────────────
+// Two a day, reset at midnight UTC: log in, and win an online match. Each pays
+// out one free case, of the player's choice, when they claim it.
+const QUEST_IDS = ['login', 'win'];
+function questState(a){
+  const d = new Date().toISOString().slice(0, 10);
+  if(!a.quests || a.quests.d !== d){
+    a.quests = { d };
+    for(const q of QUEST_IDS) a.quests[q] = { done: false, claimed: false };
+  }
+  return a.quests;
+}
+function markQuest(a, q){
+  if(!a) return;
+  const st = questState(a)[q];
+  if(st && !st.done){ st.done = true; saveAccounts(); }
 }
 
 // session cookie: base64(json) + '.' + hmac
@@ -200,6 +218,7 @@ app.post('/auth/register', (req, res) => {
                              createdAt: Date.now(), lastSeen: Date.now(), loadout: defaultLoadout(), inventory: [] };
   console.log('new account:', username);
   saveAccounts();
+  markQuest(a, 'login');
   setSessionCookie(req, res, a.id);
   res.json({ account: publicAccount(a) });
 });
@@ -215,6 +234,7 @@ app.post('/auth/login', (req, res) => {
   if(got.length !== want.length || !crypto.timingSafeEqual(got, want)) return bad();
   a.lastSeen = Date.now();
   saveAccounts();
+  markQuest(a, 'login');
   setSessionCookie(req, res, a.id);
   res.json({ account: publicAccount(a) });
 });
@@ -227,7 +247,7 @@ app.get('/auth/config', (req, res) => {
 app.get('/auth/me', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const a = accountFromCookieHeader(req.headers.cookie);
-  if(a){ a.lastSeen = Date.now(); saveAccounts(); }
+  if(a){ a.lastSeen = Date.now(); markQuest(a, 'login'); saveAccounts(); }
   res.json({ account: publicAccount(a) });
 });
 
@@ -256,6 +276,7 @@ app.post('/auth/google', async (req, res) => {
   }
   a.lastSeen = Date.now();
   saveAccounts();
+  markQuest(a, 'login');
   setSessionCookie(req, res, a.id);
   res.json({ account: publicAccount(a) });
 });
@@ -300,19 +321,19 @@ const CASE_TIERS = ['field', 'elite', 'prime', 'apex'];
 const DUPLICATE_REFUND = { field: 25, elite: 60, prime: 150, apex: 400 };
 const CASES = {
   palace: { name: 'Revolution Case', price: 250, color: '#e0a35a', items: {
-    field: ['deagle:crimsontide', 'ump45:redracer'],
-    elite: ['glock18:sunrisefade', 'mac10:wildcat', 'ump45:doodlemech', 'm4a1:junglefever'],
-    prime: ['m4a1:codeivory'],
+    field: ['deagle:mechaind', 'm4a1:mechaind', 'ak47:pointdisarray', 'awp:popawp', 'mp7:powercore', 'glock18:synthleaf', 'ump45:crimsoncamo'],
+    elite: ['ump45:redracer', 'glock18:sunrisefade', 'mac10:wildcat', 'm4a1:junglefever', 'mp5:crimsondots'],
+    prime: ['deagle:crimsontide', 'ump45:doodlemech', 'm4a1:codeivory'],
     apex:  ['deagle:codewhite', 'awp:codechrome', 'ak47:ivorycrane'] } },
   overgrowth: { name: 'Chromic Case', price: 250, color: '#4caf7a', items: {
-    field: ['deagle:jadetide', 'mp5:aciddrip'],
-    elite: ['glock18:nightskyline', 'mp7:raceday', 'ak47:toonriot', 'awp:oilslick'],
-    prime: ['ak47:cyancircuit'],
+    field: ['glock18:nucleargarden', 'mac10:nucleargarden', 'ak47:olivepolycam', 'm4a1:jungleshade', 'mp5:labrats', 'glock18:coralbloom', 'mp7:crimsoncamo'],
+    elite: ['mp5:aciddrip', 'mp7:raceday', 'awp:oilslick', 'ak47:cyancircuit'],
+    prime: ['deagle:jadetide', 'glock18:nightskyline', 'ak47:toonriot'],
     apex:  ['glock18:moonrabbit', 'm4a1:petalstorm'] } },
   neon: { name: 'Neon Case', price: 250, color: '#8847ff', items: {
-    field: ['mac10:duskfade', 'mp7:iceblue'],
+    field: ['mp7:iceblue', 'deagle:blaze', 'ump45:blaze', 'deagle:triggerdisc', 'm4a1:poseidon', 'awp:medusa', 'ak47:desertcream', 'mac10:koigarden', 'mp5:nightcircuit'],
     elite: ['deagle:violetblaze', 'mp7:sunsetfade', 'm4a1:shatter'],
-    prime: ['mp7:acidswirl', 'awp:neonbeast'],
+    prime: ['mac10:duskfade', 'mp7:acidswirl', 'awp:neonbeast'],
     apex:  ['glock18:neonspirit', 'ak47:orbit', 'awp:orbit'] } },
 };
 function rollCase(c){
@@ -344,16 +365,38 @@ app.post('/api/case/open', (req, res) => {
   if((a.tokens || 0) < c.price) return res.status(400).json({ error: 'Not enough Tokens.' });
   _caseCooldown.set(a.id, now);
   a.tokens -= c.price;
+  const r = grantCase(a, c);
+  res.json(Object.assign(r, { account: publicAccount(a) }));
+});
+// Roll a case for an account and put the result in their inventory (or pay
+// Tokens back for a duplicate). Used by buying and by quest rewards alike.
+function grantCase(a, c, why){
   const item = rollCase(c);
   const key = item.gun + ':' + item.id;
   a.inventory = a.inventory || [];
   const duplicate = a.inventory.includes(key);
   const refund = duplicate ? (DUPLICATE_REFUND[item.tier] || 0) : 0;
-  if(duplicate) a.tokens += refund; else a.inventory.push(key);
+  if(duplicate) a.tokens = (a.tokens || 0) + refund; else a.inventory.push(key);
   a.unboxed = (a.unboxed || 0) + 1;
   saveAccounts();
-  console.log('case', a.name, c.name, '->', key, item.tier, duplicate ? '(dup)' : '');
-  res.json({ item, duplicate, refund, account: publicAccount(a) });
+  console.log('case', a.name, c.name, '->', key, item.tier, duplicate ? '(dup)' : '', why || '');
+  return { item, duplicate, refund };
+}
+// Claim a finished quest: one free case, whichever the player picked.
+app.post('/api/quest/claim', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const a = accountFromCookieHeader(req.headers.cookie);
+  if(!a) return res.status(401).json({ error: 'Sign in to do quests.' });
+  const q = req.body && req.body.quest;
+  if(!QUEST_IDS.includes(q)) return res.status(400).json({ error: 'No such quest.' });
+  const c = CASES[req.body && req.body.case];
+  if(!c) return res.status(400).json({ error: 'Pick a case.' });
+  const st = questState(a)[q];
+  if(!st.done)   return res.status(400).json({ error: 'Quest not finished yet.' });
+  if(st.claimed) return res.status(400).json({ error: 'Already claimed today.' });
+  st.claimed = true;
+  const r = grantCase(a, c, '(quest: ' + q + ')');
+  res.json(Object.assign(r, { free: true, account: publicAccount(a) }));
 });
 
 app.post('/auth/logout', (req, res) => {
@@ -762,8 +805,10 @@ function settleTokens(p, won, account){
   const sock = io.sockets.sockets.get(p.id);
   const a = account || (sock && sock.data.account) || null;
   if(!a){ if(sock) sock.emit('tokens', { guest: true, play, win }); return; }
+  if(won) markQuest(a, 'win');
   const r = creditTokens(a, play + win);
-  if(sock) sock.emit('tokens', { play, win, got: r.got, capped: r.capped, balance: a.tokens, cap: TOKENS_DAILY_CAP });
+  if(sock) sock.emit('tokens', { play, win, got: r.got, capped: r.capped, balance: a.tokens, cap: TOKENS_DAILY_CAP,
+                                  quests: questState(a) });
 }
 
 // ── CONNECTIONS ─────────────────────────────────────────────────────────────
