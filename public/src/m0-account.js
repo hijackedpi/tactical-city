@@ -969,6 +969,8 @@ function caseArt(c){
 const QUESTS = [
   { id: 'login', name: 'Log in',      desc: 'Sign in to Tactical City today.',
     ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>' },
+  { id: 'play',  name: 'Play a match', desc: 'Play an online match to the end (not solo or training).',
+    ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>' },
   { id: 'win',   name: 'Win a match', desc: 'Win an online match (not solo or training).',
     ic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>' },
 ];

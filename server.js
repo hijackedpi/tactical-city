@@ -119,15 +119,16 @@ function publicAccount(a){
 }
 
 // ── DAILY QUESTS ────────────────────────────────────────────────────────────
-// Two a day, reset at midnight UTC: log in, and win an online match. Each pays
+// Three a day, reset at midnight UTC: log in, play an online match to the end,
+// and win an online match. Each pays
 // out one free case, of the player's choice, when they claim it.
-const QUEST_IDS = ['login', 'win'];
+const QUEST_IDS = ['login', 'play', 'win'];
 function questState(a){
   const d = new Date().toISOString().slice(0, 10);
   if(!a.quests || a.quests.d !== d){
     a.quests = { d };
-    for(const q of QUEST_IDS) a.quests[q] = { done: false, claimed: false };
   }
+  for(const q of QUEST_IDS) if(!a.quests[q]) a.quests[q] = { done: false, claimed: false };
   return a.quests;
 }
 function markQuest(a, q){
@@ -783,7 +784,7 @@ function endMatch(room, winner){
   setPhase(room, 'MATCH_END', 0, () => {});
   io.to(room.code).emit('matchEnd', { winner, score: room.score, roster: rosterOf(room),
                                       rounds: room.round, stats: statsOf(room) });
-  for(const p of room.players.values()) settleTokens(p, p.team === winner);
+  for(const p of room.players.values()) settleTokens(p, p.team === winner, null, true);
 }
 // The skins a player has equipped (only the non-default ones), for everyone
 // else's screen. Re-checked against ownership so a tampered save shows nothing.
@@ -798,13 +799,14 @@ function equippedSkins(a){
 }
 // Turn a player's match time (and a win) into Tokens, and tell them. Guests are
 // told what they would have earned, so signing in has an obvious payoff.
-function settleTokens(p, won, account){
+function settleTokens(p, won, account, finished){
   const play = Math.floor(p.playMs / 60000 * TOKENS_PER_MIN);
   const win  = won ? TOKENS_WIN : 0;
   p.playMs = 0;
   const sock = io.sockets.sockets.get(p.id);
   const a = account || (sock && sock.data.account) || null;
   if(!a){ if(sock) sock.emit('tokens', { guest: true, play, win }); return; }
+  if(finished) markQuest(a, 'play');
   if(won) markQuest(a, 'win');
   const r = creditTokens(a, play + win);
   if(sock) sock.emit('tokens', { play, win, got: r.got, capped: r.capped, balance: a.tokens, cap: TOKENS_DAILY_CAP,

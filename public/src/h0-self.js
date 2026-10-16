@@ -53,6 +53,8 @@ function selfBuild(team){
 function selfTeamNow(){
   if(typeof netInMatch !== 'undefined' && netInMatch &&
      typeof netMyTeam !== 'undefined' && netMyTeam) return netMyTeam;
+  // the training range always puts you in the CT agent
+  if(typeof practiceOn !== 'undefined' && practiceOn) return 'ct';
   return 't';
 }
 
